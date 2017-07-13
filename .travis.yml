@@ -1,0 +1,10 @@
+language: rust
+
+cache: cargo
+
+addons:
+    apt:
+        packages:
+            - python3
+
+script: make test
