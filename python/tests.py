@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from ced.core import CoreConnection
@@ -15,3 +16,7 @@ class ConnectionTest(unittest.TestCase):
 
         state = handler.state
         self.assertListEqual(["*debug*", "*scratch*"], list(state.buffer_list.keys()))
+
+
+os.environ.setdefault('CED_BIN_PATH', "../core/target/debug/ced-core")
+unittest.main(buffer=True)
