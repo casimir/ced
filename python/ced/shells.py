@@ -5,12 +5,10 @@ from .handlers import RpcHandler
 
 
 class Shell(object):
+    is_interactive = False
 
     def __init__(self, handler: RpcHandler):
         self.handler = handler
-
-    def init(self):
-        pass
 
     def execute(self, command) -> bool:
         if self.handler is not None:
@@ -18,6 +16,7 @@ class Shell(object):
 
 
 class InteractiveShell(Shell):
+    is_interactive = True
     COMMANDS = {
         'buffer_delete': {'argc': 1},
         'buffer_list': {'argc': 0},

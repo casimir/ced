@@ -61,9 +61,10 @@ class CoreConnection(object):
 
     def start(self):
         loop = self.get_event_loop()
-        self.shell.init()
-        loop.add_reader(sys.stdin.fileno(), self._handle_stdin)
+        if self.shell.is_interactive:
+            loop.add_reader(sys.stdin.fileno(), self._handle_stdin)
         ret_code = loop.run_until_complete(self._exec_core(loop))
-        loop.remove_reader(sys.stdin.fileno())
+        if self.shell.is_interactive:
+            loop.remove_reader(sys.stdin.fileno())
         loop.close()
         print(f"connection to server closed with status {ret_code}")
