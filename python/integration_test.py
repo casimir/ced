@@ -18,3 +18,4 @@ def test_simple():
 
     state = handler.state
     assert ["*debug*", "*scratch*"] == list(state.buffer_list.keys())
+    assert state.buffer_current == "*scratch*"
