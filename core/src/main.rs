@@ -4,43 +4,18 @@ extern crate jsonrpc_lite;
 extern crate serde;
 extern crate serde_json;
 
-use std::fs::File;
-use std::io;
-use std::io::{BufRead, Read, Write};
-use std::ops::IndexMut;
+mod buffer;
+
+use std::io::{self, BufRead};
+use std::ops::{IndexMut, Index};
 use std::path::PathBuf;
 
 use clap::{Arg, App};
-use jsonrpc_lite::{JsonRPC, Id, Params, Error, ErrorCode};
+use jsonrpc_lite::{JsonRPC, Params, Error};
 use serde_json::value::{Map, Value};
 use serde_json::value::ToJson;
 
-struct Buffer {
-    name: String,
-    file_path: Option<PathBuf>,
-    content: String,
-}
-
-impl ToString for Buffer {
-    fn to_string(&self) -> String {
-        self.content.clone()
-    }
-}
-
-impl Buffer {
-    fn append(&mut self, content: &str) {
-        self.content.push_str(content);
-    }
-}
-
-impl<'a> From<&'a Buffer> for Value {
-    fn from(buffer: &Buffer) -> Self {
-        let mut val: Map<String, Value> = Map::new();
-        val.insert(String::from("name"), Value::from(buffer.name.clone()));
-        val.insert(String::from("content"), Value::from(buffer.to_string()));
-        Value::from(val)
-    }
-}
+use buffer::{find_shortest_name, Buffer, BufferSource};
 
 struct Editor {
     buffer_list: Vec<Buffer>,
@@ -53,9 +28,9 @@ impl Editor {
             buffer_list: Vec::new(),
             buffer_selected_idx: 0,
         };
-        editor.new_scratch("*debug*");
-        if filenames.len() == 0 {
-            editor.new_scratch("*scratch*");
+        editor.open_scratch("*debug*");
+        if filenames.is_empty() {
+            editor.open_scratch("*scratch*");
         } else {
             for filename in &filenames {
                 editor.open_file(PathBuf::from(filename));
@@ -64,33 +39,14 @@ impl Editor {
         editor
     }
 
-    fn new_scratch(&mut self, name: &str) {
-        let buffer = Buffer {
-            name: name.to_owned(),
-            file_path: None,
-            content: String::new(),
-        };
+    fn open_scratch(&mut self, name: &str) {
+        let buffer = Buffer::new_scratch(name.to_owned());
         self.buffer_list.push(buffer);
         self.buffer_selected_idx = self.buffer_list.len() - 1;
     }
 
     fn open_file(&mut self, filename: PathBuf) {
-        let mut full_path = std::env::current_dir().unwrap();
-        full_path.push(filename.clone());
-        let absolute_path = full_path.as_path().canonicalize().unwrap();
-
-        let message = format!("open file: {:?}\n", absolute_path);
-        self.append_debug(&message);
-
-        let mut file = File::open(&absolute_path).unwrap();
-        let mut content = String::new();
-        file.read_to_string(&mut content);
-
-        let buffer = Buffer {
-            name: filename.into_os_string().into_string().unwrap(),
-            file_path: Some(absolute_path),
-            content: content,
-        };
+        let buffer = Buffer::new_file(filename);
         self.buffer_list.push(buffer);
         self.buffer_selected_idx = self.buffer_list.len() - 1;
     }
@@ -100,25 +56,44 @@ impl Editor {
             self.buffer_selected_idx -= 1;
         }
         self.buffer_list.remove(idx);
-        if self.buffer_list.len() == 0 {
-            self.new_scratch("*scratch*");
+        if self.buffer_list.is_empty() {
+            self.open_scratch("*scratch*");
         }
     }
 
+    fn get_buffer_name(&self, idx: usize) -> String {
+        let buffer_sources = self.buffer_list.iter().map(|x| &x.source).collect();
+        find_shortest_name(&buffer_sources, idx)
+    }
+
+    fn get_buffer_value(&self, idx: usize) -> Value {
+        let mut val: Map<String, Value> = Map::new();
+        val.insert(String::from("name"), Value::from(self.get_buffer_name(idx)));
+        val.insert(
+            String::from("content"),
+            Value::from(self.buffer_list.index(idx).to_string()),
+        );
+        Value::from(val)
+    }
+
     fn get_buffer_idx(&self, buffer_name: &str) -> Option<usize> {
-        self.buffer_list.iter().position(|x| x.name == buffer_name)
+        self.buffer_list
+            .iter()
+            .enumerate()
+            .map(|(i, _)| self.get_buffer_name(i))
+            .position(|x| x == buffer_name)
     }
 
     fn get_buffer_idx_from_path(&self, path: &PathBuf) -> Option<usize> {
-        self.buffer_list.iter().position(
-            |x| x.file_path == Some(path.clone()),
-        )
+        self.buffer_list
+            .iter()
+            .position(|x| x.source == BufferSource::File(path.clone()))
     }
 
     fn append_debug(&mut self, content: &str) {
         let mut debug_buffer = self.buffer_list.index_mut(0);
         debug_buffer.append(content);
-        writeln!(io::stderr(), "{}", content);
+        eprintln!("{}", content);
     }
 
     fn send_message(&self, message: &JsonRPC) {
@@ -134,12 +109,12 @@ impl Editor {
             Value::from(
                 self.buffer_list
                     .iter()
-                    .map(|x| Value::from(x))
+                    .enumerate()
+                    .map(|(i, _)| self.get_buffer_value(i))
                     .collect::<Vec<Value>>(),
             ),
         );
-        let buffer_current = self.buffer_list.get(self.buffer_selected_idx).unwrap();
-        let buffer_current_name = buffer_current.name.clone();
+        let buffer_current_name = self.get_buffer_name(self.buffer_selected_idx);
         params.insert(
             String::from("buffer_current"),
             Value::from(buffer_current_name),
@@ -179,15 +154,15 @@ impl Editor {
             Some(idx) => self.buffer_selected_idx = idx,
             None => self.open_file(path),
         };
-        let ref buffer_ref = self.buffer_list[self.buffer_selected_idx];
-        JsonRPC::success(&req_id, &Value::from(buffer_ref))
+        JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
     }
 
     fn handle_list_buffer(&self, message: &JsonRPC) -> JsonRPC {
         let req_id = message.get_id().unwrap();
         let params = self.buffer_list
             .iter()
-            .map(|x| (Value::from(x)))
+            .enumerate()
+            .map(|(i, _)| self.get_buffer_value(i))
             .collect::<Vec<Value>>();
         JsonRPC::success(&req_id, &Value::from(params))
     }
@@ -203,8 +178,7 @@ impl Editor {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.buffer_selected_idx = idx;
-                let ref buffer_ref = self.buffer_list[idx];
-                JsonRPC::success(&req_id, &Value::from(buffer_ref))
+                JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
             }
             None => {
                 let mut error = Error::invalid_params();
@@ -226,8 +200,7 @@ impl Editor {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.delete_buffer(idx);
-                let ref buffer_ref = self.buffer_list[self.buffer_selected_idx];
-                JsonRPC::success(&req_id, &Value::from(buffer_ref))
+                JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
             }
             None => {
                 let mut error = Error::invalid_params();
@@ -244,9 +217,11 @@ fn main() {
         .about(crate_description!())
         .version(crate_version!())
         .author(crate_authors!())
-        .arg(Arg::with_name("FILE").multiple(true).help(
-            "a list of file to open",
-        ))
+        .arg(
+            Arg::with_name("FILE")
+                .multiple(true)
+                .help("a list of file to open"),
+        )
         .get_matches();
 
     let files = match matches.values_of("FILE") {

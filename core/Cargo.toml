@@ -5,6 +5,6 @@ authors = ["Martin Chaine <martin@casimir.me>"]
 
 [dependencies]
 clap = "2.25.0"  
-jsonrpc-lite = "0.4.1" 
+jsonrpc-lite = "0.4.1"
 serde = "0.9"
 serde_json = "0.9"

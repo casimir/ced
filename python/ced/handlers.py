@@ -17,12 +17,15 @@ class RpcHandler(object):
     def __init__(self):
         self.state = State()
         self.input = None
-        self.pending = {}
+        self.pending = None
 
     def _make_request(self, method, params):
         req_id = self._rpc_next_id
         self._rpc_next_id += 1
         return Request(id_=req_id, method=method, params=params)
+
+    def is_awaiting(self):
+        return self.pending is not None
 
     def set_input(self, input):
         self.input = input
@@ -33,7 +36,8 @@ class RpcHandler(object):
         message = self._make_request(method, params)
         print("<-", message)
         self.input.write(f"{message}\n".encode())
-        self.pending[message.id] = message
+        self.input.flush()
+        self.pending = message
 
     def handle(self, line):
         response = Response.parse(line)
@@ -41,12 +45,20 @@ class RpcHandler(object):
         method = ""
         if response.is_notification():
             method = response.method
-        elif response.is_success() and response.id in self.pending:
-            method = self.pending[response.id].method
+        elif response.is_success():
+            method = self.pending.method
+        else:
+            method = 'error'
         try:
             getattr(self, f"handle_{method}", lambda *args: None)(response)
         except Exception as e:
             traceback.print_exception(*sys.exc_info(), file=sys.stdout)
+        if response.id == getattr(self.pending, 'id', None):
+            self.pending = None
+
+    def handle_error(self, response: Response):
+        data = response.error.get('data')
+        print(f"-- error: {data}")
 
     def handle_update(self, response: Response):
         buffer_list = response.params['buffer_list']
@@ -63,9 +75,5 @@ class RpcHandler(object):
         self.state.buffer_current = buf['name']
         self.state.buffer_list[buf['name']] = buf
 
-
-class InitAndQuitHandler(RpcHandler):
-
-    def handle_update(self, response):
-        super(InitAndQuitHandler, self).handle_update(response)
-        self.input.close()
+    def handle_edit(self, response: Response):
+        self.handle_buffer_select(response)
