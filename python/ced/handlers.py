@@ -60,7 +60,7 @@ class RpcHandler(object):
         data = response.error.get('data')
         print(f"-- error: {data}")
 
-    def handle_update(self, response: Response):
+    def handle_init(self, response: Response):
         buffer_list = response.params['buffer_list']
         for buf in buffer_list:
             self.state.buffer_list[buf['name']] = buf

@@ -102,7 +102,7 @@ impl Editor {
         println!("{}", payload);
     }
 
-    fn send_update(&self) {
+    fn send_init(&self) {
         let mut params: Map<String, Value> = Map::new();
         params.insert(
             String::from("buffer_list"),
@@ -119,7 +119,7 @@ impl Editor {
             String::from("buffer_current"),
             Value::from(buffer_current_name),
         );
-        let message = JsonRPC::notification_with_params("update", &Params::Map(params));
+        let message = JsonRPC::notification_with_params("init", &Params::Map(params));
         self.send_message(&message);
     }
 
@@ -233,7 +233,7 @@ fn main() {
     let stdin = io::stdin();
     let mut handle = stdin.lock();
     let mut buf = String::new();
-    editor.send_update();
+    editor.send_init();
     while handle.read_line(&mut buf).is_ok() {
         if buf.is_empty() {
             break;
