@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 
 from .handlers import RpcHandler
 from .shells import Shell
@@ -12,9 +13,13 @@ class CoreConnection(object):
         self.command = [self.bin]
         if argv is not None:
             self.command += argv
-        self.proc: asyncio.Process = None
         self.handler = handler
         self.shell = shell
+
+    def _print_prompt(self):
+        if self.shell.prompt is not None:
+            print(self.shell.prompt, end="")
+            sys.stdout.flush()
 
     def start(self):
         proc = subprocess.Popen(
@@ -35,6 +40,7 @@ class CoreConnection(object):
                 # the message was an update, we're still missing a response
                 continue
             while not should_stop and not self.handler.is_awaiting():
+                self._print_prompt()
                 # consume commands that don't send data to the server
                 command = next(command_list, None)
                 if command is None:

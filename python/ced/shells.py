@@ -5,6 +5,7 @@ from .handlers import RpcHandler
 
 
 class Shell(object):
+    prompt = None
 
     def __init__(self, handler: RpcHandler, commands=None):
         self.handler = handler
@@ -38,7 +39,15 @@ class CommandShell(Shell):
             self.handler.call(*args)
 
     def cmd__dump(self, *args):
-        print(self.handler.state.__dict__)
+        state = self.handler.state
+        for name, buf in state.buffer_list.items():
+            flag = ""
+            if name == state.buffer_current:
+                flag = " (current)"
+            print(f"> {name}{flag}")
+            print("----")
+            print(buf['content'], end="")
+            print("----")
 
     def cmd__print(self, *args):
         state = self.handler.state
@@ -49,6 +58,7 @@ class CommandShell(Shell):
 
 
 class InteractiveShell(CommandShell):
+    prompt = "? "
 
     def command_list(self):
         while True:
