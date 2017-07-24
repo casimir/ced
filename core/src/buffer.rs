@@ -123,7 +123,7 @@ impl Buffer {
 impl ToString for Buffer {
     fn to_string(&self) -> String {
         let mut content = self.lines.join("\n").to_owned();
-        if content.chars().last() != Some('\n') {
+        if !content.is_empty() && content.chars().last() != Some('\n') {
             content.push('\n');
         }
         content
