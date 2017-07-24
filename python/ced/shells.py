@@ -5,7 +5,6 @@ from .handlers import RpcHandler
 
 
 class Shell(object):
-    is_interactive = False
 
     def __init__(self, handler: RpcHandler, commands=None):
         self.handler = handler
@@ -20,27 +19,6 @@ class Shell(object):
 
 
 class CommandShell(Shell):
-    is_interactive = True
-    COMMANDS = {
-        'buffer_delete': {
-            'argc': 1
-        },
-        'buffer_list': {
-            'argc': 0
-        },
-        'buffer_select': {
-            'argc': 1
-        },
-        'edit': {
-            'argc': 1
-        },
-        '_dump': {
-            'argc': 0
-        },
-        '_print': {
-            'argc': 1
-        },
-    }
 
     def __init__(self, *args, **kwargs):
         super(CommandShell, self).__init__(*args, **kwargs)
@@ -50,13 +28,8 @@ class CommandShell(Shell):
         parts = list(shlex.shlex(command, punctuation_chars=True))
         if len(parts) == 0:
             return
-        if parts[0] in self.COMMANDS:
-            cmd_spec = self.COMMANDS[parts[0]]
-            parts = parts[:cmd_spec['argc'] + 1]
-            ex_fn = getattr(self, f"cmd_{parts[0]}", self.cmd_generic)
-            ex_fn(*parts)
-        else:
-            print(f"shell error: {parts[0]}", file=sys.stderr)
+        ex_fn = getattr(self, f"cmd_{parts[0]}", self.cmd_generic)
+        ex_fn(*parts)
 
     def cmd_generic(self, *args):
         if len(args) == 1:
