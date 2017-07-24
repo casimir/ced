@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate clap;
 extern crate jsonrpc_lite;
-extern crate serde;
 extern crate serde_json;
 
 mod buffer;
@@ -11,9 +10,8 @@ use std::ops::{IndexMut, Index};
 use std::path::PathBuf;
 
 use clap::{Arg, App};
-use jsonrpc_lite::{JsonRPC, Params, Error};
+use jsonrpc_lite::{JsonRpc, Params, Error};
 use serde_json::value::{Map, Value};
-use serde_json::value::ToJson;
 
 use buffer::{find_shortest_name, Buffer, BufferSource};
 
@@ -52,12 +50,12 @@ impl Editor {
     }
 
     fn delete_buffer(&mut self, idx: usize) {
-        if idx != 0 && idx >= self.buffer_selected_idx {
-            self.buffer_selected_idx -= 1;
-        }
         self.buffer_list.remove(idx);
         if self.buffer_list.is_empty() {
             self.open_scratch("*scratch*");
+        }
+        if self.buffer_selected_idx != 0 {
+            self.buffer_selected_idx -= 1;
         }
     }
 
@@ -96,8 +94,8 @@ impl Editor {
         eprintln!("{}", content);
     }
 
-    fn send_message(&self, message: &JsonRPC) {
-        let json = message.to_json().unwrap();
+    fn send_message(&self, message: &JsonRpc) {
+        let json = serde_json::to_value(message).unwrap();
         let payload = serde_json::to_string(&json).unwrap();
         println!("{}", payload);
     }
@@ -119,12 +117,18 @@ impl Editor {
             String::from("buffer_current"),
             Value::from(buffer_current_name),
         );
-        let message = JsonRPC::notification_with_params("init", &Params::Map(params));
+        let message = JsonRpc::notification_with_params("init", params);
         self.send_message(&message);
     }
 
+    fn send_buffer_changed(&self) {
+        let params = self.get_buffer_value(self.buffer_selected_idx);
+        let message = JsonRpc::notification_with_params("buffer_changed", params);
+        self.send_message(&message)
+    }
+
     fn handle(&mut self, line: &str) {
-        for message in JsonRPC::parse(line) {
+        for message in JsonRpc::parse(line) {
             let to_write = match message.get_method() {
                 Some("edit") => self.handle_edit(&message),
                 Some("buffer_delete") => self.handle_delete_buffer(&message),
@@ -134,14 +138,14 @@ impl Editor {
                     let dm = format!("unknown command: {:?}\n", message);
                     self.append_debug(&dm);
                     let req_id = message.get_id().unwrap();
-                    JsonRPC::error(&req_id, &Error::method_not_found())
+                    JsonRpc::error(req_id, Error::method_not_found())
                 }
             };
             self.send_message(&to_write);
         }
     }
 
-    fn handle_edit(&mut self, message: &JsonRPC) -> JsonRPC {
+    fn handle_edit(&mut self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
         let file_path = match message.get_params().unwrap() {
             Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -154,20 +158,20 @@ impl Editor {
             Some(idx) => self.buffer_selected_idx = idx,
             None => self.open_file(path),
         };
-        JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
+        JsonRpc::success(req_id, &self.get_buffer_value(self.buffer_selected_idx))
     }
 
-    fn handle_list_buffer(&self, message: &JsonRPC) -> JsonRPC {
+    fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
         let params = self.buffer_list
             .iter()
             .enumerate()
             .map(|(i, _)| self.get_buffer_value(i))
             .collect::<Vec<Value>>();
-        JsonRPC::success(&req_id, &Value::from(params))
+        JsonRpc::success(req_id, &Value::from(params))
     }
 
-    fn handle_select_buffer(&mut self, message: &JsonRPC) -> JsonRPC {
+    fn handle_select_buffer(&mut self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
         let buffer_name = match message.get_params().unwrap() {
             Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -178,18 +182,18 @@ impl Editor {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.buffer_selected_idx = idx;
-                JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
+                JsonRpc::success(req_id, &self.get_buffer_value(self.buffer_selected_idx))
             }
             None => {
                 let mut error = Error::invalid_params();
                 let details = format!("buffer '{}' does not exist", buffer_name);
                 error.data = Some(Value::from(details.to_string()));
-                JsonRPC::error(&req_id, &error)
+                JsonRpc::error(req_id, error)
             }
         }
     }
 
-    fn handle_delete_buffer(&mut self, message: &JsonRPC) -> JsonRPC {
+    fn handle_delete_buffer(&mut self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
         let buffer_name = match message.get_params().unwrap() {
             Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -200,13 +204,16 @@ impl Editor {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.delete_buffer(idx);
-                JsonRPC::success(&req_id, &self.get_buffer_value(self.buffer_selected_idx))
+                self.send_buffer_changed();
+                let mut params : Map<String, Value> = Map::new();
+                params.insert(String::from("buffer_deleted"), Value::from(buffer_name));
+                JsonRpc::success(req_id, &Value::from(params))
             }
             None => {
                 let mut error = Error::invalid_params();
                 let details = format!("buffer '{}' does not exist", buffer_name);
                 error.data = Some(Value::from(details.to_string()));
-                JsonRPC::error(&req_id, &error)
+                JsonRpc::error(req_id, error)
             }
         }
     }

@@ -66,6 +66,11 @@ class RpcHandler(object):
             self.state.buffer_list[buf['name']] = buf
         self.state.buffer_current = response.params['buffer_current']
 
+    def handle_buffer_changed(self, response: Response):
+        buf = response.params
+        self.state.buffer_current = buf['name']
+        self.state.buffer_list[buf['name']] = buf
+
     def handle_buffer_list(self, response: Response):
         for buf in response.result:
             self.state.buffer_list[buf['name']] = buf
@@ -74,6 +79,11 @@ class RpcHandler(object):
         buf = response.result
         self.state.buffer_current = buf['name']
         self.state.buffer_list[buf['name']] = buf
+
+    def handle_buffer_delete(self, response: Response):
+        deleted = response.result['buffer_deleted']
+        if deleted in self.state.buffer_list:
+            del self.state.buffer_list[deleted]
 
     def handle_edit(self, response: Response):
         self.handle_buffer_select(response)
