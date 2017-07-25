@@ -5,6 +5,7 @@ extern crate serde_json;
 
 mod buffer;
 
+use std::collections::BTreeMap;
 use std::io::{self, BufRead};
 use std::ops::{IndexMut, Index};
 use std::path::PathBuf;
@@ -15,17 +16,94 @@ use serde_json::value::{Map, Value};
 
 use buffer::{find_shortest_name, Buffer, BufferSource};
 
-struct Editor {
+type CommandHandler = fn(&mut Editor, &JsonRpc) -> JsonRpc;
+
+#[derive(Copy)]
+struct Command<'a> {
+    name: &'a str,
+    help: &'a str,
+    exec: CommandHandler,
+}
+
+impl<'a> Clone for Command<'a> {
+    fn clone(&self) -> Self {
+        Command {
+            name: self.name.clone(),
+            help: self.help.clone(),
+            exec: self.exec,
+        }
+    }
+}
+
+fn cmd_command_list(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+    let req_id = message.get_id().unwrap();
+    let mut result = Map::new();
+    for (name, cmd) in &editor.commands {
+        result.insert(String::from(*name), Value::from(cmd.help));
+    }
+    JsonRpc::success(req_id, &Value::from(result))
+}
+
+fn cmd_edit(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+    editor.handle_edit(message)
+}
+
+fn cmd_buffer_list(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+    editor.handle_list_buffer(message)
+}
+
+fn cmd_buffer_select(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+    editor.handle_select_buffer(message)
+}
+
+fn cmd_buffer_delete(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+    editor.handle_delete_buffer(message)
+}
+
+static COMMAND_MAP: [Command; 5] = [
+    Command {
+        name: "command-list",
+        help: "list available commands",
+        exec: cmd_command_list,
+    },
+    Command {
+        name: "edit",
+        help: "edit a file, reload it from the disk if needed",
+        exec: cmd_edit,
+    },
+    Command {
+        name: "buffer-list",
+        help: "list open buffers (with content)",
+        exec: cmd_buffer_list,
+    },
+    Command {
+        name: "buffer-select",
+        help: "select a buffer by its name",
+        exec: cmd_buffer_select,
+    },
+    Command {
+        name: "buffer-delete",
+        help: "delete a buffer by its name",
+        exec: cmd_buffer_delete,
+    },
+];
+
+struct Editor<'a> {
+    commands: BTreeMap<&'a str, Command<'a>>,
     buffer_list: Vec<Buffer>,
     buffer_selected_idx: usize,
 }
 
-impl Editor {
+impl<'a> Editor<'a> {
     fn new(filenames: Vec<&str>) -> Editor {
         let mut editor = Editor {
+            commands: BTreeMap::new(),
             buffer_list: Vec::new(),
             buffer_selected_idx: 0,
         };
+        for cmd in &COMMAND_MAP {
+            editor.commands.insert(cmd.name, *cmd);
+        }
         editor.open_scratch("*debug*");
         if filenames.is_empty() {
             editor.open_scratch("*scratch*");
@@ -130,10 +208,15 @@ impl Editor {
     fn handle(&mut self, line: &str) {
         for message in JsonRpc::parse(line) {
             let to_write = match message.get_method() {
-                Some("edit") => self.handle_edit(&message),
-                Some("buffer_delete") => self.handle_delete_buffer(&message),
-                Some("buffer_list") => self.handle_list_buffer(&message),
-                Some("buffer_select") => self.handle_select_buffer(&message),
+                Some(name) => {
+                    match self.commands.clone().get(name) {
+                        Some(cmd) => (cmd.exec)(self, &message),
+                        None => {
+                            let req_id = message.get_id().unwrap();
+                            JsonRpc::error(req_id, Error::method_not_found())
+                        }
+                    }
+                }
                 _ => {
                     let dm = format!("unknown command: {:?}\n", message);
                     self.append_debug(&dm);
@@ -158,6 +241,10 @@ impl Editor {
             Some(idx) => self.buffer_selected_idx = idx,
             None => self.open_file(path),
         };
+        {
+            let mut curbuf = &mut self.buffer_list[self.buffer_selected_idx];
+            curbuf.load_from_disk(false);
+        }
         JsonRpc::success(req_id, &self.get_buffer_value(self.buffer_selected_idx))
     }
 
@@ -182,6 +269,11 @@ impl Editor {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.buffer_selected_idx = idx;
+                let mut curbuf = self.buffer_list
+                    .get_mut(self.buffer_selected_idx)
+                    .unwrap()
+                    .clone();
+                curbuf.load_from_disk(false);
                 JsonRpc::success(req_id, &self.get_buffer_value(self.buffer_selected_idx))
             }
             None => {
@@ -205,7 +297,7 @@ impl Editor {
             Some(idx) => {
                 self.delete_buffer(idx);
                 self.send_buffer_changed();
-                let mut params : Map<String, Value> = Map::new();
+                let mut params: Map<String, Value> = Map::new();
                 params.insert(String::from("buffer_deleted"), Value::from(buffer_name));
                 JsonRpc::success(req_id, &Value::from(params))
             }

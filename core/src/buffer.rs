@@ -55,6 +55,7 @@ pub fn find_shortest_name(sources: &Vec<&BufferSource>, idx: usize) -> String {
     }
 }
 
+#[derive(Clone)]
 pub struct Buffer {
     pub source: BufferSource,
     lines: Vec<String>,
@@ -80,7 +81,7 @@ impl Buffer {
             lines: Vec::new(),
             last_sync: None,
         };
-        buffer.load_from_disk();
+        buffer.load_from_disk(true);
         buffer
     }
 
@@ -105,13 +106,15 @@ impl Buffer {
         true
     }
 
-    pub fn load_from_disk(&mut self) {
-        if let BufferSource::File(ref path) = self.source {
-            let mut file = File::open(&path).unwrap();
-            let mut content = String::new();
-            file.read_to_string(&mut content);
-            self.lines = content.lines().map(ToOwned::to_owned).collect();
-            self.last_sync = Some(SystemTime::now());
+    pub fn load_from_disk(&mut self, force: bool) {
+        if force || !self.is_synced() {
+            if let BufferSource::File(ref path) = self.source {
+                let mut file = File::open(&path).unwrap();
+                let mut content = String::new();
+                file.read_to_string(&mut content);
+                self.lines = content.lines().map(ToOwned::to_owned).collect();
+                self.last_sync = Some(SystemTime::now());
+            }
         }
     }
 

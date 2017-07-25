@@ -44,9 +44,9 @@ class RpcHandler(object):
         print("->", response)
         method = ""
         if response.is_notification():
-            method = response.method
+            method = response.method.replace("-", "_")
         elif response.is_success():
-            method = self.pending.method
+            method = self.pending.method.replace("-", "_")
         else:
             method = 'error'
         try:
