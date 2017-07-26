@@ -5,6 +5,9 @@ environment:
   - TARGET: x86_64-pc-windows-gnu
   - TARGET: i686-pc-windows-gnu
   RUST_BACKTRACE: full
+  PYTHON: "C:\\Python36"
+  PYTHON_VERSION: "3.6.x"
+  PYTHON_ARCH: "64"
 install:
   - curl -sSf -o rustup-init.exe https://win.rustup.rs/
   - rustup-init.exe -y --default-host %TARGET%
@@ -16,3 +19,5 @@ test_script:
   - ps: cd core
   - cargo build
   - cargo test
+  - python --version
+  - python -m pytest -v ..
