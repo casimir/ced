@@ -45,7 +45,7 @@ def test_connect_params():
 def test_connect_open():
     fpath = os.path.join(CWD, "setup.cfg")
     fcontent = open(fpath).read()
-    state = script([f"edit {fpath}"])
+    state = script([f"edit \"{fpath}\""])
 
     assert ["*debug*", "*scratch*", "setup.cfg"] == list(state.buffer_list.keys())
     assert state.buffer_current == "setup.cfg"
@@ -55,7 +55,7 @@ def test_connect_open():
 def test_connect_delete():
     fpath = os.path.join(CWD, "setup.cfg")
     fcontent = open(fpath).read()
-    state = script([f"edit {fpath}", "buffer-delete *scratch*"])
+    state = script([f"edit \"{fpath}\"", "buffer-delete *scratch*"])
 
     assert ["*debug*", "setup.cfg"] == list(state.buffer_list.keys())
     assert state.buffer_current == "setup.cfg"
@@ -65,7 +65,7 @@ def test_connect_delete():
 def test_connect_delete_first():
     fpath = os.path.join(CWD, "setup.cfg")
     fcontent = open(fpath).read()
-    state = script([f"edit {fpath}", "buffer-delete *debug*"])
+    state = script([f"edit \"{fpath}\"", "buffer-delete *debug*"])
 
     assert ["*scratch*", "setup.cfg"] == list(state.buffer_list.keys())
     assert state.buffer_current == "setup.cfg"
@@ -74,7 +74,7 @@ def test_connect_delete_first():
 
 def test_connect_delete_last():
     fpath = os.path.join(CWD, "setup.cfg")
-    state = script([f"edit {fpath}", "buffer-delete setup.cfg"])
+    state = script([f"edit \"{fpath}\"", "buffer-delete setup.cfg"])
 
     assert ["*debug*", "*scratch*"] == list(state.buffer_list.keys())
     assert state.buffer_current == "*scratch*"

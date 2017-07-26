@@ -26,7 +26,9 @@ class CommandShell(Shell):
         self.current_buffer = None
 
     def execute(self, command):
-        parts = list(shlex.shlex(command, punctuation_chars=True))
+        lex = shlex.shlex(command)
+        lex.whitespace_split = True
+        parts = [x.strip('"') for x in lex]
         if len(parts) == 0:
             return
         ex_fn = getattr(self, f"cmd_{parts[0]}", self.cmd_generic)
