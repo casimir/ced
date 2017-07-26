@@ -14,10 +14,11 @@ install:
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - rustc -vV
   - cargo -vV
+  - python -m pip install pytest
+  - python --version
 build: false
 test_script:
   - ps: cd core
   - cargo build
   - cargo test
-  - python --version
   - python -m pytest -v ..
