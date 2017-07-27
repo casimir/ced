@@ -6,15 +6,10 @@ osx_image: xcode8.3
 rust:
   - stable
   - beta
-  - nightly
 
 os:
   - linux
   - osx
-
-matrix:
-  allow_failures:
-    - rust: nightly
 
 cache: cargo
 
@@ -30,6 +25,7 @@ before_install:
   - if [ $TRAVIS_OS_NAME = osx ]; then python3 -m venv .venv; else pyvenv-3.6 .venv; fi
   - source .venv/bin/activate
   - pip install pytest
+  - pytest --version
 
 script:
   - cd $TRAVIS_BUILD_DIR/core

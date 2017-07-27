@@ -1,22 +1,29 @@
 environment:
   matrix:
-  - TARGET: x86_64-pc-windows-msvc
-  - TARGET: i686-pc-windows-msvc
-  - TARGET: x86_64-pc-windows-gnu
-  - TARGET: i686-pc-windows-gnu
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: stable
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: stable
+    - TARGET: x86_64-pc-windows-gnu
+      CHANNEL: stable
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: beta
+    - TARGET: x86_64-pc-windows-gnu
+      CHANNEL: beta
   RUST_BACKTRACE: full
   PYTHON: "C:\\Python36-x64"
   PYTHON_VERSION: "3.6.x"
   PYTHON_ARCH: "64"
 install:
   - curl -sSf -o rustup-init.exe https://win.rustup.rs/
-  - rustup-init.exe -y --default-host %TARGET%
+  - rustup-init.exe -y --default-host %TARGET% --default-toolchain %CHANNEL%
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - rustc -vV
   - cargo -vV
   - SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%
-  - python -m pip install pytest
   - python --version
+  - python -m pip install pytest
+  - pytest --version
 build: false
 test_script:
   - ps: cd core
