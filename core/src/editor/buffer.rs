@@ -10,9 +10,7 @@ fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &Vec<PathBuf>) -> String 
     let tail = path.file_name().unwrap();
     let matches = path_set
         .iter()
-        .filter(|x| {
-            x.file_name().map_or(false, |x| x.to_str().unwrap() == tail)
-        })
+        .filter(|x| x.file_name().map_or(false, |x| x.to_str().unwrap() == tail))
         .count();
     let mut new_acc = tail.to_str().unwrap().to_owned();
     if !acc.is_empty() {

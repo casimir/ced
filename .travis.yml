@@ -30,6 +30,6 @@ before_install:
 script:
   - cd $TRAVIS_BUILD_DIR/core
   - cargo build
-  - cargo test
+  - cargo test -v
   - cd $TRAVIS_BUILD_DIR
   - pytest -v

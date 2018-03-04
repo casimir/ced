@@ -28,5 +28,5 @@ build: false
 test_script:
   - ps: cd core
   - cargo build
-  - cargo test
+  - cargo test -v
   - python -m pytest -v ..

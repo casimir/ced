@@ -7,7 +7,7 @@ mod editor;
 
 use std::io::{self, BufRead};
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 
 use editor::Editor;
 

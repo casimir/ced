@@ -2,7 +2,7 @@ pub mod buffer;
 pub mod cmd;
 
 use std::collections::BTreeMap;
-use std::ops::{IndexMut, Index};
+use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 
 use jsonrpc_lite::{Error, JsonRpc, Params};
@@ -135,15 +135,13 @@ impl<'a> Editor<'a> {
     pub fn handle(&mut self, line: &str) {
         for message in JsonRpc::parse(line) {
             let to_write = match message.get_method() {
-                Some(name) => {
-                    match self.commands.clone().get(name) {
-                        Some(cmd) => (cmd.exec)(self, &message),
-                        None => {
-                            let req_id = message.get_id().unwrap();
-                            JsonRpc::error(req_id, Error::method_not_found())
-                        }
+                Some(name) => match self.commands.clone().get(name) {
+                    Some(cmd) => (cmd.exec)(self, &message),
+                    None => {
+                        let req_id = message.get_id().unwrap();
+                        JsonRpc::error(req_id, Error::method_not_found())
                     }
-                }
+                },
                 _ => {
                     let dm = format!("unknown command: {:?}\n", message);
                     self.append_debug(&dm);
