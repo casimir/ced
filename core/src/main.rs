@@ -9,47 +9,16 @@ extern crate serde_json;
 
 mod editor;
 mod server;
+mod standalone;
 
 use std::env;
-use std::io::{self, Write};
+use std::io;
 use std::process::{Command, Stdio};
 
 use clap::{App, Arg};
-use jsonrpc_lite::JsonRpc;
 
-use editor::Editor;
 use server::{Server, ServerMode, SessionManager};
-
-fn serialize_message(message: &JsonRpc) -> String {
-    let json = serde_json::to_value(message).unwrap();
-    serde_json::to_string(&json).unwrap()
-}
-
-fn start_standalone(filenames: Vec<&str>) {
-    let mut editor = Editor::new(filenames);
-    let (response, _) = editor.add_client(1).unwrap();
-    writeln!(io::stdout(), "{}", serialize_message(&response));
-
-    let mut buf = String::new();
-    while let Ok(n) = io::stdin().read_line(&mut buf) {
-        if n == 0 {
-            break;
-        }
-        match editor.handle(1, &buf) {
-            Ok((response, broadcast)) => {
-                if let Some(msg) = broadcast {
-                    println!("{}", serialize_message(&msg));
-                }
-                writeln!(io::stdout(), "{}", serialize_message(&response));
-            }
-            Err(e) => {
-                writeln!(io::stderr(), "{}: {:?}", e, buf);
-            }
-        }
-        buf.clear();
-    }
-    let _ = editor.remove_client(1);
-}
+use standalone::start_standalone;
 
 fn main() {
     let matches = App::new("ced")
@@ -110,7 +79,13 @@ fn main() {
         };
 
         if matches.is_present("standalone") {
-            start_standalone(filenames);
+            let stdin = io::stdin();
+            start_standalone(
+                &mut stdin.lock(),
+                &mut io::stdout(),
+                &mut io::stderr(),
+                filenames,
+            );
         } else if matches.is_present("daemon") {
             let args: Vec<String> = env::args()
                 .filter(|a| a != "-d" && a != "--daemon")
