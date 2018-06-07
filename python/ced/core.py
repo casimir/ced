@@ -2,15 +2,15 @@ import os
 import subprocess
 import sys
 
-from .handlers import RpcHandler
-from .shells import Shell
+from ced.handlers import RpcHandler
+from ced.shells import Shell
 
 
 class CoreConnection(object):
 
     def __init__(self, handler: RpcHandler, shell: Shell, argv=None):
         self.bin = os.getenv("CED_BIN_PATH", "ced-core")
-        self.command = [self.bin]
+        self.command = [self.bin, "--standalone"]
         if argv is not None:
             self.command += argv
         self.handler = handler

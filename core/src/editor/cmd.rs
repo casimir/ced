@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::Editor;
 
-type CommandHandler = fn(&mut Editor, &JsonRpc) -> JsonRpc;
+type CommandHandler = fn(&mut Editor, &JsonRpc) -> (JsonRpc, Option<JsonRpc>);
 
 #[derive(Copy)]
 pub struct Command<'a> {
@@ -50,27 +50,27 @@ pub static COMMAND_MAP: [Command; 5] = [
     },
 ];
 
-pub fn command_list(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+pub fn command_list(editor: &mut Editor, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
     let req_id = message.get_id().unwrap();
     let mut result = Map::new();
     for (name, cmd) in &editor.commands {
         result.insert(String::from(*name), Value::from(cmd.help));
     }
-    JsonRpc::success(req_id, &Value::from(result))
+    (JsonRpc::success(req_id, &Value::from(result)), None)
 }
 
-pub fn edit(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
-    editor.handle_edit(message)
+pub fn edit(editor: &mut Editor, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
+    (editor.handle_edit(message), None)
 }
 
-pub fn buffer_list(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
-    editor.handle_list_buffer(message)
+pub fn buffer_list(editor: &mut Editor, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
+    (editor.handle_list_buffer(message), None)
 }
 
-pub fn buffer_select(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
-    editor.handle_select_buffer(message)
+pub fn buffer_select(editor: &mut Editor, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
+    (editor.handle_select_buffer(message), None)
 }
 
-pub fn buffer_delete(editor: &mut Editor, message: &JsonRpc) -> JsonRpc {
+pub fn buffer_delete(editor: &mut Editor, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
     editor.handle_delete_buffer(message)
 }
