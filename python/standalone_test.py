@@ -4,15 +4,15 @@ from ced.core import CoreConnection
 from ced.handlers import RpcHandler, State
 from ced.shells import CommandShell, Shell
 
+CWD = os.path.dirname(__file__)
 if 'CED_BIN_PATH' not in os.environ:
-    CWD = os.path.dirname(__file__)
-    os.environ['CED_BIN_PATH'] = os.path.join(CWD, "../core/target/debug/ced-core")
+    os.environ['CED_BIN_PATH'] = os.path.join(CWD, "../core/target/debug/ced")
 
 
 def script(commands) -> State:
     handler = RpcHandler()
     shell = CommandShell(handler, commands=commands)
-    conn = CoreConnection(handler, shell)
+    conn = CoreConnection(handler, shell, argv=["--standalone"])
     conn.start()
     return handler.state
 
@@ -20,7 +20,7 @@ def script(commands) -> State:
 def test_connect():
     handler = RpcHandler()
     shell = Shell(handler)
-    conn = CoreConnection(handler, shell)
+    conn = CoreConnection(handler, shell, argv=["--standalone"])
     conn.start()
     state = handler.state
 
@@ -33,7 +33,7 @@ def test_connect_params():
     fcontent = open(fpath).read()
     handler = RpcHandler()
     shell = Shell(handler)
-    conn = CoreConnection(handler, shell, [fpath])
+    conn = CoreConnection(handler, shell, ["--standalone", fpath])
     conn.start()
     state = handler.state
 

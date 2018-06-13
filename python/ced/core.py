@@ -9,8 +9,8 @@ from ced.shells import Shell
 class CoreConnection(object):
 
     def __init__(self, handler: RpcHandler, shell: Shell, argv=None):
-        self.bin = os.getenv("CED_BIN_PATH", "ced-core")
-        self.command = [self.bin, "--standalone"]
+        self.bin = os.getenv("CED_BIN_PATH", "ced")
+        self.command = [self.bin]
         if argv is not None:
             self.command += argv
         self.handler = handler

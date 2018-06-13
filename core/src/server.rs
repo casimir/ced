@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, BufReader, LineWriter, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -15,6 +15,7 @@ use mio_uds::UnixListener;
 use serde_json;
 
 use editor::Editor;
+use remote::{Error, Result};
 
 #[derive(Debug)]
 pub enum ServerMode {
@@ -42,7 +43,7 @@ impl SessionManager {
         }
     }
 
-    fn session_full_path(&self, name: &str) -> PathBuf {
+    pub(crate) fn session_full_path(&self, name: &str) -> PathBuf {
         let mut session_path = self.root.clone();
         session_path.push(name);
         session_path
@@ -135,12 +136,6 @@ impl<'a> Connection<'a> {
     }
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-    }
-}
-
 pub struct Server {
     pub mode: ServerMode,
     sessions: SessionManager,
@@ -174,23 +169,20 @@ impl Server {
         }
     }
 
-    fn write_message(
-        &self,
-        conn: &mut Connection,
-        message: &JsonRpc,
-    ) -> Result<(), serde_json::Error> {
+    fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<()> {
         let json = serde_json::to_value(message)?;
-        let writer = LineWriter::new(conn.handle.as_mut());
-        serde_json::to_writer(writer, &json)
+        let payload = serde_json::to_string(&json)? + "\n";
+        conn.handle.write(payload.as_bytes())?;
+        Ok(())
     }
 
-    pub fn run(&self, filenames: Vec<&str>) -> Result<(), Error> {
+    pub fn run(&self, filenames: Vec<&str>) -> Result<()> {
         let mut editor = Editor::new(filenames);
         let listener = self.make_listener();
         let poll = Poll::new().unwrap();
         let mut next_client_id = 1;
         let connections = Rc::new(RefCell::new(HashMap::new()));
-        let mut events = Events::with_capacity(128);
+        let mut events = Events::with_capacity(1024);
 
         poll.register(
             listener.inner(),
@@ -200,7 +192,6 @@ impl Server {
         ).unwrap();
         loop {
             poll.poll(&mut events, None).unwrap();
-
             for event in events.iter() {
                 match event.token() {
                     Token(0) => {
@@ -221,9 +212,7 @@ impl Server {
                                 connections.borrow_mut().insert(next_client_id, conn);
                                 let mut conns = connections.borrow_mut();
                                 if let Some(msg) = &broadcast {
-                                    let errors: Vec<
-                                        serde_json::Error,
-                                    > = conns
+                                    let errors: Vec<Error> = conns
                                         .iter_mut()
                                         .map(|(_, c)| self.write_message(c, msg))
                                         .filter_map(Result::err)
@@ -245,8 +234,6 @@ impl Server {
                     }
                     Token(client_id) => {
                         let mut line = String::new();
-                        // need to get stream in a seperate scope in case client closes the connection
-                        // in which case we want to drop it
                         {
                             {
                                 let mut conns = connections.borrow_mut();
@@ -274,7 +261,7 @@ impl Server {
                                         let mut conns = connections.borrow_mut();
                                         if let Some(msg) = &broadcast {
                                             let errors: Vec<
-                                        serde_json::Error,
+                                        Error,
                                     > = conns
                                         .iter_mut()
                                         .map(|(_, c)| self.write_message(c, msg))
