@@ -5,8 +5,18 @@ authors = ["Martin Chaine <martin@casimir.me>"]
 
 [dependencies]
 clap = "2.31"
+env_logger = "0.5"
 jsonrpc-lite = "0.5"
+lazy_static = "1.0"
+log = "0.4"
 mio = "0.6"
-mio-uds = "0.6"
 quick-error = "1.2"
+regex = "0.2"
 serde_json = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+mio-uds = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+mio-named-pipes = "0.1"
+winapi = "0.3"

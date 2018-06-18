@@ -1,185 +1,47 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::env;
 use std::fs;
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::io::ErrorKind::WouldBlock;
+use std::io::{BufRead, BufReader, Write};
 use std::rc::Rc;
 
 use jsonrpc_lite::JsonRpc;
-use mio::tcp::TcpListener;
-use mio::Evented;
 use mio::{Events, Poll, PollOpt, Ready, Token};
-#[cfg(unix)]
-use mio_uds::UnixListener;
 use serde_json;
 
 use editor::Editor;
-use remote::{Error, Result};
-
-#[derive(Debug)]
-pub enum ServerMode {
-    Tcp(String),
-    UnixSocket(String),
-}
-
-pub struct SessionManager {
-    root: PathBuf,
-}
-
-impl SessionManager {
-    pub fn new() -> SessionManager {
-        let mut app_dir = env::temp_dir();
-        app_dir.push("ced");
-        app_dir.push(env::var("LOGNAME").unwrap_or("anon".into()));
-        SessionManager { root: app_dir }
-    }
-
-    pub fn ensure_root_dir(&self) -> io::Result<()> {
-        if !&self.root.exists() {
-            fs::create_dir_all(&self.root)
-        } else {
-            Ok(())
-        }
-    }
-
-    pub(crate) fn session_full_path(&self, name: &str) -> PathBuf {
-        let mut session_path = self.root.clone();
-        session_path.push(name);
-        session_path
-    }
-
-    pub fn exists(&self, name: &str) -> bool {
-        let session_path = self.session_full_path(name);
-        session_path.exists()
-    }
-
-    pub fn list(&self) -> Vec<String> {
-        match fs::read_dir(&self.root) {
-            Ok(entries) => entries
-                .filter_map(|entry| {
-                    entry.ok().and_then(|e| {
-                        e.path()
-                            .file_name()
-                            .and_then(|n| n.to_str().map(|s| String::from(s)))
-                    })
-                })
-                .collect::<Vec<String>>(),
-            Err(_) => Vec::new(),
-        }
-    }
-
-    pub fn remove(&self, name: &str) -> io::Result<()> {
-        let session_path = self.session_full_path(name);
-        if session_path.exists() {
-            fs::remove_file(session_path)?;
-            if self.list().len() == 0 {
-                fs::remove_dir(&self.root)
-            } else {
-                Ok(())
-            }
-        } else {
-            Ok(())
-        }
-    }
-}
-
-trait Stream: Evented + Read + Write {}
-
-impl<T> Stream for T
-where
-    T: Evented + Read + Write,
-{
-}
-
-enum Listener {
-    Tcp(TcpListener),
-    #[cfg(unix)]
-    Unix(UnixListener),
-}
-
-impl Listener {
-    fn inner(&self) -> &Evented {
-        use self::Listener::*;
-        match self {
-            Tcp(inner) => inner,
-            #[cfg(unix)]
-            Unix(inner) => inner,
-        }
-    }
-
-    fn accept(&self) -> ::std::io::Result<Box<Stream>> {
-        use self::Listener::*;
-        match self {
-            Tcp(inner) => {
-                let (stream, _) = inner.accept()?;
-                Ok(Box::new(stream))
-            }
-            #[cfg(unix)]
-            Unix(inner) => {
-                let opt = inner.accept()?;
-                // None when no connection is waiting to be accepted
-                let (stream, _) = opt.unwrap();
-                Ok(Box::new(stream))
-            }
-        }
-    }
-}
+use remote::{ConnectionMode, Error, EventedStream, Listener, Result, Session};
 
 struct Connection<'a> {
-    handle: Box<Stream + 'a>,
+    handle: Box<EventedStream + 'a>,
 }
 
 impl<'a> Connection<'a> {
-    fn new(handle: Box<Stream>) -> Connection<'a> {
-        Connection { handle: handle }
+    fn new(handle: Box<EventedStream>) -> Connection<'a> {
+        Connection { handle }
     }
 }
 
 pub struct Server {
-    pub mode: ServerMode,
-    sessions: SessionManager,
+    session: Session,
 }
 
 impl Server {
-    pub fn new(mode: ServerMode) -> Server {
-        let server = Server {
-            mode: mode,
-            sessions: SessionManager::new(),
-        };
-        server
-    }
-
-    fn make_listener(&self) -> Listener {
-        match &self.mode {
-            ServerMode::Tcp(addr) => {
-                let sock_addr = addr.parse().unwrap();
-                Listener::Tcp(TcpListener::bind(&sock_addr).unwrap())
-            }
-            #[cfg(unix)]
-            ServerMode::UnixSocket(name) => {
-                self.sessions
-                    .ensure_root_dir()
-                    .expect("could not create the session directory");
-                let path = self.sessions.session_full_path(name);
-                Listener::Unix(UnixListener::bind(path).unwrap())
-            }
-            #[cfg(not(unix))]
-            _ => unimplemented!(),
-        }
+    pub fn new(session: Session) -> Server {
+        Server { session }
     }
 
     fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<()> {
         let json = serde_json::to_value(message)?;
         let payload = serde_json::to_string(&json)? + "\n";
-        conn.handle.write(payload.as_bytes())?;
+        conn.handle.write_all(payload.as_bytes())?;
         Ok(())
     }
 
     pub fn run(&self, filenames: Vec<&str>) -> Result<()> {
         let mut editor = Editor::new(filenames);
-        let listener = self.make_listener();
-        let poll = Poll::new().unwrap();
+        let listener = Listener::new(&self.session)?;
+        let poll = Poll::new()?;
         let mut next_client_id = 1;
         let connections = Rc::new(RefCell::new(HashMap::new()));
         let mut events = Events::with_capacity(1024);
@@ -195,9 +57,16 @@ impl Server {
             for event in events.iter() {
                 match event.token() {
                     Token(0) => {
-                        let stream = listener
-                            .accept()
-                            .expect("error while accepting a connection");
+                        let stream = match listener.accept() {
+                            Ok(s) => s,
+                            Err(e) => {
+                                if e.kind() == WouldBlock {
+                                    continue;
+                                } else {
+                                    panic!("error while accepting a connection: {}", e)
+                                }
+                            }
+                        };
                         poll.register(
                             stream.as_ref(),
                             Token(next_client_id),
@@ -205,7 +74,7 @@ impl Server {
                             PollOpt::edge(),
                         ).unwrap();
 
-                        println!("new connection (client {})", next_client_id);
+                        info!("client {} connected", next_client_id);
                         let conn = Connection::new(stream);
                         match editor.add_client(next_client_id) {
                             Ok((message, broadcast)) => {
@@ -228,11 +97,12 @@ impl Server {
                             }
                             Err(e) => {
                                 poll.deregister(conn.handle.as_ref()).unwrap();
-                                eprintln!("could not connect client: {}", e);
+                                error!("could not connect client: {}", e);
                             }
                         }
                     }
                     Token(client_id) => {
+                        trace!("read event for {}", client_id);
                         let mut line = String::new();
                         {
                             {
@@ -240,18 +110,11 @@ impl Server {
                                 let mut conn = conns.get_mut(&client_id).unwrap();
                                 let mut stream = conn.handle.as_mut();
                                 let mut reader = BufReader::new(stream);
-                                match reader.read_line(&mut line) {
-                                    Ok(m) => m,
-                                    Err(e) => {
-                                        if e.kind() == ::std::io::ErrorKind::WouldBlock {
-                                            // avoid false positive
-                                            continue;
-                                        } else {
-                                            panic!(
-                                                "got an error when reading from connection: {}",
-                                                e
-                                            )
-                                        }
+                                if let Err(e) = reader.read_line(&mut line) {
+                                    if e.kind() == WouldBlock {
+                                        continue;
+                                    } else {
+                                        error!("error while reading from connection: {:?}", e);
                                     }
                                 };
                             }
@@ -275,27 +138,29 @@ impl Server {
                                             client_id
                                         ));
                                     }
-                                    Err(e) => eprintln!("{}: {:?}", e, line),
+                                    Err(e) => error!("{}: {:?}", e, line),
                                 }
                             }
                         }
                         if line.is_empty() {
-                            eprintln!("client closed connection");
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
                             poll.deregister(*&conn.handle.as_ref()).unwrap();
+                            info!("client {} disconnected", client_id);
                         }
                     }
                 }
             }
             if next_client_id > 0 && connections.borrow().len() == 0 {
-                println!("no more client, exiting...");
+                info!("no more client, exiting...");
                 break;
             }
         }
-        if let ServerMode::UnixSocket(name) = &self.mode {
-            self.sessions
-                .remove(&name)
-                .expect(&format!("could not remove session {}", name));
+        if let ConnectionMode::Socket(path) = &self.session.mode {
+            fs::remove_file(path).expect(&format!("could not clean session {}", self.session));
+            if Session::list().is_empty() {
+                fs::remove_dir(path.parent().unwrap())
+                    .unwrap_or_else(|e| warn!("could not clean session directory: {}", e));
+            }
         }
         Ok(())
     }

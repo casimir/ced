@@ -1,11 +1,24 @@
 #[macro_use]
 extern crate clap;
+extern crate env_logger;
 extern crate jsonrpc_lite;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate log;
 extern crate mio;
-extern crate mio_uds;
 #[macro_use]
 extern crate quick_error;
+extern crate regex;
 extern crate serde_json;
+
+#[cfg(unix)]
+extern crate mio_uds;
+
+#[cfg(windows)]
+extern crate mio_named_pipes;
+#[cfg(windows)]
+extern crate winapi;
 
 mod editor;
 mod remote;
@@ -14,32 +27,15 @@ mod standalone;
 
 use std::env;
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg};
 
-use remote::connect;
-use server::{Server, ServerMode, SessionManager};
+use remote::{connect, ConnectionMode, Session};
+use server::Server;
 use standalone::start_standalone;
-
-fn get_server_mode(matches: &ArgMatches) -> Option<ServerMode> {
-    if matches.is_present("PORT") {
-        let addr = format!("127.0.0.1:{}", matches.value_of("PORT").unwrap());
-        Some(ServerMode::Tcp(addr))
-    } else if matches.is_present("SESSION") {
-        let session_name = matches.value_of("SESSION").unwrap();
-        Some(ServerMode::UnixSocket(session_name.into()))
-    } else {
-        None
-    }
-}
-
-fn get_server_mode_or_default(matches: &ArgMatches) -> ServerMode {
-    let process_id = std::process::id().to_string();
-    get_server_mode(matches).unwrap_or(ServerMode::UnixSocket(process_id))
-}
 
 fn start_daemon_with_args(args: Vec<String>) {
     let prg = Command::new(&args[0])
@@ -49,25 +45,26 @@ fn start_daemon_with_args(args: Vec<String>) {
         .stderr(Stdio::null())
         .spawn()
         .expect("failed to start daemon");
-    eprintln!("server started with pid: {}", prg.id());
+    eprintln!("server started with pid {}", prg.id());
+    info!("server command: {:?}", args)
 }
 
 fn start_daemon() {
     let args = env::args()
         .map(|a| {
-            // TODO replace hidden argument by double fork
             if a == "-d" || a == "--daemon" {
                 "--server".into()
             } else {
                 a
             }
         })
-        .filter(|a| a != "-d" && a != "--daemon")
         .collect();
     start_daemon_with_args(args);
 }
 
 fn main() {
+    env_logger::init();
+
     let matches = App::new("ced")
         .about(crate_description!())
         .version(crate_version!())
@@ -86,20 +83,12 @@ fn main() {
                 .help("Sets session name"),
         )
         .arg(
-            Arg::with_name("PORT")
-                .short("p")
-                .long("port")
-                .takes_value(true)
-                .conflicts_with("SESSION")
-                .help("Sets server port (implies TCP mode)"),
-        )
-        .arg(
             Arg::with_name("daemon")
                 .short("d")
                 .long("daemon")
                 .help("Starts a server in headless mode"),
         )
-        .arg(Arg::with_name("server").long("server").hidden(true))
+        .arg(Arg::with_name("server").long("server").hidden(true)) // TODO replace hidden argument by double fork
         .arg(
             Arg::with_name("standalone")
                 .long("standalone")
@@ -114,11 +103,15 @@ fn main() {
         .get_matches();
 
     if matches.is_present("list") {
-        let sm = SessionManager::new();
-        for session_name in &sm.list() {
+        for session_name in Session::list() {
             println!("{}", session_name)
         }
     } else {
+        let session = Session::from_name(
+            matches
+                .value_of("SESSION")
+                .unwrap_or(&process::id().to_string()),
+        );
         let filenames = match matches.values_of("FILE") {
             Some(args) => args.collect(),
             None => Vec::new(),
@@ -135,34 +128,29 @@ fn main() {
         } else if matches.is_present("daemon") {
             start_daemon();
         } else if matches.is_present("server") {
-            let mode = get_server_mode_or_default(&matches);
-            let server = Server::new(mode);
-            eprintln!("starting server: {:?}", server.mode);
+            eprintln!("starting server: {0} {0:?}", &session.mode);
+            let server = Server::new(session);
             server.run(filenames).expect("failed to start server");
         } else {
-            let mode = get_server_mode_or_default(&matches);
-            match &mode {
-                #[cfg(unix)]
-                ServerMode::UnixSocket(name) => {
-                    if !SessionManager::new().exists(&name) {
-                        let mut args = vec![
-                            env::args().next().unwrap(),
-                            "--daemon".to_string(),
-                            "--session".to_string(),
-                            name.clone(),
-                        ];
-                        for filename in &filenames {
-                            args.push(filename.to_string());
-                        }
-                        start_daemon_with_args(args);
-                        // ensures the daemon process got time to create the socket
-                        thread::sleep(Duration::from_millis(100));
+            if let ConnectionMode::Socket(path) = &session.mode {
+                if !path.exists() {
+                    let mut args = vec![
+                        env::args().next().unwrap(),
+                        "--daemon".to_string(),
+                        "--session".to_string(),
+                        format!("{}", session.mode),
+                    ];
+                    for filename in &filenames {
+                        args.push(filename.to_string());
                     }
+                    start_daemon_with_args(args);
+                    // ensures the daemon process got time to create the socket
+                    thread::sleep(Duration::from_millis(100));
                 }
-                _ => {}
             }
             let stdin = io::stdin();
-            connect(&mut stdin.lock(), Box::new(io::stdout()), &mode);
+            connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
+                .expect("failed to connect");
         }
     }
 }
