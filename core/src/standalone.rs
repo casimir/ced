@@ -16,7 +16,7 @@ pub fn start_standalone(
     error: &mut Write,
     filenames: Vec<&str>,
 ) {
-    let mut editor = Editor::new(filenames);
+    let mut editor = Editor::new("", filenames);
     let (response, _) = editor.add_client(1).unwrap();
     writeln!(output, "{}", serialize_message(&response));
 

@@ -34,12 +34,13 @@ impl Server {
     fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<()> {
         let json = serde_json::to_value(message)?;
         let payload = serde_json::to_string(&json)? + "\n";
+        trace!("-> {:?}", payload);
         conn.handle.write_all(payload.as_bytes())?;
         Ok(())
     }
 
     pub fn run(&self, filenames: Vec<&str>) -> Result<()> {
-        let mut editor = Editor::new(filenames);
+        let mut editor = Editor::new(&format!("{}", self.session), filenames);
         let listener = Listener::new(&self.session)?;
         let poll = Poll::new()?;
         let mut next_client_id = 1;

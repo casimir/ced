@@ -28,15 +28,17 @@ struct ClientContext {}
 pub struct Editor<'a> {
     clients: HashMap<usize, ClientContext>,
     commands: BTreeMap<&'a str, Command<'a>>,
+    session_name: String,
     buffer_list: Vec<Buffer>,
     buffer_selected_idx: usize,
 }
 
 impl<'a> Editor<'a> {
-    pub fn new(filenames: Vec<&str>) -> Editor {
+    pub fn new(session: &str, filenames: Vec<&str>) -> Editor<'a> {
         let mut editor = Editor {
             clients: HashMap::new(),
             commands: BTreeMap::new(),
+            session_name: session.into(),
             buffer_list: Vec::new(),
             buffer_selected_idx: 0,
         };
@@ -56,21 +58,18 @@ impl<'a> Editor<'a> {
 
     fn notification_init(&self) -> JsonRpc {
         let mut params: Map<String, Value> = Map::new();
+        params.insert("session".into(), self.session_name.clone().into());
         params.insert(
-            String::from("buffer_list"),
-            Value::from(
-                self.buffer_list
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| self.get_buffer_value(i))
-                    .collect::<Vec<Value>>(),
-            ),
+            "buffer_list".into(),
+            self.buffer_list
+                .iter()
+                .enumerate()
+                .map(|(i, _)| self.get_buffer_value(i))
+                .collect::<Vec<Value>>()
+                .into(),
         );
         let buffer_current_name = self.get_buffer_name(self.buffer_selected_idx);
-        params.insert(
-            String::from("buffer_current"),
-            Value::from(buffer_current_name),
-        );
+        params.insert("buffer_current".into(), buffer_current_name.into());
         JsonRpc::notification_with_params("init", params)
     }
 
@@ -147,6 +146,7 @@ impl<'a> Editor<'a> {
     }
 
     pub fn handle(&mut self, client_id: usize, line: &str) -> Result<(JsonRpc, Option<JsonRpc>)> {
+        trace!("<- ({}) {:?}", client_id, line);
         let message = JsonRpc::parse(line)?;
         let to_write = match message.get_method() {
             Some(name) => match self.commands.clone().get(name) {
@@ -188,8 +188,7 @@ impl<'a> Editor<'a> {
 
     fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
-        let params = self
-            .buffer_list
+        let params = self.buffer_list
             .iter()
             .enumerate()
             .map(|(i, _)| self.get_buffer_value(i))
@@ -208,8 +207,7 @@ impl<'a> Editor<'a> {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.buffer_selected_idx = idx;
-                let mut curbuf = self
-                    .buffer_list
+                let mut curbuf = self.buffer_list
                     .get_mut(self.buffer_selected_idx)
                     .unwrap()
                     .clone();
