@@ -87,6 +87,9 @@ impl Server {
                                         .map(|(_, c)| self.write_message(c, msg))
                                         .filter_map(Result::err)
                                         .collect();
+                                    for e in &errors {
+                                        error!("{}", e)
+                                    }
                                 }
 
                                 let conn = conns.get_mut(&next_client_id).unwrap();
@@ -131,6 +134,9 @@ impl Server {
                                         .map(|(_, c)| self.write_message(c, msg))
                                         .filter_map(Result::err)
                                         .collect();
+                                            for e in &errors {
+                                                error!("{}", e)
+                                            }
                                         }
 
                                         let mut conn = conns.get_mut(&client_id).unwrap();

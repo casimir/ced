@@ -18,7 +18,7 @@ pub fn start_standalone(
 ) {
     let mut editor = Editor::new("", filenames);
     let (response, _) = editor.add_client(1).unwrap();
-    writeln!(output, "{}", serialize_message(&response));
+    writeln!(output, "{}", serialize_message(&response)).expect("write error");
 
     let mut buf = String::new();
     while let Ok(n) = input.read_line(&mut buf) {
@@ -30,10 +30,10 @@ pub fn start_standalone(
                 if let Some(msg) = broadcast {
                     println!("{}", serialize_message(&msg));
                 }
-                writeln!(output, "{}", serialize_message(&response));
+                writeln!(output, "{}", serialize_message(&response)).expect("write error");
             }
             Err(e) => {
-                writeln!(error, "{}: {:?}", e, buf);
+                writeln!(error, "{}: {:?}", e, buf).expect("write error");
             }
         }
         buf.clear();
