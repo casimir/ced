@@ -69,7 +69,7 @@ impl Buffer {
         }
     }
 
-    pub fn new_file(filename: PathBuf) -> Buffer {
+    pub fn new_file(filename: &PathBuf) -> Buffer {
         let mut full_path = current_dir().unwrap();
         full_path.push(filename.clone());
         let absolute_path = full_path.as_path().canonicalize().unwrap();
@@ -125,7 +125,7 @@ impl Buffer {
 impl ToString for Buffer {
     fn to_string(&self) -> String {
         let mut content = self.lines.join("\n").to_owned();
-        if !content.is_empty() && content.chars().last() != Some('\n') {
+        if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
         content

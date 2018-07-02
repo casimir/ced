@@ -50,7 +50,7 @@ impl<'a> Editor<'a> {
             editor.open_scratch("*scratch*");
         } else {
             for filename in &filenames {
-                editor.open_file(PathBuf::from(filename));
+                editor.open_file(&filename.into());
             }
         }
         editor
@@ -89,7 +89,7 @@ impl<'a> Editor<'a> {
         self.buffer_selected_idx = self.buffer_list.len() - 1;
     }
 
-    fn open_file(&mut self, filename: PathBuf) {
+    fn open_file(&mut self, filename: &PathBuf) {
         let buffer = Buffer::new_file(filename);
         self.buffer_list.push(buffer);
         self.buffer_selected_idx = self.buffer_list.len() - 1;
@@ -177,7 +177,7 @@ impl<'a> Editor<'a> {
         self.append_debug(&dm);
         match self.get_buffer_idx_from_path(&path) {
             Some(idx) => self.buffer_selected_idx = idx,
-            None => self.open_file(path),
+            None => self.open_file(&path),
         };
         {
             let curbuf = &mut self.buffer_list[self.buffer_selected_idx];
@@ -207,10 +207,7 @@ impl<'a> Editor<'a> {
         match self.get_buffer_idx(&buffer_name) {
             Some(idx) => {
                 self.buffer_selected_idx = idx;
-                let mut curbuf = self.buffer_list
-                    .get_mut(self.buffer_selected_idx)
-                    .unwrap()
-                    .clone();
+                let mut curbuf = &mut self.buffer_list[self.buffer_selected_idx].clone();
                 curbuf.load_from_disk(false);
                 JsonRpc::success(req_id, &self.get_buffer_value(self.buffer_selected_idx))
             }
