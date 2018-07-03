@@ -12,7 +12,7 @@ lazy_static! {
         Regex::new(r"^@(?P<address>\w+|\d+\.\d\.\d+\.\d+)?:(?P<port>\d+)$").unwrap();
 }
 
-const WIN_SOCKET_PREFIX: &'static str = r"\\.\pipe\ced-";
+const WIN_SOCKET_PREFIX: &str = r"\\.\pipe\ced-";
 
 #[derive(Debug, PartialEq)]
 pub enum ConnectionMode {
@@ -53,8 +53,7 @@ impl FromStr for ConnectionMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use self::ConnectionMode::*;
         if let Some(caps) = RE_ADDR.captures(s) {
-            let address = caps
-                .name("address")
+            let address = caps.name("address")
                 .and_then(|m| Some(m.as_str()))
                 .unwrap_or("127.0.0.1");
             let port = caps.name("port").unwrap().as_str();

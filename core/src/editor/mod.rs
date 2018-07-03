@@ -45,7 +45,7 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new(session: &str, filenames: Vec<&str>) -> Editor {
+    pub fn new(session: &str, filenames: &[&str]) -> Editor {
         let mut editor = Editor {
             session_name: session.into(),
             clients: StackMap::new(),
@@ -55,7 +55,7 @@ impl Editor {
         if filenames.is_empty() {
             editor.open_scratch("*scratch*");
         } else {
-            for filename in &filenames {
+            for filename in filenames {
                 editor.open_file(&filename.into());
             }
         }

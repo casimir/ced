@@ -5,7 +5,7 @@ use std::ops::Index;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &Vec<PathBuf>) -> String {
+fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
     let head = path.parent().unwrap();
     let tail = path.file_name().unwrap();
     let matches = path_set

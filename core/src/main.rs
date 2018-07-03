@@ -38,7 +38,7 @@ use remote::{connect, ConnectionMode, Session};
 use server::Server;
 use standalone::start_standalone;
 
-fn start_daemon_with_args(args: Vec<String>) {
+fn start_daemon_with_args(args: &[String]) {
     let prg = Command::new(&args[0])
         .args(&args[1..])
         .stdin(Stdio::null())
@@ -59,8 +59,8 @@ fn start_daemon() {
                 a
             }
         })
-        .collect();
-    start_daemon_with_args(args);
+        .collect::<Vec<String>>();
+    start_daemon_with_args(&args);
 }
 
 fn main() {
@@ -124,14 +124,14 @@ fn main() {
                 &mut stdin.lock(),
                 &mut io::stdout(),
                 &mut io::stderr(),
-                filenames,
+                &filenames,
             );
         } else if matches.is_present("daemon") {
             start_daemon();
         } else if matches.is_present("server") {
             eprintln!("starting server: {0} {0:?}", &session.mode);
             let server = Server::new(session);
-            server.run(filenames).expect("failed to start server");
+            server.run(&filenames).expect("failed to start server");
         } else {
             if let ConnectionMode::Socket(path) = &session.mode {
                 if !path.exists() {
@@ -144,7 +144,7 @@ fn main() {
                     for filename in &filenames {
                         args.push(filename.to_string());
                     }
-                    start_daemon_with_args(args);
+                    start_daemon_with_args(&args);
                     // ensures the daemon process got time to create the socket
                     thread::sleep(Duration::from_millis(100));
                 }

@@ -39,7 +39,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn run(&self, filenames: Vec<&str>) -> Result<()> {
+    pub fn run(&self, filenames: &[&str]) -> Result<()> {
         let mut editor = Editor::new(&format!("{}", self.session), filenames);
         let listener = Listener::new(&self.session)?;
         let poll = Poll::new()?;
