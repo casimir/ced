@@ -37,14 +37,14 @@ pub enum BufferSource {
     File(PathBuf),
 }
 
-pub fn find_shortest_name(sources: &Vec<&BufferSource>, idx: usize) -> String {
+fn find_shortest_name(sources: &[BufferSource], idx: usize) -> String {
     let source = sources.index(idx);
-    match **source {
+    match *source {
         BufferSource::Scratch(ref name) => name.clone(),
         BufferSource::File(ref path) => {
             let mut path_set: Vec<PathBuf> = Vec::new();
             for s in sources {
-                if let BufferSource::File(ref path) = **s {
+                if let BufferSource::File(ref path) = *s {
                     path_set.push(path.clone());
                 }
             }
@@ -67,6 +67,19 @@ impl Buffer {
             lines: Vec::new(),
             last_sync: None,
         }
+    }
+
+    pub fn absolute_name(&self) -> String {
+        use self::BufferSource::*;
+        match &self.source {
+            Scratch(name) => name.to_owned(),
+            File(path) => path.clone().into_os_string().into_string().unwrap(),
+        }
+    }
+
+    pub fn shortest_name(&self, sources: &[BufferSource]) -> String {
+        let idx = sources.iter().position(|ref x| **x == self.source).unwrap();
+        find_shortest_name(sources, idx)
     }
 
     pub fn new_file(filename: &PathBuf) -> Buffer {
@@ -144,7 +157,7 @@ mod tests {
         let f_where_2 = BufferSource::File(PathBuf::from("/any/where/file.where"));
         let f_where_3 = BufferSource::File(PathBuf::from("/any/where/here/file.where"));
 
-        let sources = vec![&s_debug, &f_some, &f_where_1, &f_where_2, &f_where_3];
+        let sources = [s_debug, f_some, f_where_1, f_where_2, f_where_3];
 
         assert!(find_shortest_name(&sources, 0) == "*debug*");
         assert!(find_shortest_name(&sources, 1) == "file.ext");

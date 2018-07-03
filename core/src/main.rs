@@ -23,6 +23,7 @@ extern crate winapi;
 mod editor;
 mod remote;
 mod server;
+mod stackmap;
 mod standalone;
 
 use std::env;
