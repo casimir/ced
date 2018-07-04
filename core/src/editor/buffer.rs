@@ -69,19 +69,6 @@ impl Buffer {
         }
     }
 
-    pub fn absolute_name(&self) -> String {
-        use self::BufferSource::*;
-        match &self.source {
-            Scratch(name) => name.to_owned(),
-            File(path) => path.clone().into_os_string().into_string().unwrap(),
-        }
-    }
-
-    pub fn shortest_name(&self, sources: &[BufferSource]) -> String {
-        let idx = sources.iter().position(|ref x| **x == self.source).unwrap();
-        find_shortest_name(sources, idx)
-    }
-
     pub fn new_file(filename: &PathBuf) -> Buffer {
         let mut full_path = current_dir().unwrap();
         full_path.push(filename.clone());
@@ -94,6 +81,19 @@ impl Buffer {
         };
         buffer.load_from_disk(true);
         buffer
+    }
+
+    pub fn absolute_name(&self) -> String {
+        use self::BufferSource::*;
+        match &self.source {
+            Scratch(name) => name.to_owned(),
+            File(path) => path.clone().into_os_string().into_string().unwrap(),
+        }
+    }
+
+    pub fn shortest_name(&self, sources: &[BufferSource]) -> String {
+        let idx = sources.iter().position(|ref x| **x == self.source).unwrap();
+        find_shortest_name(sources, idx)
     }
 
     fn is_synced(&self) -> bool {

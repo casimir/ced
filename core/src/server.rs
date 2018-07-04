@@ -151,7 +151,7 @@ impl Server {
                         }
                         if line.is_empty() {
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
-                            poll.deregister(*&conn.handle.as_ref()).unwrap();
+                            poll.deregister(conn.handle.as_ref()).unwrap();
                             info!("client {} disconnected", client_id);
                         }
                     }
