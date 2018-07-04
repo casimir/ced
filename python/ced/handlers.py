@@ -5,7 +5,6 @@ from .jsonrpc import Request, Response
 
 
 class State(object):
-
     def __init__(self):
         self.buffer_list = {}
         self.buffer_current = None
@@ -48,40 +47,40 @@ class RpcHandler(object):
         elif response.is_success():
             method = self.pending.method.replace("-", "_")
         else:
-            method = 'error'
+            method = "error"
         try:
             getattr(self, f"handle_{method}", lambda *args: None)(response)
-        except Exception as e:
+        except Exception:
             traceback.print_exception(*sys.exc_info(), file=sys.stdout)
-        if response.id == getattr(self.pending, 'id', None):
+        if response.id == getattr(self.pending, "id", None):
             self.pending = None
 
     def handle_error(self, response: Response):
-        data = response.error.get('data')
+        data = response.error.get("data")
         print(f"-- error: {data}")
 
     def handle_init(self, response: Response):
-        buffer_list = response.params['buffer_list']
+        buffer_list = response.params["buffer_list"]
         for buf in buffer_list:
-            self.state.buffer_list[buf['name']] = buf
-        self.state.buffer_current = response.params['buffer_current']
+            self.state.buffer_list[buf["name"]] = buf
+        self.state.buffer_current = response.params["buffer_current"]
 
     def handle_buffer_changed(self, response: Response):
         buf = response.params
-        self.state.buffer_current = buf['name']
-        self.state.buffer_list[buf['name']] = buf
+        self.state.buffer_current = buf["name"]
+        self.state.buffer_list[buf["name"]] = buf
 
     def handle_buffer_list(self, response: Response):
         for buf in response.result:
-            self.state.buffer_list[buf['name']] = buf
+            self.state.buffer_list[buf["name"]] = buf
 
     def handle_buffer_select(self, response: Response):
         buf = response.result
-        self.state.buffer_current = buf['name']
-        self.state.buffer_list[buf['name']] = buf
+        self.state.buffer_current = buf["name"]
+        self.state.buffer_list[buf["name"]] = buf
 
     def handle_buffer_delete(self, response: Response):
-        deleted = response.result['buffer_deleted']
+        deleted = response.result["buffer_deleted"]
         if deleted in self.state.buffer_list:
             del self.state.buffer_list[deleted]
 
