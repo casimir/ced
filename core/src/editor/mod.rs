@@ -13,10 +13,13 @@ lazy_static! {
     static ref HELP: BTreeMap<&'static str, &'static str> = {
         let mut h = BTreeMap::new();
         h.insert("command-list", "list available commands");
-        h.insert("edit", "edit a file, reload it from the disk if needed");
+        h.insert(
+            "edit <path>",
+            "edit a file, reload it from the disk if needed",
+        );
         h.insert("buffer-list", "list open buffers (with content)");
-        h.insert("buffer-select", "select a buffer by its name");
-        h.insert("buffer-delete", "delete a buffer by its name");
+        h.insert("buffer-select <buffer>", "select a buffer by its name");
+        h.insert("buffer-delete <buffer>", "delete a buffer by its name");
         h
     };
 }
