@@ -59,7 +59,7 @@ impl Editor {
             editor.open_scratch("*scratch*");
         } else {
             for filename in filenames {
-                editor.open_file(&filename.into());
+                editor.open_file(filename, &filename.into());
             }
         }
         editor
@@ -72,8 +72,8 @@ impl Editor {
         params.insert(
             "buffer_list".into(),
             self.buffers
-                .values()
-                .map(|b| self.get_buffer_value(&b))
+                .iter()
+                .map(|(n, b)| self.get_buffer_value(n, b))
                 .collect::<Vec<Value>>()
                 .into(),
         );
@@ -86,7 +86,7 @@ impl Editor {
             self.clients[c].clone()
         } else {
             ClientContext {
-                buffer: self.buffers.latest_value().unwrap().absolute_name(),
+                buffer: self.buffers.latest().unwrap().clone(),
             }
         };
         self.clients.insert(id, context);
@@ -100,12 +100,12 @@ impl Editor {
 
     fn open_scratch(&mut self, name: &str) {
         let buffer = Buffer::new_scratch(name.to_owned());
-        self.buffers.insert(buffer.absolute_name(), buffer);
+        self.buffers.insert(name.into(), buffer);
     }
 
-    fn open_file(&mut self, filename: &PathBuf) {
+    fn open_file(&mut self, buffer_name: &str, filename: &PathBuf) {
         let buffer = Buffer::new_file(filename);
-        self.buffers.insert(buffer.absolute_name(), buffer);
+        self.buffers.insert(buffer_name.to_string(), buffer);
     }
 
     fn delete_buffer(&mut self, buffer_name: &String) {
@@ -115,14 +115,15 @@ impl Editor {
         }
     }
 
-    fn get_buffer_value(&self, buffer: &Buffer) -> Value {
-        let buffer_sources = self.buffers
+    fn get_buffer_value(&self, name: &str, buffer: &Buffer) -> Value {
+        let buffer_sources = self
+            .buffers
             .values()
             .map(|b| b.source.clone())
             .collect::<Vec<BufferSource>>();
 
         let mut val: Map<String, Value> = Map::new();
-        val.insert("name".into(), buffer.absolute_name().into());
+        val.insert("name".into(), name.into());
         val.insert("label".into(), buffer.shortest_name(&buffer_sources).into());
         val.insert("content".into(), buffer.to_string().into());
         val.into()
@@ -136,9 +137,10 @@ impl Editor {
     }
 
     fn notification_buffer_changed(&mut self) -> JsonRpc {
+        let name = self.buffers.latest().unwrap();
         JsonRpc::notification_with_params(
             "buffer_changed",
-            self.get_buffer_value(&self.buffers.latest_value().unwrap()),
+            self.get_buffer_value(name, &self.buffers[name]),
         )
     }
 
@@ -173,15 +175,14 @@ impl Editor {
             Params::Array(args) => args[0].as_str().unwrap().to_owned(),
             _ => String::new(),
         };
-        let path = PathBuf::from(file_path);
+        let path = PathBuf::from(&file_path);
         let dm = format!("edit: {:?}", path);
         self.append_debug(&dm);
-        let path_str = path.clone().into_os_string().into_string().unwrap();
         self.buffers
-            .set_last(path_str.clone())
-            .unwrap_or_else(|_| self.open_file(&path));
+            .set_last(file_path.clone())
+            .unwrap_or_else(|_| self.open_file(&file_path, &path));
         {
-            let buffer = self.buffers.get_mut(&path_str).unwrap();
+            let buffer = self.buffers.get_mut(&file_path).unwrap();
             buffer.load_from_disk(false);
         }
         {
@@ -190,15 +191,16 @@ impl Editor {
         }
         JsonRpc::success(
             req_id,
-            &self.get_buffer_value(self.buffers.latest_value().unwrap()),
+            &self.get_buffer_value(&file_path, self.buffers.latest_value().unwrap()),
         )
     }
 
     fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
-        let params = self.buffers
-            .values()
-            .map(|b| self.get_buffer_value(&b))
+        let params = self
+            .buffers
+            .iter()
+            .map(|(n, b)| self.get_buffer_value(n, b))
             .collect::<Vec<Value>>();
         JsonRpc::success(req_id, &params.into())
     }
@@ -223,7 +225,7 @@ impl Editor {
             }
             JsonRpc::success(
                 req_id,
-                &self.get_buffer_value(&self.buffers.latest_value().unwrap()),
+                &self.get_buffer_value(&buffer_name, &self.buffers[&buffer_name]),
             )
         } else {
             let mut error = JRError::invalid_params();

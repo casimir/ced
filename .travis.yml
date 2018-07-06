@@ -31,5 +31,5 @@ script:
   - cd $TRAVIS_BUILD_DIR/core
   - cargo build
   - cargo test -v
-  - cd $TRAVIS_BUILD_DIR
+  - cd $TRAVIS_BUILD_DIR/python
   - pytest -v

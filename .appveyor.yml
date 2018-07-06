@@ -29,4 +29,5 @@ test_script:
   - ps: cd core
   - cargo build
   - cargo test -v
-  - python -m pytest -v ..
+  - ps: cd ..\python
+  - python -m pytest -v

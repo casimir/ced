@@ -70,10 +70,16 @@ impl Buffer {
     }
 
     pub fn new_file(filename: &PathBuf) -> Buffer {
-        let mut full_path = current_dir().unwrap();
-        full_path.push(filename.clone());
-        let absolute_path = full_path.as_path().canonicalize().unwrap();
+        trace!("{}", filename.display());
+        let absolute_path = if filename.is_absolute() {
+            filename.clone()
+        } else {
+            let mut full_path = current_dir().unwrap();
+            full_path.push(filename.clone());
+            full_path.as_path().canonicalize().unwrap()
+        };
 
+        trace!("{} -> {}", filename.display(), absolute_path.display());
         let mut buffer = Buffer {
             source: BufferSource::File(absolute_path),
             lines: Vec::new(),
@@ -81,14 +87,6 @@ impl Buffer {
         };
         buffer.load_from_disk(true);
         buffer
-    }
-
-    pub fn absolute_name(&self) -> String {
-        use self::BufferSource::*;
-        match &self.source {
-            Scratch(name) => name.to_owned(),
-            File(path) => path.clone().into_os_string().into_string().unwrap(),
-        }
     }
 
     pub fn shortest_name(&self, sources: &[BufferSource]) -> String {
@@ -164,5 +162,23 @@ mod tests {
         assert!(find_shortest_name(&sources, 2) == "some/where/file.where");
         assert!(find_shortest_name(&sources, 3) == "any/where/file.where");
         assert!(find_shortest_name(&sources, 4) == "here/file.where");
+    }
+
+    #[test]
+    fn open_file() {
+        let filename = PathBuf::from("Cargo.toml");
+        let mut file = File::open(&filename).expect("opening file");
+        let mut content = String::new();
+        file.read_to_string(&mut content).expect("reading file");
+        let lines: Vec<String> = content.lines().map(ToOwned::to_owned).collect();
+        let mut full_path = current_dir().unwrap();
+        full_path.push(filename.clone());
+
+        let buffer = Buffer::new_file(&filename);
+        let source = BufferSource::File(full_path.as_path().canonicalize().unwrap());
+
+        assert!(buffer.source == source);
+        assert!(buffer.last_sync.is_some());
+        assert!(buffer.lines == lines);
     }
 }
