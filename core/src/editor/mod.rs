@@ -116,8 +116,7 @@ impl Editor {
     }
 
     fn get_buffer_value(&self, name: &str, buffer: &Buffer) -> Value {
-        let buffer_sources = self
-            .buffers
+        let buffer_sources = self.buffers
             .values()
             .map(|b| b.source.clone())
             .collect::<Vec<BufferSource>>();
@@ -197,8 +196,7 @@ impl Editor {
 
     fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
-        let params = self
-            .buffers
+        let params = self.buffers
             .iter()
             .map(|(n, b)| self.get_buffer_value(n, b))
             .collect::<Vec<Value>>();

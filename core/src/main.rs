@@ -38,7 +38,27 @@ use remote::{connect, ConnectionMode, Session};
 use server::Server;
 use standalone::start_standalone;
 
-fn start_daemon_with_args(args: &[String]) {
+arg_enum!{
+    #[allow(non_camel_case_types)]
+    #[derive(Debug)]
+    pub enum Mode {
+        daemon,
+        json,
+        server,
+        standalone,
+        term,
+    }
+}
+
+fn start_daemon(session: &Session, filenames: &[&str]) {
+    let mut args = vec![
+        env::args().next().unwrap(),
+        "--mode=server".to_string(),
+        format!("--session={}", session.mode),
+    ];
+    for filename in filenames {
+        args.push(filename.to_string());
+    }
     let prg = Command::new(&args[0])
         .args(&args[1..])
         .stdin(Stdio::null())
@@ -50,19 +70,7 @@ fn start_daemon_with_args(args: &[String]) {
     info!("server command: {:?}", args)
 }
 
-fn start_daemon() {
-    let args = env::args()
-        .map(|a| {
-            if a == "-d" || a == "--daemon" {
-                "--server".into()
-            } else {
-                a
-            }
-        })
-        .collect::<Vec<String>>();
-    start_daemon_with_args(&args);
-}
-
+// TODO return Result
 fn main() {
     env_logger::init();
 
@@ -84,17 +92,12 @@ fn main() {
                 .help("Sets session name"),
         )
         .arg(
-            Arg::with_name("daemon")
-                .short("d")
-                .long("daemon")
-                .help("Starts a server in headless mode"),
-        )
-        .arg(Arg::with_name("server").long("server").hidden(true)) // TODO replace hidden argument by double fork
-        .arg(
-            Arg::with_name("standalone")
-                .long("standalone")
-                .conflicts_with("daemon")
-                .help("Uses standalone mode (1 client for 1 server in-process)"),
+            Arg::with_name("MODE")
+                .short("m")
+                .long("mode")
+                .possible_values(&Mode::variants())
+                .default_value("json")
+                .help("Mode to use"),
         )
         .arg(
             Arg::with_name("FILE")
@@ -118,40 +121,35 @@ fn main() {
             None => Vec::new(),
         };
 
-        if matches.is_present("standalone") {
-            let stdin = io::stdin();
-            start_standalone(
-                &mut stdin.lock(),
-                &mut io::stdout(),
-                &mut io::stderr(),
-                &filenames,
-            );
-        } else if matches.is_present("daemon") {
-            start_daemon();
-        } else if matches.is_present("server") {
-            eprintln!("starting server: {0} {0:?}", &session.mode);
-            let server = Server::new(session);
-            server.run(&filenames).expect("failed to start server");
-        } else {
-            if let ConnectionMode::Socket(path) = &session.mode {
-                if !path.exists() {
-                    let mut args = vec![
-                        env::args().next().unwrap(),
-                        "--daemon".to_string(),
-                        "--session".to_string(),
-                        format!("{}", session.mode),
-                    ];
-                    for filename in &filenames {
-                        args.push(filename.to_string());
+        match value_t!(matches.value_of("MODE"), Mode).unwrap() {
+            Mode::daemon => start_daemon(&session, &filenames),
+            Mode::json => {
+                if let ConnectionMode::Socket(path) = &session.mode {
+                    if !path.exists() {
+                        start_daemon(&session, &filenames);
+                        // ensures the daemon process got time to create the socket
+                        thread::sleep(Duration::from_millis(100));
                     }
-                    start_daemon_with_args(&args);
-                    // ensures the daemon process got time to create the socket
-                    thread::sleep(Duration::from_millis(100));
                 }
+                let stdin = io::stdin();
+                connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
+                    .expect("failed to connect");
             }
-            let stdin = io::stdin();
-            connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
-                .expect("failed to connect");
+            Mode::server => {
+                eprintln!("starting server: {0} {0:?}", &session.mode);
+                let server = Server::new(session);
+                server.run(&filenames).expect("failed to start server");
+            }
+            Mode::standalone => {
+                let stdin = io::stdin();
+                start_standalone(
+                    &mut stdin.lock(),
+                    &mut io::stdout(),
+                    &mut io::stderr(),
+                    &filenames,
+                );
+            }
+            Mode::term => unimplemented!(),
         }
     }
 }

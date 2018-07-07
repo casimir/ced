@@ -13,7 +13,7 @@ if "CED_BIN_PATH" not in os.environ:
 def script(commands) -> State:
     handler = RpcHandler()
     shell = CommandShell(handler, commands=commands)
-    conn = CoreConnection(handler, shell, argv=["--standalone"])
+    conn = CoreConnection(handler, shell, argv=["--mode=standalone"])
     conn.start()
     return handler.state
 
@@ -21,7 +21,7 @@ def script(commands) -> State:
 def test_connect():
     handler = RpcHandler()
     shell = Shell(handler)
-    conn = CoreConnection(handler, shell, argv=["--standalone"])
+    conn = CoreConnection(handler, shell, argv=["--mode=standalone"])
     conn.start()
     state = handler.state
 
@@ -33,7 +33,7 @@ def test_connect_params():
     fname = "setup.cfg"
     handler = RpcHandler()
     shell = Shell(handler)
-    conn = CoreConnection(handler, shell, ["--standalone", fname])
+    conn = CoreConnection(handler, shell, ["--mode=standalone", fname])
     conn.start()
     state = handler.state
 
