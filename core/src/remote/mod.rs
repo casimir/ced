@@ -1,3 +1,5 @@
+mod client;
+pub mod protocol;
 mod session;
 mod transport;
 
@@ -6,6 +8,7 @@ use std::thread;
 
 use serde_json;
 
+pub use self::client::Client;
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{Connection, EventedStream, Listener};
 

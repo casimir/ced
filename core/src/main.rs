@@ -13,7 +13,19 @@ extern crate regex;
 extern crate serde_json;
 
 #[cfg(unix)]
+extern crate futures;
+#[cfg(unix)]
+extern crate ignore;
+#[cfg(unix)]
 extern crate mio_uds;
+#[cfg(unix)]
+extern crate termion;
+#[cfg(unix)]
+extern crate tokio;
+#[cfg(unix)]
+extern crate tokio_core;
+#[cfg(unix)]
+extern crate tokio_uds;
 
 #[cfg(windows)]
 extern crate mio_named_pipes;
@@ -25,6 +37,7 @@ mod remote;
 mod server;
 mod stackmap;
 mod standalone;
+mod tui;
 
 use std::env;
 use std::io;
@@ -37,6 +50,7 @@ use clap::{App, Arg};
 use remote::{connect, ConnectionMode, Session};
 use server::Server;
 use standalone::start_standalone;
+use tui::start as start_tui;
 
 arg_enum!{
     #[allow(non_camel_case_types)]
@@ -50,7 +64,17 @@ arg_enum!{
     }
 }
 
-fn start_daemon(session: &Session, filenames: &[&str]) {
+impl Mode {
+    fn default_value() -> &'static str {
+        if cfg!(unix) {
+            "term"
+        } else {
+            "json"
+        }
+    }
+}
+
+fn start_daemon(session: &Session, filenames: &[&str], quiet: bool) {
     let mut args = vec![
         env::args().next().unwrap(),
         "--mode=server".to_string(),
@@ -66,7 +90,9 @@ fn start_daemon(session: &Session, filenames: &[&str]) {
         .stderr(Stdio::null())
         .spawn()
         .expect("failed to start daemon");
-    eprintln!("server started with pid {}", prg.id());
+    if !quiet {
+        eprintln!("server started with pid {}", prg.id());
+    }
     info!("server command: {:?}", args)
 }
 
@@ -96,7 +122,7 @@ fn main() {
                 .short("m")
                 .long("mode")
                 .possible_values(&Mode::variants())
-                .default_value("json")
+                .default_value(Mode::default_value())
                 .help("Mode to use"),
         )
         .arg(
@@ -122,11 +148,11 @@ fn main() {
         };
 
         match value_t!(matches.value_of("MODE"), Mode).unwrap() {
-            Mode::daemon => start_daemon(&session, &filenames),
+            Mode::daemon => start_daemon(&session, &filenames, false),
             Mode::json => {
                 if let ConnectionMode::Socket(path) = &session.mode {
                     if !path.exists() {
-                        start_daemon(&session, &filenames);
+                        start_daemon(&session, &filenames, true);
                         // ensures the daemon process got time to create the socket
                         thread::sleep(Duration::from_millis(100));
                     }
@@ -149,7 +175,16 @@ fn main() {
                     &filenames,
                 );
             }
-            Mode::term => unimplemented!(),
+            Mode::term => {
+                if let ConnectionMode::Socket(path) = &session.mode {
+                    if !path.exists() {
+                        start_daemon(&session, &filenames, true);
+                        // ensures the daemon process got time to create the socket
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+                start_tui(&session, &filenames).expect("failed to start TUI");
+            }
         }
     }
 }

@@ -58,6 +58,7 @@ pub struct Buffer {
     pub source: BufferSource,
     lines: Vec<String>,
     last_sync: Option<SystemTime>,
+    modified: bool,
 }
 
 impl Buffer {
@@ -66,6 +67,7 @@ impl Buffer {
             source: BufferSource::Scratch(name),
             lines: Vec::new(),
             last_sync: None,
+            modified: false,
         }
     }
 
@@ -84,6 +86,7 @@ impl Buffer {
             source: BufferSource::File(absolute_path),
             lines: Vec::new(),
             last_sync: None,
+            modified: false,
         };
         buffer.load_from_disk(true);
         buffer
@@ -115,21 +118,28 @@ impl Buffer {
         true
     }
 
-    pub fn load_from_disk(&mut self, force: bool) {
-        if force || !self.is_synced() {
-            if let BufferSource::File(ref path) = self.source {
-                let mut file = File::open(&path).unwrap();
-                let mut content = String::new();
-                file.read_to_string(&mut content)
-                    .expect(&format!("failed to read: {}", path.display()));
-                self.lines = content.lines().map(ToOwned::to_owned).collect();
-                self.last_sync = Some(SystemTime::now());
+    pub fn load_from_disk(&mut self, force: bool) -> bool {
+        match self.source {
+            BufferSource::Scratch(_) => true,
+            BufferSource::File(ref path) => {
+                if force || !self.is_synced() {
+                    let mut file = File::open(&path).unwrap();
+                    let mut content = String::new();
+                    file.read_to_string(&mut content)
+                        .expect(&format!("failed to read: {}", path.display()));
+                    self.lines = content.lines().map(ToOwned::to_owned).collect();
+                    self.last_sync = Some(SystemTime::now());
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
 
     pub fn append(&mut self, content: &str) {
         self.lines.push(content.to_owned());
+        self.modified = true;
     }
 }
 

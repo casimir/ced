@@ -138,7 +138,7 @@ impl Editor {
     fn notification_buffer_changed(&mut self) -> JsonRpc {
         let name = self.buffers.latest().unwrap();
         JsonRpc::notification_with_params(
-            "buffer_changed",
+            "buffer-changed",
             self.get_buffer_value(name, &self.buffers[name]),
         )
     }
@@ -168,32 +168,6 @@ impl Editor {
         Ok(to_write)
     }
 
-    fn handle_edit(&mut self, client_id: usize, message: &JsonRpc) -> JsonRpc {
-        let req_id = message.get_id().unwrap();
-        let file_path = match message.get_params().unwrap() {
-            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
-            _ => String::new(),
-        };
-        let path = PathBuf::from(&file_path);
-        let dm = format!("edit: {:?}", path);
-        self.append_debug(&dm);
-        self.buffers
-            .set_last(file_path.clone())
-            .unwrap_or_else(|_| self.open_file(&file_path, &path));
-        {
-            let buffer = self.buffers.get_mut(&file_path).unwrap();
-            buffer.load_from_disk(false);
-        }
-        {
-            let context = self.clients.get_mut(&client_id).unwrap();
-            context.buffer = self.buffers.latest().unwrap().to_string();
-        }
-        JsonRpc::success(
-            req_id,
-            &self.get_buffer_value(&file_path, self.buffers.latest_value().unwrap()),
-        )
-    }
-
     fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
         let req_id = message.get_id().unwrap();
         let params = self.buffers
@@ -201,36 +175,6 @@ impl Editor {
             .map(|(n, b)| self.get_buffer_value(n, b))
             .collect::<Vec<Value>>();
         JsonRpc::success(req_id, &params.into())
-    }
-
-    fn handle_select_buffer(&mut self, client_id: usize, message: &JsonRpc) -> JsonRpc {
-        let req_id = message.get_id().unwrap();
-        let buffer_name = match message.get_params().unwrap() {
-            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
-            _ => String::new(),
-        };
-        let dm = format!("buffer-select: {}\n", buffer_name);
-        self.append_debug(&dm);
-        if self.buffers.contains_key(&buffer_name) {
-            {
-                self.buffers.set_last(buffer_name.clone()).unwrap();
-                let buffer = self.buffers.get_mut(&buffer_name).unwrap();
-                buffer.load_from_disk(false);
-            }
-            {
-                let context = self.clients.get_mut(&client_id).unwrap();
-                context.buffer = self.buffers.latest().unwrap().to_string();
-            }
-            JsonRpc::success(
-                req_id,
-                &self.get_buffer_value(&buffer_name, &self.buffers[&buffer_name]),
-            )
-        } else {
-            let mut error = JRError::invalid_params();
-            let details = format!("buffer '{}' does not exist", buffer_name);
-            error.data = Some(details.to_string().into());
-            JsonRpc::error(req_id, error)
-        }
     }
 
     fn handle_delete_buffer(
@@ -275,7 +219,37 @@ impl Editor {
     }
 
     fn command_edit(&mut self, client_id: usize, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
-        (self.handle_edit(client_id, &message), None)
+        let req_id = message.get_id().unwrap();
+        let file_path = match message.get_params().unwrap() {
+            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
+            _ => String::new(),
+        };
+        let path = PathBuf::from(&file_path);
+        let mut notify_change = false;
+        let dm = format!("edit: {:?}", path);
+        self.append_debug(&dm);
+        self.buffers
+            .set_last(file_path.clone())
+            .unwrap_or_else(|_| {
+                self.open_file(&file_path, &path);
+                notify_change = true
+            });
+        {
+            let buffer = self.buffers.get_mut(&file_path).unwrap();
+            notify_change |= buffer.load_from_disk(false);
+        }
+        {
+            let context = self.clients.get_mut(&client_id).unwrap();
+            context.buffer = self.buffers.latest().unwrap().to_string();
+        }
+        (
+            JsonRpc::success(req_id, &file_path.into()),
+            if notify_change {
+                Some(self.notification_buffer_changed())
+            } else {
+                None
+            },
+        )
     }
 
     fn command_buffer_list(
@@ -291,7 +265,26 @@ impl Editor {
         client_id: usize,
         message: &JsonRpc,
     ) -> (JsonRpc, Option<JsonRpc>) {
-        (self.handle_select_buffer(client_id, &message), None)
+        let req_id = message.get_id().unwrap();
+        let buffer_name = match message.get_params().unwrap() {
+            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
+            _ => String::new(),
+        };
+        let dm = format!("buffer-select: {}", buffer_name);
+        self.append_debug(&dm);
+        if self.buffers.contains_key(&buffer_name) {
+            self.buffers.set_last(buffer_name.clone()).unwrap();
+            {
+                let context = self.clients.get_mut(&client_id).unwrap();
+                context.buffer = self.buffers.latest().unwrap().to_string();
+            }
+            (JsonRpc::success(req_id, &buffer_name.into()), None)
+        } else {
+            let mut error = JRError::invalid_params();
+            let details = format!("buffer '{}' does not exist", buffer_name);
+            error.data = Some(details.to_string().into());
+            (JsonRpc::error(req_id, error), None)
+        }
     }
 
     fn command_buffer_delete(
