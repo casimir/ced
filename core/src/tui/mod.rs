@@ -1,7 +1,13 @@
-mod not_unix;
-mod unix;
+#[cfg(not(unix))]
+use remote::{Result, Session};
+
+mod term;
+
+#[cfg(unix)]
+pub use self::term::start;
 
 #[cfg(not(unix))]
-pub use self::not_unix::start;
-#[cfg(unix)]
-pub use self::unix::start;
+pub fn start(_session: &Session, _filenames: &[&str]) -> Result<()> {
+    eprintln!("this mode is not supported on this platform");
+    Ok(())
+}

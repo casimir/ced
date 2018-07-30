@@ -8,6 +8,7 @@ use std::thread;
 
 use serde_json;
 
+#[cfg(unix)]
 pub use self::client::Client;
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{Connection, EventedStream, Listener};
