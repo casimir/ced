@@ -77,3 +77,14 @@ def test_connect_delete_last():
     assert "*debug*" in state.buffer_list
     assert "*scratch*" in state.buffer_list
     assert state.buffer_current == "*scratch*"
+
+
+def test_connect_tcp():
+    handler = RpcHandler()
+    shell = Shell(handler)
+    conn = CoreConnection(handler, shell, argv=["--mode=json", "--session='@:8888'"])
+    conn.start()
+    state = handler.state
+
+    assert "*scratch*" in state.buffer_list
+    assert state.buffer_current == "*scratch*"
