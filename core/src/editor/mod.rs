@@ -148,108 +148,26 @@ impl Editor {
         let message = JsonRpc::parse(line)?;
         let to_write = match message.get_method() {
             Some(name) => match name {
-                "command-list" => self.command_list(client_id, &message),
-                "edit" => self.command_edit(client_id, &message),
                 "buffer-list" => self.command_buffer_list(client_id, &message),
                 "buffer-select" => self.command_buffer_select(client_id, &message),
                 "buffer-delete" => self.command_buffer_delete(client_id, &message),
-                _ => {
-                    let req_id = message.get_id().unwrap();
-                    (JsonRpc::error(req_id, JRError::method_not_found()), None)
-                }
+                "command-list" => self.command_list(client_id, &message),
+                "edit" => self.command_edit(client_id, &message),
+                _ => match message.get_id() {
+                    Some(req_id) => (JsonRpc::error(req_id, JRError::method_not_found()), None),
+                    None => (JsonRpc::error((), JRError::invalid_request()), None),
+                },
             },
             _ => {
                 let dm = format!("unknown command: {:?}\n", message);
                 self.append_debug(&dm);
-                let req_id = message.get_id().unwrap();
-                (JsonRpc::error(req_id, JRError::method_not_found()), None)
+                match message.get_id() {
+                    Some(req_id) => (JsonRpc::error(req_id, JRError::method_not_found()), None),
+                    None => (JsonRpc::error((), JRError::invalid_request()), None),
+                }
             }
         };
         Ok(to_write)
-    }
-
-    fn handle_list_buffer(&self, message: &JsonRpc) -> JsonRpc {
-        let req_id = message.get_id().unwrap();
-        let params = self.buffers
-            .iter()
-            .map(|(n, b)| self.get_buffer_value(n, b))
-            .collect::<Vec<Value>>();
-        JsonRpc::success(req_id, &params.into())
-    }
-
-    fn handle_delete_buffer(
-        &mut self,
-        client_id: usize,
-        message: &JsonRpc,
-    ) -> (JsonRpc, Option<JsonRpc>) {
-        let req_id = message.get_id().unwrap();
-        let buffer_name = match message.get_params().unwrap() {
-            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
-            _ => String::new(),
-        };
-        let dm = format!("buffer-delete: {}", buffer_name);
-        self.append_debug(&dm);
-        if self.buffers.contains_key(&buffer_name) {
-            self.delete_buffer(&buffer_name);
-            {
-                let context = self.clients.get_mut(&client_id).unwrap();
-                context.buffer = self.buffers.latest().unwrap().to_string();
-            }
-            let mut params: Map<String, Value> = Map::new();
-            params.insert("buffer_deleted".into(), buffer_name.into());
-            (
-                JsonRpc::success(req_id, &params.into()),
-                Some(self.notification_buffer_changed()),
-            )
-        } else {
-            let mut error = JRError::invalid_params();
-            let details = format!("buffer '{}' does not exist", buffer_name);
-            error.data = Some(details.to_string().into());
-            (JsonRpc::error(req_id, error), None)
-        }
-    }
-
-    fn command_list(&mut self, _client_id: usize, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
-        let req_id = message.get_id().unwrap();
-        let mut result = Map::new();
-        for (cmd, help) in HELP.iter() {
-            result.insert(cmd.to_string(), help.to_string().into());
-        }
-        (JsonRpc::success(req_id, &result.into()), None)
-    }
-
-    fn command_edit(&mut self, client_id: usize, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
-        let req_id = message.get_id().unwrap();
-        let file_path = match message.get_params().unwrap() {
-            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
-            _ => String::new(),
-        };
-        let path = PathBuf::from(&file_path);
-        let mut notify_change = false;
-        let dm = format!("edit: {:?}", path);
-        self.append_debug(&dm);
-        self.buffers
-            .set_last(file_path.clone())
-            .unwrap_or_else(|_| {
-                self.open_file(&file_path, &path);
-                notify_change = true
-            });
-        {
-            let buffer = self.buffers.get_mut(&file_path).unwrap();
-            notify_change |= buffer.load_from_disk(false);
-        }
-        {
-            let context = self.clients.get_mut(&client_id).unwrap();
-            context.buffer = self.buffers.latest().unwrap().to_string();
-        }
-        (
-            JsonRpc::success(req_id, &file_path.into()),
-            if notify_change {
-                Some(self.notification_buffer_changed())
-            } else {
-                None
-            },
-        )
     }
 
     fn command_buffer_list(
@@ -257,7 +175,15 @@ impl Editor {
         _client_id: usize,
         message: &JsonRpc,
     ) -> (JsonRpc, Option<JsonRpc>) {
-        (self.handle_list_buffer(&message), None)
+        if let Some(req_id) = message.get_id() {
+            let params = self.buffers
+                .iter()
+                .map(|(n, b)| self.get_buffer_value(n, b))
+                .collect::<Vec<Value>>();
+            (JsonRpc::success(req_id, &params.into()), None)
+        } else {
+            (JsonRpc::error((), JRError::invalid_request()), None)
+        }
     }
 
     fn command_buffer_select(
@@ -265,25 +191,28 @@ impl Editor {
         client_id: usize,
         message: &JsonRpc,
     ) -> (JsonRpc, Option<JsonRpc>) {
-        let req_id = message.get_id().unwrap();
-        let buffer_name = match message.get_params().unwrap() {
-            Params::Array(args) => args[0].as_str().unwrap().to_owned(),
-            _ => String::new(),
-        };
-        let dm = format!("buffer-select: {}", buffer_name);
-        self.append_debug(&dm);
-        if self.buffers.contains_key(&buffer_name) {
-            self.buffers.set_last(buffer_name.clone()).unwrap();
-            {
-                let context = self.clients.get_mut(&client_id).unwrap();
-                context.buffer = self.buffers.latest().unwrap().to_string();
+        if let Some(req_id) = message.get_id() {
+            let buffer_name = match message.get_params().unwrap() {
+                Params::Array(args) => args[0].as_str().unwrap().to_owned(),
+                _ => String::new(),
+            };
+            let dm = format!("buffer-select: {}", buffer_name);
+            self.append_debug(&dm);
+            if self.buffers.contains_key(&buffer_name) {
+                self.buffers.set_last(buffer_name.clone()).unwrap();
+                {
+                    let context = self.clients.get_mut(&client_id).unwrap();
+                    context.buffer = self.buffers.latest().unwrap().to_string();
+                }
+                (JsonRpc::success(req_id, &buffer_name.into()), None)
+            } else {
+                let mut error = JRError::invalid_params();
+                let details = format!("buffer '{}' does not exist", buffer_name);
+                error.data = Some(details.to_string().into());
+                (JsonRpc::error(req_id, error), None)
             }
-            (JsonRpc::success(req_id, &buffer_name.into()), None)
         } else {
-            let mut error = JRError::invalid_params();
-            let details = format!("buffer '{}' does not exist", buffer_name);
-            error.data = Some(details.to_string().into());
-            (JsonRpc::error(req_id, error), None)
+            (JsonRpc::error((), JRError::invalid_request()), None)
         }
     }
 
@@ -292,6 +221,82 @@ impl Editor {
         client_id: usize,
         message: &JsonRpc,
     ) -> (JsonRpc, Option<JsonRpc>) {
-        self.handle_delete_buffer(client_id, &message)
+        if let Some(req_id) = message.get_id() {
+            let buffer_name = match message.get_params().unwrap() {
+                Params::Array(args) => args[0].as_str().unwrap().to_owned(),
+                _ => String::new(),
+            };
+            let dm = format!("buffer-delete: {}", buffer_name);
+            self.append_debug(&dm);
+            if self.buffers.contains_key(&buffer_name) {
+                self.delete_buffer(&buffer_name);
+                {
+                    let context = self.clients.get_mut(&client_id).unwrap();
+                    context.buffer = self.buffers.latest().unwrap().to_string();
+                }
+                let mut params: Map<String, Value> = Map::new();
+                params.insert("buffer_deleted".into(), buffer_name.into());
+                (
+                    JsonRpc::success(req_id, &params.into()),
+                    Some(self.notification_buffer_changed()),
+                )
+            } else {
+                let mut error = JRError::invalid_params();
+                let details = format!("buffer '{}' does not exist", buffer_name);
+                error.data = Some(details.to_string().into());
+                (JsonRpc::error(req_id, error), None)
+            }
+        } else {
+            (JsonRpc::error((), JRError::invalid_request()), None)
+        }
+    }
+
+    fn command_list(&mut self, _client_id: usize, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
+        if let Some(req_id) = message.get_id() {
+            let mut result = Map::new();
+            for (cmd, help) in HELP.iter() {
+                result.insert(cmd.to_string(), help.to_string().into());
+            }
+            (JsonRpc::success(req_id, &result.into()), None)
+        } else {
+            (JsonRpc::error((), JRError::invalid_request()), None)
+        }
+    }
+
+    fn command_edit(&mut self, client_id: usize, message: &JsonRpc) -> (JsonRpc, Option<JsonRpc>) {
+        if let Some(req_id) = message.get_id() {
+            let file_path = match message.get_params().unwrap() {
+                Params::Array(args) => args[0].as_str().unwrap().to_owned(),
+                _ => String::new(),
+            };
+            let path = PathBuf::from(&file_path);
+            let mut notify_change = false;
+            let dm = format!("edit: {:?}", path);
+            self.append_debug(&dm);
+            self.buffers
+                .set_last(file_path.clone())
+                .unwrap_or_else(|_| {
+                    self.open_file(&file_path, &path);
+                    notify_change = true
+                });
+            {
+                let buffer = self.buffers.get_mut(&file_path).unwrap();
+                notify_change |= buffer.load_from_disk(false);
+            }
+            {
+                let context = self.clients.get_mut(&client_id).unwrap();
+                context.buffer = self.buffers.latest().unwrap().to_string();
+            }
+            (
+                JsonRpc::success(req_id, &file_path.into()),
+                if notify_change {
+                    Some(self.notification_buffer_changed())
+                } else {
+                    None
+                },
+            )
+        } else {
+            (JsonRpc::error((), JRError::invalid_request()), None)
+        }
     }
 }
