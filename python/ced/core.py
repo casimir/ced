@@ -7,7 +7,6 @@ from ced.shells import Shell
 
 
 class CoreConnection(object):
-
     def __init__(self, handler: RpcHandler, shell: Shell, argv=None):
         self.bin = os.getenv("CED_BIN_PATH", "ced")
         self.command = [self.bin]
@@ -23,9 +22,7 @@ class CoreConnection(object):
 
     def start(self):
         proc = subprocess.Popen(
-            self.command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+            self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE
         )
         self.handler.set_input(proc.stdin)
         command_list = self.shell.command_list()

@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 from ced.core import CoreConnection
 from ced.handlers import RpcHandler, State
@@ -82,9 +83,14 @@ def test_connect_delete_last():
 def test_connect_tcp():
     handler = RpcHandler()
     shell = Shell(handler)
-    conn = CoreConnection(handler, shell, argv=["--mode=json", "--session='@:8888'"])
+    conn = CoreConnection(handler, shell, argv=["--mode=json", "--session=@:8888"])
+    assert (
+        subprocess.run([conn.bin, "--mode=daemon", "--session=@:8888"]).returncode == 0
+    )
     conn.start()
     state = handler.state
 
     assert "*scratch*" in state.buffer_list
     assert state.buffer_current == "*scratch*"
+
+    assert not subprocess.check_output([conn.bin, "--list"], stderr=subprocess.STDOUT)

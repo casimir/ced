@@ -42,7 +42,7 @@ impl fmt::Display for ConnectionMode {
                     write!(f, "{}", s)
                 }
             },
-            Tcp(addr) => write!(f, "{}", addr),
+            Tcp(addr) => write!(f, "@{}", addr),
         }
     }
 }
@@ -187,7 +187,7 @@ mod tests {
         );
         assert_eq!(
             format!("{}", ConnectionMode::Tcp("127.0.0.1:8888".parse().unwrap())),
-            "127.0.0.1:8888"
+            "@127.0.0.1:8888"
         );
     }
 }
