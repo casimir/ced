@@ -12,3 +12,7 @@ __pycache__
 # xcode
 
 xcuserdata/
+
+# vscode
+
+*.code-workspace
