@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![warn(clippy)]
+
 #[macro_use]
 extern crate clap;
 extern crate env_logger;
