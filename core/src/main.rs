@@ -179,7 +179,7 @@ fn main() -> Result<(), Error> {
                     &mut io::stdout(),
                     &mut io::stderr(),
                     &filenames,
-                );
+                )?;
                 Ok(())
             }
             Mode::term => {
