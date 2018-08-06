@@ -30,7 +30,7 @@ pub fn get_socket_stream(session: &Session) -> Result<SocketStream, Error> {
 pub struct Socket(NamedPipe);
 
 impl Socket {
-    pub fn try_clone(&self) -> Result<Socket> {
+    pub fn try_clone(&self) -> Result<Socket, Error> {
         unsafe { Ok(Socket(NamedPipe::from_raw_handle(self.0.as_raw_handle()))) }
     }
 }
