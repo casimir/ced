@@ -5,12 +5,13 @@ use std::io::ErrorKind::WouldBlock;
 use std::io::{BufRead, BufReader, Write};
 use std::rc::Rc;
 
+use failure::Error;
 use jsonrpc_lite::JsonRpc;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use serde_json;
 
 use editor::Editor;
-use remote::{ConnectionMode, Error, EventedStream, Listener, Result, Session};
+use remote::{ConnectionMode, EventedStream, Listener, Session};
 
 struct Connection<'a> {
     handle: Box<EventedStream + 'a>,
@@ -31,7 +32,7 @@ impl Server {
         Server { session }
     }
 
-    fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<()> {
+    fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<(), Error> {
         let json = serde_json::to_value(message)?;
         let payload = serde_json::to_string(&json)? + "\n";
         trace!("-> {:?}", payload);
@@ -39,7 +40,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn run(&self, filenames: &[&str]) -> Result<()> {
+    pub fn run(&self, filenames: &[&str]) -> Result<(), Error> {
         let mut editor = Editor::new(&format!("{}", self.session), filenames);
         let listener = Listener::new(&self.session)?;
         let poll = Poll::new()?;

@@ -3,8 +3,9 @@ pub mod buffer;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use failure::Error;
 use jsonrpc_lite::{Error as JRError, JsonRpc, Params};
-use serde_json::{self, Map, Value};
+use serde_json::{Map, Value};
 
 use self::buffer::{Buffer, BufferSource};
 use stackmap::StackMap;
@@ -23,18 +24,6 @@ lazy_static! {
         h
     };
 }
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Protocol(err: serde_json::Error) {
-            from()
-            display("protocol error: {}", err)
-        }
-    }
-}
-
-type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Clone, Debug)]
 pub struct ClientContext {
@@ -81,7 +70,7 @@ impl Editor {
         JsonRpc::notification_with_params("init", params)
     }
 
-    pub fn add_client(&mut self, id: usize) -> Result<(JsonRpc, Option<JsonRpc>)> {
+    pub fn add_client(&mut self, id: usize) -> Result<(JsonRpc, Option<JsonRpc>), Error> {
         let context = if let Some(c) = self.clients.latest() {
             self.clients[c].clone()
         } else {
@@ -93,7 +82,7 @@ impl Editor {
         Ok((self.notification_init(id), None))
     }
 
-    pub fn remove_client(&mut self, id: usize) -> Result<Option<JsonRpc>> {
+    pub fn remove_client(&mut self, id: usize) -> Result<Option<JsonRpc>, Error> {
         self.clients.remove(&id);
         Ok(None)
     }
@@ -143,7 +132,11 @@ impl Editor {
         )
     }
 
-    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<(JsonRpc, Option<JsonRpc>)> {
+    pub fn handle(
+        &mut self,
+        client_id: usize,
+        line: &str,
+    ) -> Result<(JsonRpc, Option<JsonRpc>), Error> {
         trace!("<- ({}) {:?}", client_id, line);
         let message = JsonRpc::parse(line)?;
         let to_write = match message.get_method() {

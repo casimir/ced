@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate clap;
 extern crate env_logger;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 extern crate futures;
 extern crate jsonrpc_lite;
 #[macro_use]
@@ -8,8 +11,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate mio;
-#[macro_use]
-extern crate quick_error;
 extern crate regex;
 extern crate serde_json;
 extern crate tokio;
@@ -43,6 +44,7 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
+use failure::Error;
 
 use remote::{connect, start_client, ConnectionMode, Session};
 use server::Server;
@@ -71,7 +73,7 @@ impl Mode {
     }
 }
 
-fn start_daemon(session: &Session, filenames: &[&str], quiet: bool) {
+fn start_daemon(session: &Session, filenames: &[&str], quiet: bool) -> Result<(), Error> {
     let mut args = vec![
         env::args().next().unwrap(),
         "--mode=server".to_string(),
@@ -85,16 +87,15 @@ fn start_daemon(session: &Session, filenames: &[&str], quiet: bool) {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .expect("failed to start daemon");
+        .spawn()?;
     if !quiet {
         eprintln!("server started with pid {}", prg.id());
     }
-    info!("server command: {:?}", args)
+    info!("server command: {:?}", args);
+    Ok(())
 }
 
-// TODO return Result
-fn main() {
+fn main() -> Result<(), Error> {
     env_logger::init();
 
     let matches = App::new("ced")
@@ -133,6 +134,7 @@ fn main() {
         for session_name in Session::list() {
             println!("{}", session_name)
         }
+        Ok(())
     } else {
         let session = Session::from_name(
             matches
@@ -149,23 +151,23 @@ fn main() {
             Mode::json => {
                 if let ConnectionMode::Socket(path) = &session.mode {
                     if !path.exists() {
-                        start_daemon(&session, &filenames, true);
+                        start_daemon(&session, &filenames, true)?;
                         // ensures the daemon process got time to create the socket
                         thread::sleep(Duration::from_millis(100));
                     }
                 }
                 if cfg!(unix) {
-                    start_client(&session).expect("failed to connect");
+                    start_client(&session)
                 } else {
                     let stdin = io::stdin();
-                    connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
-                        .expect("failed to connect");
+                    connect(&session, &mut stdin.lock(), Box::new(io::stdout()))?;
+                    Ok(())
                 }
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
                 let server = Server::new(session);
-                server.run(&filenames).expect("failed to start server");
+                server.run(&filenames)
             }
             Mode::standalone => {
                 let stdin = io::stdin();
@@ -175,16 +177,17 @@ fn main() {
                     &mut io::stderr(),
                     &filenames,
                 );
+                Ok(())
             }
             Mode::term => {
                 if let ConnectionMode::Socket(path) = &session.mode {
                     if !path.exists() {
-                        start_daemon(&session, &filenames, true);
+                        start_daemon(&session, &filenames, true)?;
                         // ensures the daemon process got time to create the socket
                         thread::sleep(Duration::from_millis(100));
                     }
                 }
-                start_tui(&session, &filenames).expect("failed to start TUI");
+                start_tui(&session, &filenames)
             }
         }
     }

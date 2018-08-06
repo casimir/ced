@@ -3,17 +3,18 @@
 use std::fs;
 use std::os::unix::net::UnixStream;
 
+use failure::Error;
 use mio_uds::UnixListener;
 
-use remote::{ConnectionMode, Error, Result, Session};
+use remote::{ConnectionMode, RemoteError, Session};
 
 pub type SocketStream = UnixStream;
 
-pub fn get_socket_stream(session: &Session) -> Result<SocketStream> {
+pub fn get_socket_stream(session: &Session) -> Result<SocketStream, RemoteError> {
     if let ConnectionMode::Socket(path) = &session.mode {
         match UnixStream::connect(path) {
             Ok(s) => Ok(s),
-            Err(e) => Err(Error::Communication(e)),
+            Err(err) => Err(RemoteError::Communication { err }),
         }
     } else {
         unreachable!();
@@ -22,7 +23,7 @@ pub fn get_socket_stream(session: &Session) -> Result<SocketStream> {
 
 pub type SocketListener = UnixListener;
 
-pub fn get_socket_listener(session: &Session) -> Result<SocketListener> {
+pub fn get_socket_listener(session: &Session) -> Result<SocketListener, Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         let root_dir = path.parent().unwrap();
         if !root_dir.exists() {

@@ -2,13 +2,14 @@ use std::io::{self, BufReader, BufWriter, LineWriter, Write};
 use std::thread;
 use tokio_core::reactor::Handle;
 
+use failure::Error;
 use futures::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{Async, Future, Poll, Stream};
 use serde_json;
 use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
-use remote::{Error, Result, ServerConnection, Session};
+use remote::{ServerConnection, Session};
 
 pub struct Client {
     lines: Lines<BufReader<ReadHalf<ServerConnection>>>,
@@ -23,7 +24,7 @@ impl Client {
         session: &Session,
         events: UnboundedSender<Object>,
         requests: UnboundedReceiver<Object>,
-    ) -> Result<Client> {
+    ) -> Result<Client, Error> {
         let stream = ServerConnection::new(&session.mode)?;
         let (stream_r, stream_w) = stream.split();
         let reader = BufReader::new(stream_r);
@@ -37,7 +38,7 @@ impl Client {
         })
     }
 
-    fn send_request(&mut self, message: &Object) -> Result<()> {
+    fn send_request(&mut self, message: &Object) -> Result<(), Error> {
         let json = serde_json::to_value(message.inner())?;
         let payload = serde_json::to_string(&json)? + "\n";
         self.conn.write_all(payload.as_bytes())?;
@@ -86,7 +87,7 @@ pub struct StdioClient {
 }
 
 impl StdioClient {
-    pub fn new(handle: &Handle, session: &Session) -> Result<StdioClient> {
+    pub fn new(handle: &Handle, session: &Session) -> Result<StdioClient, Error> {
         let (events_tx, events_rx) = mpsc::unbounded();
         handle.spawn(events_rx.for_each(|e| {
             println!("{}", e);

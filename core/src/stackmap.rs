@@ -2,14 +2,11 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        InvalidOp
-    }
+#[derive(Debug, Fail)]
+#[fail(display = "invalid operation: {}", reason)]
+pub struct InvalidOp {
+    reason: &'static str,
 }
-
-type Result<T> = ::std::result::Result<T, Error>;
 
 pub struct StackMap<K, V> {
     stack: Vec<K>,
@@ -36,9 +33,11 @@ where
         self.map.get(idx)
     }
 
-    pub fn set_last(&mut self, k: K) -> Result<()> {
+    pub fn set_last(&mut self, k: K) -> Result<(), InvalidOp> {
         if !self.map.contains_key(&k) {
-            return Err(Error::InvalidOp);
+            return Err(InvalidOp {
+                reason: "key does not exist",
+            });
         }
         if let Some(idx) = self.stack.iter().position(|ref e| **e == k) {
             self.stack.remove(idx);

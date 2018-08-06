@@ -7,6 +7,7 @@ use std::io::Write;
 use std::thread;
 use std::time::Duration;
 
+use failure::Error;
 use futures::sync::mpsc::{self, SendError, UnboundedReceiver, UnboundedSender};
 use futures::{Async, Future, Poll, Stream};
 use ignore::Walk;
@@ -19,7 +20,7 @@ use termion::screen::AlternateScreen;
 use tokio_core::reactor::{Core, Handle};
 
 use remote::protocol::{self, Id, Object};
-use remote::{Client, Result, Session};
+use remote::{Client, Session};
 
 struct Connection {
     events: UnboundedReceiver<Object>,
@@ -44,7 +45,7 @@ impl Connection {
         id
     }
 
-    fn request(&mut self, message: Object) -> ::std::result::Result<(), SendError<Object>> {
+    fn request(&mut self, message: Object) -> Result<(), SendError<Object>> {
         self.requests.unbounded_send(message.clone())?;
         let id = message.clone().id.unwrap();
         self.pending.insert(id, message);
@@ -127,7 +128,7 @@ struct Term {
 }
 
 impl Term {
-    fn new(handle: &Handle, session: &Session, filenames: &[&str]) -> Result<Term> {
+    fn new(handle: &Handle, session: &Session, filenames: &[&str]) -> Result<Term, Error> {
         let (cevents_tx, cevents_rx) = mpsc::unbounded();
         let (crequests_tx, crequests_rx) = mpsc::unbounded();
         let client = Client::new(session, cevents_tx, crequests_rx)?;
@@ -484,7 +485,7 @@ impl Future for Term {
     }
 }
 
-pub fn start(session: &Session, filenames: &[&str]) -> Result<()> {
+pub fn start(session: &Session, filenames: &[&str]) -> Result<(), Error> {
     let mut core = Core::new()?;
     let handle = core.handle();
     let tui = Term::new(&handle, session, filenames)?;

@@ -5,6 +5,7 @@ mod socket_win;
 use std::io;
 use std::net::TcpStream;
 
+use failure::Error;
 use mio::net::TcpListener;
 use mio::Evented;
 
@@ -14,7 +15,7 @@ use self::socket_unix::{get_socket_listener, get_socket_stream, SocketListener, 
 #[cfg(windows)]
 use self::socket_win::{get_socket_listener, get_socket_stream, SocketListener, SocketStream};
 
-use remote::{ConnectionMode, Result, Session};
+use remote::{ConnectionMode, Session};
 
 pub trait Stream: io::Read + io::Write + Send {}
 
@@ -30,14 +31,14 @@ pub enum Connection {
 }
 
 impl Connection {
-    pub fn new(session: &Session) -> Result<Connection> {
+    pub fn new(session: &Session) -> Result<Connection, Error> {
         match &session.mode {
             ConnectionMode::Socket(_) => Ok(Connection::Socket(get_socket_stream(&session)?)),
             ConnectionMode::Tcp(sock_addr) => Ok(Connection::Tcp(TcpStream::connect(&sock_addr)?)),
         }
     }
 
-    pub fn inner_clone(&self) -> Result<Box<Stream>> {
+    pub fn inner_clone(&self) -> Result<Box<Stream>, Error> {
         use self::Connection::*;
         match self {
             Socket(inner) => {
@@ -66,7 +67,7 @@ pub enum Listener {
 }
 
 impl Listener {
-    pub fn new(session: &Session) -> Result<Listener> {
+    pub fn new(session: &Session) -> Result<Listener, Error> {
         match &session.mode {
             ConnectionMode::Socket(_) => Ok(Listener::Socket(get_socket_listener(&session)?)),
             ConnectionMode::Tcp(sock_addr) => Ok(Listener::Tcp(TcpListener::bind(&sock_addr)?)),

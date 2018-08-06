@@ -5,15 +5,16 @@ use std::io;
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, IntoRawHandle};
 
+use failure::Error;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
 use mio_named_pipes::NamedPipe;
 use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
-use remote::{ConnectionMode, Error, Result, Session};
+use remote::{ConnectionMode, Session};
 
 pub type SocketStream = File;
 
-pub fn get_socket_stream(session: &Session) -> Result<SocketStream> {
+pub fn get_socket_stream(session: &Session) -> Result<SocketStream, Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         let file = OpenOptions::new()
             .read(true)
@@ -35,17 +36,17 @@ impl Socket {
 }
 
 impl io::Read for Socket {
-    fn read(&mut self, buf: &mut [u8]) -> ::std::result::Result<usize, io::Error> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read(buf)
     }
 }
 
 impl io::Write for Socket {
-    fn write(&mut self, buf: &[u8]) -> ::std::result::Result<usize, io::Error> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write(buf)
     }
 
-    fn flush(&mut self) -> ::std::result::Result<(), io::Error> {
+    fn flush(&mut self) -> io::Result<()> {
         self.0.flush()
     }
 }
@@ -113,7 +114,7 @@ impl SocketListener {
     }
 }
 
-pub fn get_socket_listener(session: &Session) -> Result<SocketListener> {
+pub fn get_socket_listener(session: &Session) -> Result<SocketListener, Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         Ok(Socket(NamedPipe::new(path)?))
     } else {

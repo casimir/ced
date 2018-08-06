@@ -6,34 +6,20 @@ mod transport;
 use std::io::{self, BufRead, BufReader, Write};
 use std::thread;
 
-use serde_json;
+use failure::Error;
 use tokio_core::reactor::Core;
 
 pub use self::client::{Client, StdioClient};
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{Connection, EventedStream, Listener, ServerConnection};
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Communication(err: io::Error) {
-            from()
-            display("communication error: {}", err)
-        }
-        Protocol(err: serde_json::Error) {
-            from()
-            display("protocol error: {}", err)
-        }
-        Connection(err: ::std::net::AddrParseError) {
-            from()
-            display("invalid address: {}", err)
-        }
-    }
+#[derive(Debug, Fail)]
+pub enum RemoteError {
+    #[fail(display = "communication error: {}", err)]
+    Communication { err: io::Error },
 }
 
-pub type Result<T> = ::std::result::Result<T, Error>;
-
-pub fn start_client(session: &Session) -> Result<()> {
+pub fn start_client(session: &Session) -> Result<(), Error> {
     let mut core = Core::new()?;
     let handle = core.handle();
     let client = StdioClient::new(&handle, session)?;
@@ -45,7 +31,7 @@ pub fn connect(
     session: &Session,
     input: &mut BufRead,
     mut output: Box<(Write + Send + Sync)>,
-) -> Result<()> {
+) -> Result<(), Error> {
     let conn = Connection::new(&session)?;
     let inner_stream = conn.inner_clone()?;
     thread::spawn(move || {
