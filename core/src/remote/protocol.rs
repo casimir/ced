@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::fmt;
+use std::str::FromStr;
 
 use jsonrpc_lite;
+use serde_json;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum Id {
@@ -28,6 +31,22 @@ pub struct Object {
 impl Object {
     pub fn inner(&self) -> &jsonrpc_lite::JsonRpc {
         &self.inner
+    }
+}
+
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let json = serde_json::to_value(self.inner()).map_err(|_| fmt::Error)?;
+        let payload = serde_json::to_string(&json).map_err(|_| fmt::Error)?;
+        f.write_str(&payload)
+    }
+}
+
+impl FromStr for Object {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        jsonrpc_lite::JsonRpc::parse(s).map(Object::from)
     }
 }
 

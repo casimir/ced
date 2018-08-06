@@ -1,72 +1,14 @@
-#![cfg(unix)]
-
 use std::io::{self, BufReader, BufWriter, LineWriter, Write};
+use std::thread;
+use tokio_core::reactor::Handle;
 
-use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{Async, Future, Poll, Stream};
-use jsonrpc_lite::JsonRpc;
 use serde_json;
-use tokio::io::{lines, AsyncRead, AsyncWrite, Lines, ReadHalf, WriteHalf};
-use tokio::net::TcpStream;
-use tokio_uds::UnixStream;
+use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
-use remote::{ConnectionMode, Error, Result, Session};
-
-enum ServerConnection {
-    Socket(UnixStream),
-    Tcp(TcpStream),
-}
-
-impl ServerConnection {
-    fn new(mode: &ConnectionMode) -> io::Result<ServerConnection> {
-        use self::ConnectionMode::*;
-        match mode {
-            Socket(path) => Ok(ServerConnection::Socket(UnixStream::connect(path).wait()?)),
-            Tcp(sock_addr) => Ok(ServerConnection::Tcp(TcpStream::connect(sock_addr).wait()?)),
-        }
-    }
-}
-
-impl io::Read for ServerConnection {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        use self::ServerConnection::*;
-        match self {
-            Socket(stream) => stream.read(buf),
-            Tcp(stream) => stream.read(buf),
-        }
-    }
-}
-
-impl AsyncRead for ServerConnection {}
-
-impl io::Write for ServerConnection {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        use self::ServerConnection::*;
-        match self {
-            Socket(stream) => stream.write(buf),
-            Tcp(stream) => stream.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        use self::ServerConnection::*;
-        match self {
-            Socket(stream) => stream.flush(),
-            Tcp(stream) => stream.flush(),
-        }
-    }
-}
-
-impl AsyncWrite for ServerConnection {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        use self::ServerConnection::*;
-        match self {
-            Socket(stream) => stream.shutdown(),
-            Tcp(stream) => stream.shutdown(),
-        }
-    }
-}
+use remote::{Error, Result, ServerConnection, Session};
 
 pub struct Client {
     lines: Lines<BufReader<ReadHalf<ServerConnection>>>,
@@ -114,8 +56,8 @@ impl Future for Client {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             match self.lines.poll().unwrap() {
-                Async::Ready(Some(line)) => match JsonRpc::parse(&line) {
-                    Ok(message) => self.events.unbounded_send(message.into()).unwrap(),
+                Async::Ready(Some(line)) => match line.parse() {
+                    Ok(msg) => self.events.unbounded_send(msg).unwrap(),
                     Err(e) => self.handle_error(&e.into(), &line),
                 },
                 Async::Ready(None) => self.exit_pending = true,
@@ -136,5 +78,46 @@ impl Future for Client {
         } else {
             Ok(Async::NotReady)
         }
+    }
+}
+
+pub struct StdioClient {
+    inner: Client,
+}
+
+impl StdioClient {
+    pub fn new(handle: &Handle, session: &Session) -> Result<StdioClient> {
+        let (events_tx, events_rx) = mpsc::unbounded();
+        handle.spawn(events_rx.for_each(|e| {
+            println!("{}", e);
+            Ok(())
+        }));
+        let (requests_tx, requests_rx) = mpsc::unbounded();
+        thread::spawn(move || {
+            let stdin = io::stdin();
+            let mut line = String::new();
+            while let Ok(n) = stdin.read_line(&mut line) {
+                if n == 0 {
+                    break;
+                }
+                match line.parse() {
+                    Ok(msg) => requests_tx.unbounded_send(msg).unwrap(),
+                    Err(e) => error!("invalid message: {}: {}", e, line),
+                }
+                line.clear();
+            }
+        });
+        Ok(StdioClient {
+            inner: Client::new(session, events_tx, requests_rx)?,
+        })
+    }
+}
+
+impl Future for StdioClient {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.inner.poll()
     }
 }

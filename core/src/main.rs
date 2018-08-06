@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate clap;
 extern crate env_logger;
+extern crate futures;
 extern crate jsonrpc_lite;
 #[macro_use]
 extern crate lazy_static;
@@ -11,19 +12,15 @@ extern crate mio;
 extern crate quick_error;
 extern crate regex;
 extern crate serde_json;
+extern crate tokio;
+extern crate tokio_core;
 
-#[cfg(unix)]
-extern crate futures;
 #[cfg(unix)]
 extern crate ignore;
 #[cfg(unix)]
 extern crate mio_uds;
 #[cfg(unix)]
 extern crate termion;
-#[cfg(unix)]
-extern crate tokio;
-#[cfg(unix)]
-extern crate tokio_core;
 #[cfg(unix)]
 extern crate tokio_uds;
 
@@ -47,7 +44,7 @@ use std::time::Duration;
 
 use clap::{App, Arg};
 
-use remote::{connect, ConnectionMode, Session};
+use remote::{connect, start_client, ConnectionMode, Session};
 use server::Server;
 use standalone::start_standalone;
 use tui::start as start_tui;
@@ -157,9 +154,13 @@ fn main() {
                         thread::sleep(Duration::from_millis(100));
                     }
                 }
-                let stdin = io::stdin();
-                connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
-                    .expect("failed to connect");
+                if cfg!(unix) {
+                    start_client(&session).expect("failed to connect");
+                } else {
+                    let stdin = io::stdin();
+                    connect(&session, &mut stdin.lock(), Box::new(io::stdout()))
+                        .expect("failed to connect");
+                }
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);

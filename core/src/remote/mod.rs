@@ -7,11 +7,11 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::thread;
 
 use serde_json;
+use tokio_core::reactor::Core;
 
-#[cfg(unix)]
-pub use self::client::Client;
+pub use self::client::{Client, StdioClient};
 pub use self::session::{ConnectionMode, Session};
-pub use self::transport::{Connection, EventedStream, Listener};
+pub use self::transport::{Connection, EventedStream, Listener, ServerConnection};
 
 quick_error! {
     #[derive(Debug)]
@@ -32,6 +32,14 @@ quick_error! {
 }
 
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+pub fn start_client(session: &Session) -> Result<()> {
+    let mut core = Core::new()?;
+    let handle = core.handle();
+    let client = StdioClient::new(&handle, session)?;
+    core.run(client).expect("failed to start reactor");
+    Ok(())
+}
 
 pub fn connect(
     session: &Session,

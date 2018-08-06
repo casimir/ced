@@ -1,3 +1,4 @@
+mod server_connection;
 mod socket_unix;
 mod socket_win;
 
@@ -7,6 +8,7 @@ use std::net::TcpStream;
 use mio::net::TcpListener;
 use mio::Evented;
 
+pub use self::server_connection::ServerConnection;
 #[cfg(unix)]
 use self::socket_unix::{get_socket_listener, get_socket_stream, SocketListener, SocketStream};
 #[cfg(windows)]
