@@ -5,7 +5,6 @@ use tokio_core::reactor::Handle;
 use failure::Error;
 use futures::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{Async, Future, Poll, Stream};
-use serde_json;
 use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
@@ -38,11 +37,8 @@ impl Client {
         })
     }
 
-    fn send_request(&mut self, message: &Object) -> Result<(), Error> {
-        let json = serde_json::to_value(message.inner())?;
-        let payload = serde_json::to_string(&json)? + "\n";
-        self.conn.write_all(payload.as_bytes())?;
-        Ok(())
+    fn send_request(&mut self, message: &Object) -> Result<(), io::Error> {
+        self.conn.write_fmt(format_args!("{}\n", message))
     }
 
     fn handle_error(&self, error: &Error, line: &str) {

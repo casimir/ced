@@ -2,15 +2,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind::WouldBlock;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::rc::Rc;
 
 use failure::Error;
-use jsonrpc_lite::JsonRpc;
 use mio::{Events, Poll, PollOpt, Ready, Token};
-use serde_json;
 
 use editor::Editor;
+use remote::protocol::Object;
 use remote::{ConnectionMode, EventedStream, Listener, Session};
 
 struct Connection<'a> {
@@ -32,12 +31,9 @@ impl Server {
         Server { session }
     }
 
-    fn write_message(&self, conn: &mut Connection, message: &JsonRpc) -> Result<(), Error> {
-        let json = serde_json::to_value(message)?;
-        let payload = serde_json::to_string(&json)? + "\n";
-        trace!("-> {:?}", payload);
-        conn.handle.write_all(payload.as_bytes())?;
-        Ok(())
+    fn write_message(&self, conn: &mut Connection, message: &Object) -> Result<(), io::Error> {
+        trace!("-> {}", message);
+        conn.handle.write_fmt(format_args!("{}\n", message))
     }
 
     pub fn run(&self, filenames: &[&str]) -> Result<(), Error> {
@@ -83,7 +79,7 @@ impl Server {
                                 connections.borrow_mut().insert(next_client_id, conn);
                                 let mut conns = connections.borrow_mut();
                                 if let Some(msg) = &broadcast {
-                                    let errors: Vec<Error> = conns
+                                    let errors: Vec<io::Error> = conns
                                         .iter_mut()
                                         .map(|(_, c)| self.write_message(c, msg))
                                         .filter_map(Result::err)
@@ -129,7 +125,7 @@ impl Server {
                                         let mut conns = connections.borrow_mut();
                                         if let Some(msg) = &broadcast {
                                             let errors: Vec<
-                                        Error,
+                                        io::Error,
                                     > = conns
                                         .iter_mut()
                                         .map(|(_, c)| self.write_message(c, msg))
