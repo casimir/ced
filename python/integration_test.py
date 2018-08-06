@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 
 from ced.core import CoreConnection
 from ced.handlers import RpcHandler, State
@@ -87,6 +88,7 @@ def test_connect_tcp():
     assert (
         subprocess.run([conn.bin, "--mode=daemon", "--session=@:8888"]).returncode == 0
     )
+    time.sleep(0.1)
     conn.start()
     state = handler.state
 
