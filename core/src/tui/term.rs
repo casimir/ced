@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::io;
-use std::io::Write;
+use std::io::{self, Write};
+use std::ops::Drop;
 use std::thread;
 use std::time::Duration;
 
@@ -430,6 +430,7 @@ impl Term {
                     self.menu = Some(Menu::new("file", files));
                     self.draw();
                 }
+                Key::Char('p') => panic!("panic mode activated!"),
                 _ => {}
             }
         }
@@ -449,6 +450,12 @@ impl Term {
         if needs_redraw {
             self.draw();
         }
+    }
+}
+
+impl Drop for Term {
+    fn drop(&mut self) {
+        self.cursor_visible(true);
     }
 }
 
@@ -477,7 +484,6 @@ impl Future for Term {
         }
 
         if self.exit_pending {
-            self.cursor_visible(true);
             Ok(Async::Ready(()))
         } else {
             Ok(Async::NotReady)
