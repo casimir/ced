@@ -144,9 +144,11 @@ impl Term {
                 }
             }
         });
+
+        let term_size = termion::terminal_size()?;
         let resize_tx = events_tx.clone();
         thread::spawn(move || {
-            let mut current = (0, 0);
+            let mut current = term_size;
             loop {
                 match termion::terminal_size() {
                     Ok(size) => {
@@ -171,8 +173,8 @@ impl Term {
             },
             exit_pending: false,
             events: events_rx,
-            last_size: (0, 0),
             screen: AlternateScreen::from(io::stdout().into_raw_mode()?),
+            last_size: term_size,
             status_view: String::new(),
             buffer_view: Vec::new(),
             menu: None,
