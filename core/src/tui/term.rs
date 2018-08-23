@@ -21,6 +21,7 @@ use tokio_core::reactor::{Core, Handle};
 
 use remote::protocol::{self, Id, Object};
 use remote::{Client, Session};
+use tui::finder::{Candidate, Finder};
 
 struct Connection {
     events: UnboundedReceiver<Object>,
@@ -71,23 +72,35 @@ enum MenuChoice {
     None,
 }
 
-struct Menu {
-    title: String,
+struct Menu<'a> {
+    title: &'a str,
     items: Vec<String>,
+    search: String,
+    candidates: Vec<Candidate>,
     selected: usize,
     needs_redraw: bool,
     done: bool,
 }
 
-impl Menu {
-    fn new(title: &str, items: Vec<String>) -> Menu {
-        Menu {
-            title: title.into(),
+impl<'a> Menu<'a> {
+    fn new(title: &'a str, items: Vec<String>) -> Menu<'a> {
+        let mut menu = Menu {
+            title,
             items,
+            search: String::new(),
+            candidates: Vec::new(),
             selected: 0,
             needs_redraw: true,
             done: false,
-        }
+        };
+        menu.perform_search();
+        menu
+    }
+
+    fn perform_search(&mut self) {
+        let mut f = Finder::new(&self.search);
+        self.candidates = f.search(&self.items);
+        self.needs_redraw = true;
     }
 
     fn select_next(&mut self) {
@@ -107,15 +120,36 @@ impl Menu {
     fn choose(&mut self) -> MenuChoice {
         self.done = true;
         let choice = self.items[self.selected].clone();
-        match self.title.as_str() {
+        match self.title {
             "buffer" => MenuChoice::Buffer(choice),
             "file" => MenuChoice::File(choice),
             _ => unreachable!(),
         }
     }
+
+    fn handle_key(&mut self, key: Key) -> MenuChoice {
+        match key {
+            Key::Esc => self.done = true,
+            Key::Down => self.select_next(),
+            Key::Up => self.select_previous(),
+            Key::Char('\n') => {
+                return self.choose();
+            }
+            Key::Char(c) => {
+                self.search.push(c);
+                self.perform_search();
+            }
+            Key::Backspace => {
+                self.search.pop();
+                self.perform_search();
+            }
+            _ => {}
+        }
+        MenuChoice::None
+    }
 }
 
-struct Term {
+struct Term<'a> {
     connection: Connection,
     context: Context,
     exit_pending: bool,
@@ -124,11 +158,11 @@ struct Term {
     screen: AlternateScreen<RawTerminal<io::Stdout>>,
     status_view: String,
     buffer_view: Vec<String>,
-    menu: Option<Menu>,
+    menu: Option<Menu<'a>>,
 }
 
-impl Term {
-    fn new(handle: &Handle, session: &Session, filenames: &[&str]) -> Result<Term, Error> {
+impl<'a> Term<'a> {
+    fn new(handle: &Handle, session: &Session, filenames: &[&str]) -> Result<Term<'a>, Error> {
         let (cevents_tx, cevents_rx) = mpsc::unbounded();
         let (crequests_tx, crequests_rx) = mpsc::unbounded();
         let client = Client::new(session, cevents_tx, crequests_rx)?;
@@ -239,8 +273,7 @@ impl Term {
                 let (width, height) = self.last_size;
                 write!(self.screen, "{}", termion::clear::All).unwrap();
 
-                let item = &menu.items[menu.selected];
-                let title = format!("{}:({})", menu.title, item);
+                let title = format!("{}:{}", menu.title, menu.search);
                 let padding = " ".repeat(width as usize - title.len());
                 write!(
                     self.screen,
@@ -254,11 +287,11 @@ impl Term {
 
                 {
                     let display_size = (height - 1) as usize;
-                    for i in 0..menu.items.len() {
+                    for i in 0..menu.candidates.len() {
                         if i == display_size {
                             break;
                         }
-                        let item = &menu.items[i];
+                        let item = &menu.candidates[i].text;
                         let item_view = if item.len() > width as usize {
                             &item[..width as usize]
                         } else {
@@ -388,33 +421,14 @@ impl Term {
         let mut menu_choice = MenuChoice::None;
         let mut remove_menu = false;
         if let Some(ref mut menu) = self.menu {
-            match key {
-                Key::Esc => {
-                    menu.done = true;
-                }
-                Key::Down | Key::Char('j') => {
-                    menu.select_next();
-                }
-                Key::Up | Key::Char('k') => {
-                    menu.select_previous();
-                }
-                Key::Char('\n') => {
-                    menu_choice = menu.choose();
-                }
-                _ => {}
-            }
+            menu_choice = menu.handle_key(key);
             needs_redraw = menu.needs_redraw;
             remove_menu = menu.done;
         } else {
             match key {
                 Key::Esc => self.exit_pending = true,
                 Key::Char('b') => {
-                    let mut items: Vec<String> = self.context
-                        .buffer_list
-                        .keys()
-                        .map(String::to_string)
-                        .collect();
-                    items.sort();
+                    let items: Vec<String> = self.context.buffer_list.keys().cloned().collect();
                     self.menu = Some(Menu::new("buffer", items));
                     self.draw();
                 }
@@ -423,7 +437,7 @@ impl Term {
                     self.do_edit(current);
                 }
                 Key::Char('f') => {
-                    let files = Walk::new("./")
+                    let files: Vec<String> = Walk::new("./")
                         .into_iter()
                         .filter_map(|e| e.ok())
                         .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
@@ -455,13 +469,13 @@ impl Term {
     }
 }
 
-impl Drop for Term {
+impl<'a> Drop for Term<'a> {
     fn drop(&mut self) {
         self.cursor_visible(true);
     }
 }
 
-impl Future for Term {
+impl<'a> Future for Term<'a> {
     type Item = ();
     type Error = ();
 
