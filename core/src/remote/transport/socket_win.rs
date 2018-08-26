@@ -1,31 +1,13 @@
 #![cfg(windows)]
 
-use std::fs::{File, OpenOptions};
 use std::io;
-use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle, IntoRawHandle};
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 
 use failure::Error;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
 use mio_named_pipes::NamedPipe;
-use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 use remote::{ConnectionMode, Session};
-
-pub type SocketStream = File;
-
-pub fn get_socket_stream(session: &Session) -> Result<SocketStream, Error> {
-    if let ConnectionMode::Socket(path) = &session.mode {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(FILE_FLAG_OVERLAPPED)
-            .open(path)?;
-        Ok(file)
-    } else {
-        unreachable!()
-    }
-}
 
 pub struct Socket(NamedPipe);
 

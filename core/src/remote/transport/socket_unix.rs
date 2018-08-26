@@ -1,25 +1,11 @@
 #![cfg(unix)]
 
 use std::fs;
-use std::os::unix::net::UnixStream;
 
 use failure::Error;
 use mio_uds::UnixListener;
 
-use remote::{ConnectionMode, RemoteError, Session};
-
-pub type SocketStream = UnixStream;
-
-pub fn get_socket_stream(session: &Session) -> Result<SocketStream, RemoteError> {
-    if let ConnectionMode::Socket(path) = &session.mode {
-        match UnixStream::connect(path) {
-            Ok(s) => Ok(s),
-            Err(err) => Err(RemoteError::Communication { err }),
-        }
-    } else {
-        unreachable!();
-    }
-}
+use remote::{ConnectionMode, Session};
 
 pub type SocketListener = UnixListener;
 
