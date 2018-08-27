@@ -291,7 +291,14 @@ impl<'a> Term<'a> {
                         if i == display_size {
                             break;
                         }
-                        let item = &menu.candidates[i].text;
+                        let item = &menu.candidates[i].decorate(&|cap| {
+                            format!(
+                                "{}{}{}",
+                                termion::style::Underline,
+                                cap,
+                                termion::style::NoUnderline,
+                            )
+                        });
                         let item_view = if item.len() > width as usize {
                             &item[..width as usize]
                         } else {

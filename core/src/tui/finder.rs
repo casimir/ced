@@ -1,23 +1,57 @@
 use std::cmp::Ordering;
+use std::fmt;
 
-use regex::Regex;
+use regex::{CaptureLocations, Regex};
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct Candidate {
     pub text: String,
-    score: usize,
+    score: f32,
+    locations: CaptureLocations,
 }
 
 impl Candidate {
-    fn new(re: &Regex, text: &str) -> Candidate {
-        let score = re
-            .find(&text)
-            .map(|m| text.len() - m.start() + m.end())
-            .unwrap_or(0);
+    fn new(re: Regex, text: &str) -> Candidate {
+        let mut locations = re.capture_locations();
+        let score = match re.captures_read(&mut locations, &text) {
+            Some(_) => Candidate::compute_score(&locations),
+            None => 0.0,
+        };
         Candidate {
             text: text.to_owned(),
             score,
+            locations,
         }
+    }
+
+    fn compute_score(locations: &CaptureLocations) -> f32 {
+        if locations.len() > 0 {
+            let (start, _) = locations.get(0).unwrap();
+            let (_, end) = locations.get(locations.len() - 1).unwrap();
+            100.0 / (1 + end - start) as f32
+        } else {
+            0.0
+        }
+    }
+
+    pub fn decorate(&self, decorator: &Fn(&str) -> String) -> String {
+        let mut decorated = self.text.clone();
+        let mut offset = 0;
+        for i in 1..self.locations.len() {
+            if let Some((start, end)) = self.locations.get(i) {
+                let decorated_part = decorator(&self.text[start..end]);
+                let (ostart, oend) = (start + offset, end + offset);
+                decorated.replace_range(ostart..oend, &decorated_part);
+                offset += decorated_part.len() - (end - start);
+            }
+        }
+        decorated
+    }
+}
+
+impl fmt::Display for Candidate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:.2} {}", self.score, self.text)
     }
 }
 
@@ -25,8 +59,10 @@ impl Ord for Candidate {
     fn cmp(&self, other: &Candidate) -> Ordering {
         if self == other {
             other.text.cmp(&self.text)
+        } else if self.score > other.score {
+            Ordering::Greater
         } else {
-            self.score.cmp(&other.score)
+            Ordering::Less
         }
     }
 }
@@ -42,6 +78,8 @@ impl PartialEq for Candidate {
         self.score == other.score
     }
 }
+
+impl Eq for Candidate {}
 
 pub struct Finder {
     re: Regex,
@@ -59,9 +97,68 @@ impl Finder {
     }
 
     pub fn search(&mut self, items: &[String]) -> Vec<Candidate> {
-        let mut candidates: Vec<Candidate> =
-            items.iter().map(|i| Candidate::new(&self.re, i)).collect();
+        let mut candidates: Vec<Candidate> = items
+            .iter()
+            .map(|i| Candidate::new(self.re.clone(), i))
+            .collect();
         candidates.sort_by(|a, b| b.cmp(a));
         candidates
+    }
+}
+
+mod tests {
+    use super::Finder;
+
+    #[test]
+    fn test_match_path() {
+        let items = vec![
+            "/abs/path/here".into(),
+            "/tmp".into(),
+            "/project/module/file.ext".into(),
+            "/project/modula/file.ext".into(),
+            "/project/submodule/file.ext".into(),
+            "/project/file.ext".into(),
+            "/project/file".into(),
+            "/project/amodule/file.ext".into(),
+            "/proj/file/ext/other.ext".into(),
+        ];
+        let expected = vec![
+            "/project/file.ext",           // shortest match
+            "/proj/file/ext/other.ext",    // longer match
+            "/project/modula/file.ext",    // longer match (a)
+            "/project/module/file.ext",    // longer match (e)
+            "/project/amodule/file.ext",   // longer match
+            "/project/submodule/file.ext", // longer match
+            "/abs/path/here",              // no match (a)
+            "/project/file",               // no match (p)
+            "/tmp",                        // no match (t)
+        ];
+        let mut f = Finder::new("proj fil ext");
+        let candidates = &f.search(&items);
+        for c in candidates {
+            eprintln!("{}", c);
+        }
+        let res: Vec<String> = candidates.iter().map(|ref c| c.text.clone()).collect();
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_decorate() {
+        let items = vec![
+            "/project/src/file.ext".into(),
+            "project/no/match/file.ext".into(),
+        ];
+        let upper_fn = |cap: &str| cap.chars().flat_map(char::to_uppercase).collect();
+        let mut f = Finder::new("proj src ext");
+        let candidates = &f.search(&items);
+        assert_eq!(candidates[0].decorate(&upper_fn), "/PROJect/SRC/file.EXT");
+        assert_eq!(
+            candidates[0].decorate(&|cap: &str| format!("${}$", cap)),
+            "/$proj$ect/$src$/file.$ext$"
+        );
+        assert_eq!(
+            candidates[1].decorate(&upper_fn),
+            "project/no/match/file.ext"
+        );
     }
 }
