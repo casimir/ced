@@ -21,7 +21,7 @@ use tokio_core::reactor::{Core, Handle};
 
 use remote::protocol::{self, Id, Object};
 use remote::{Client, Session};
-use tui::finder::{Candidate, Finder};
+use tui::finder::{Candidates, Finder};
 
 struct Connection {
     events: UnboundedReceiver<Object>,
@@ -76,7 +76,7 @@ struct Menu<'a> {
     title: &'a str,
     items: Vec<String>,
     search: String,
-    candidates: Vec<Candidate>,
+    candidates: Candidates,
     selected: usize,
     needs_redraw: bool,
     done: bool,
@@ -88,7 +88,7 @@ impl<'a> Menu<'a> {
             title,
             items,
             search: String::new(),
-            candidates: Vec::new(),
+            candidates: Candidates::new(),
             selected: 0,
             needs_redraw: true,
             done: false,
@@ -100,6 +100,7 @@ impl<'a> Menu<'a> {
     fn perform_search(&mut self) {
         let mut f = Finder::new(&self.search);
         self.candidates = f.search(&self.items);
+        self.selected = 0;
         self.needs_redraw = true;
     }
 
@@ -117,9 +118,13 @@ impl<'a> Menu<'a> {
         }
     }
 
+    fn selected_item(&self) -> &str {
+        &self.candidates[self.selected].text
+    }
+
     fn choose(&mut self) -> MenuChoice {
         self.done = true;
-        let choice = self.items[self.selected].clone();
+        let choice = self.selected_item().to_owned();
         match self.title {
             "buffer" => MenuChoice::Buffer(choice),
             "file" => MenuChoice::File(choice),
@@ -291,7 +296,11 @@ impl<'a> Term<'a> {
                         if i == display_size {
                             break;
                         }
-                        let item = &menu.candidates[i].decorate(&|cap| {
+                        let candidate = &menu.candidates[i];
+                        if menu.candidates.has_matches() && !candidate.is_match() {
+                            break;
+                        }
+                        let item = candidate.decorate(&|cap| {
                             format!(
                                 "{}{}{}",
                                 termion::style::Underline,

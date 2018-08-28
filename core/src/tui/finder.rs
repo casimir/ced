@@ -1,22 +1,22 @@
 use std::cmp::Ordering;
 use std::fmt;
+use std::ops::Deref;
 
 use regex::{CaptureLocations, Regex};
 
 #[derive(Debug)]
 pub struct Candidate {
     pub text: String,
-    score: f32,
+    score: Option<f32>,
     locations: CaptureLocations,
 }
 
 impl Candidate {
     fn new(re: Regex, text: &str) -> Candidate {
         let mut locations = re.capture_locations();
-        let score = match re.captures_read(&mut locations, &text) {
-            Some(_) => Candidate::compute_score(&locations),
-            None => 0.0,
-        };
+        let score = re
+            .captures_read(&mut locations, &text)
+            .map(|_| Candidate::compute_score(&locations));
         Candidate {
             text: text.to_owned(),
             score,
@@ -32,6 +32,10 @@ impl Candidate {
         } else {
             0.0
         }
+    }
+
+    pub fn is_match(&self) -> bool {
+        self.score.is_some()
     }
 
     pub fn decorate(&self, decorator: &Fn(&str) -> String) -> String {
@@ -51,7 +55,7 @@ impl Candidate {
 
 impl fmt::Display for Candidate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:.2} {}", self.score, self.text)
+        write!(f, "{:.2} {}", self.score.unwrap_or(-1.0), self.text)
     }
 }
 
@@ -81,6 +85,31 @@ impl PartialEq for Candidate {
 
 impl Eq for Candidate {}
 
+pub struct Candidates(Vec<Candidate>);
+
+impl Candidates {
+    pub fn new() -> Candidates {
+        Candidates(Vec::new())
+    }
+
+    pub fn has_matches(&self) -> bool {
+        for candidate in &self.0 {
+            if candidate.is_match() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl Deref for Candidates {
+    type Target = Vec<Candidate>;
+
+    fn deref(&self) -> &Vec<Candidate> {
+        &self.0
+    }
+}
+
 pub struct Finder {
     re: Regex,
 }
@@ -96,13 +125,13 @@ impl Finder {
         Finder { re }
     }
 
-    pub fn search(&mut self, items: &[String]) -> Vec<Candidate> {
+    pub fn search(&mut self, items: &[String]) -> Candidates {
         let mut candidates: Vec<Candidate> = items
             .iter()
             .map(|i| Candidate::new(self.re.clone(), i))
             .collect();
         candidates.sort_by(|a, b| b.cmp(a));
-        candidates
+        Candidates(candidates)
     }
 }
 
@@ -135,11 +164,48 @@ mod tests {
         ];
         let mut f = Finder::new("proj fil ext");
         let candidates = &f.search(&items);
-        for c in candidates {
-            eprintln!("{}", c);
-        }
         let res: Vec<String> = candidates.iter().map(|ref c| c.text.clone()).collect();
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_multiple_searches() {
+        let mut f = Finder::new("proj fil ext");
+
+        let items1 = vec![
+            "/abs/path/here".into(),
+            "/project/module/file.ext".into(),
+            "/project/submodule/file.ext".into(),
+            "/project/file".into(),
+            "/proj/file/ext/other.ext".into(),
+        ];
+        let expected1 = vec![
+            "/proj/file/ext/other.ext",
+            "/project/module/file.ext",
+            "/project/submodule/file.ext",
+            "/abs/path/here",
+            "/project/file",
+        ];
+        let candidates1 = &f.search(&items1);
+        let res1: Vec<String> = candidates1.iter().map(|ref c| c.text.clone()).collect();
+
+        let items2 = vec![
+            "/tmp".into(),
+            "/project/modula/file.ext".into(),
+            "/project/file.ext".into(),
+            "/project/amodule/file.ext".into(),
+        ];
+        let expected2 = vec![
+            "/project/file.ext",
+            "/project/modula/file.ext",
+            "/project/amodule/file.ext",
+            "/tmp",
+        ];
+        let candidates2 = &f.search(&items2);
+        let res2: Vec<String> = candidates2.iter().map(|ref c| c.text.clone()).collect();
+
+        assert_eq!(res1, expected1);
+        assert_eq!(res2, expected2);
     }
 
     #[test]
