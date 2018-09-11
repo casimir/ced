@@ -26,7 +26,11 @@ class CedContext {
     var bufferList: [String: [String: String]] = [:]
     
     func buffer() -> [String: String] {
-        return self.bufferList[self.currentBuffer]!
+        if let buffer = self.bufferList[self.currentBuffer] {
+            return buffer
+        } else {
+            return ["content": ""]
+        }
     }
     
 }

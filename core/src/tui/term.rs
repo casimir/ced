@@ -360,14 +360,32 @@ impl<'a> Term<'a> {
         self.buffer_view = content.lines().map(String::from).collect();
     }
 
+    fn refresh_buffer(&mut self, set_title: bool) {
+        if self
+            .context
+            .buffer_list
+            .contains_key(&self.context.buffer_current)
+        {
+            let buffer = self.context.buffer_list[&self.context.buffer_current].clone();
+            self.set_buffer(&buffer["content"]);
+            if set_title {
+                self.status_view = buffer["label"].clone();
+            }
+        } else {
+            if set_title {
+                self.status_view = self.context.buffer_current.clone();
+            }
+        }
+        self.draw();
+    }
+
     fn handle_client_event(&mut self, message: &Object) {
         if let Some(ref id) = message.id {
             if let Some(request) = self.connection.pending.remove(id) {
                 if let Some(result) = message.inner().get_result() {
                     match request.inner().get_method().unwrap() {
-                        "buffer-select" | "edit" => {
-                            self.process_buffer_select(&result.clone().into())
-                        }
+                        "edit" => self.process_edit(&result.clone().into()),
+                        "buffer-select" => self.process_buffer_select(&result.clone().into()),
                         method => error!("unknown response method: {}", method),
                     }
                 } else {
@@ -393,11 +411,7 @@ impl<'a> Term<'a> {
                 .insert(buffer["name"].clone(), buffer);
         }
         self.context.buffer_current = params.buffer_current;
-
-        let buffer = self.context.buffer_list[&self.context.buffer_current].clone();
-        self.status_view = buffer["label"].clone();
-        self.set_buffer(&buffer["content"]);
-        self.draw();
+        self.refresh_buffer(true);
     }
 
     fn process_buffer_changed(&mut self, params: protocol::notification::buffer_changed::Params) {
@@ -405,15 +419,19 @@ impl<'a> Term<'a> {
         self.context
             .buffer_list
             .insert(name.to_owned(), params.clone());
+        if self.context.buffer_current == *name {
+            self.refresh_buffer(true);
+        }
+    }
+
+    fn process_edit(&mut self, result: &protocol::request::edit::Result) {
+        self.context.buffer_current = result.to_string();
+        self.refresh_buffer(false);
     }
 
     fn process_buffer_select(&mut self, result: &protocol::request::buffer_select::Result) {
         self.context.buffer_current = result.to_string();
-
-        let buffer = self.context.buffer_list[&self.context.buffer_current].clone();
-        self.status_view = buffer["label"].to_string();
-        self.set_buffer(&buffer["content"]);
-        self.draw();
+        self.refresh_buffer(true);
     }
 
     fn do_buffer_select(&mut self, buffer_name: &str) {

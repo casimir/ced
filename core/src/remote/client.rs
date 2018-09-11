@@ -8,11 +8,11 @@ use futures::{Async, Future, Poll, Stream};
 use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
-use remote::{ServerConnection, Session};
+use remote::{ServerStream, Session};
 
 pub struct Client {
-    lines: Lines<BufReader<ReadHalf<ServerConnection>>>,
-    conn: LineWriter<BufWriter<WriteHalf<ServerConnection>>>,
+    lines: Lines<BufReader<ReadHalf<ServerStream>>>,
+    conn: LineWriter<BufWriter<WriteHalf<ServerStream>>>,
     exit_pending: bool,
     events: UnboundedSender<Object>,
     requests: UnboundedReceiver<Object>,
@@ -24,7 +24,7 @@ impl Client {
         events: UnboundedSender<Object>,
         requests: UnboundedReceiver<Object>,
     ) -> Result<Client, Error> {
-        let stream = ServerConnection::new(&session.mode)?;
+        let stream = ServerStream::new(&session.mode)?;
         let (stream_r, stream_w) = stream.split();
         let reader = BufReader::new(stream_r);
         let writer = BufWriter::new(stream_w);

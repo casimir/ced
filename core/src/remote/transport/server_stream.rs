@@ -10,26 +10,24 @@ use tokio_named_pipes::NamedPipeStream as SocketStream;
 
 use remote::ConnectionMode;
 
-pub enum ServerConnection {
+pub enum ServerStream {
     Socket(SocketStream),
     Tcp(TcpStream),
 }
 
-impl ServerConnection {
-    pub fn new(mode: &ConnectionMode) -> io::Result<ServerConnection> {
+impl ServerStream {
+    pub fn new(mode: &ConnectionMode) -> io::Result<ServerStream> {
         use self::ConnectionMode::*;
         match mode {
-            Socket(path) => Ok(ServerConnection::Socket(
-                SocketStream::connect(path).wait()?,
-            )),
-            Tcp(sock_addr) => Ok(ServerConnection::Tcp(TcpStream::connect(sock_addr).wait()?)),
+            Socket(path) => Ok(ServerStream::Socket(SocketStream::connect(path).wait()?)),
+            Tcp(sock_addr) => Ok(ServerStream::Tcp(TcpStream::connect(sock_addr).wait()?)),
         }
     }
 }
 
-impl io::Read for ServerConnection {
+impl io::Read for ServerStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        use self::ServerConnection::*;
+        use self::ServerStream::*;
         match self {
             Socket(stream) => stream.read(buf),
             Tcp(stream) => stream.read(buf),
@@ -37,11 +35,11 @@ impl io::Read for ServerConnection {
     }
 }
 
-impl AsyncRead for ServerConnection {}
+impl AsyncRead for ServerStream {}
 
-impl io::Write for ServerConnection {
+impl io::Write for ServerStream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        use self::ServerConnection::*;
+        use self::ServerStream::*;
         match self {
             Socket(stream) => stream.write(buf),
             Tcp(stream) => stream.write(buf),
@@ -49,7 +47,7 @@ impl io::Write for ServerConnection {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        use self::ServerConnection::*;
+        use self::ServerStream::*;
         match self {
             Socket(stream) => stream.flush(),
             Tcp(stream) => stream.flush(),
@@ -57,9 +55,9 @@ impl io::Write for ServerConnection {
     }
 }
 
-impl AsyncWrite for ServerConnection {
+impl AsyncWrite for ServerStream {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
-        use self::ServerConnection::*;
+        use self::ServerStream::*;
         match self {
             Socket(stream) => stream.shutdown(),
             Tcp(stream) => stream.shutdown(),

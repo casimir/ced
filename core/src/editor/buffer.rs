@@ -72,7 +72,6 @@ impl Buffer {
     }
 
     pub fn new_file(filename: &PathBuf) -> Buffer {
-        trace!("{}", filename.display());
         let absolute_path = if filename.is_absolute() {
             filename.clone()
         } else {
@@ -81,7 +80,6 @@ impl Buffer {
             full_path.as_path().canonicalize().unwrap()
         };
 
-        trace!("{} -> {}", filename.display(), absolute_path.display());
         let mut buffer = Buffer {
             source: BufferSource::File(absolute_path),
             lines: Vec::new(),

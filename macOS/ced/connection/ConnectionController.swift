@@ -23,6 +23,13 @@ class ConnectionController {
         self.window?.title = "\(context.currentBuffer!) - \(context.session!)"
     }
     
+    func refresh_buffer(_ context: CedContext, setTitle: Bool = true) {
+        self.buffer.string = context.buffer()["content"]!
+        if setTitle {
+            self.setWindowTitle(context)
+        }
+    }
+    
     func handle(line: Data, context: CedContext) {
           DispatchQueue.main.sync {
             if let message = try? RpcRequest(with: line) {
@@ -61,31 +68,37 @@ class ConnectionController {
             context.bufferList[buffer["name"]!] = buffer
         }
         
-        self.buffer.string = context.buffer()["content"]!
-        self.setWindowTitle(context)
+        self.refresh_buffer(context)
     }
     
     func handle_buffer_changed(params: Any?, context: CedContext) {
         let buffer = params as! [String: String]
         let buffer_name = buffer["name"]!
-        context.currentBuffer = buffer_name
         context.bufferList[buffer_name] = buffer
+        
+        if context.currentBuffer == buffer_name {
+            self.refresh_buffer(context, setTitle: false)
+        }
     }
     
     func handle_rpc_response(request: RpcRequest, response: RpcResponse, context: CedContext) {
-        if request.method == "buffer-select" || request.method == "edit" {
+        if request.method == "edit" {
+            self.handle_edit(request: request, response: response, context: context)
+        } else if request.method == "buffer-select" {
             self.handle_buffer_select(request: request, response: response, context: context)
         } else {
             print("method: \(request.method)\nparams: \(String(describing: request.params))\nresult: \(String(describing: response.result))")
         }
     }
     
+    func handle_edit(request: RpcRequest, response: RpcResponse, context: CedContext) {
+        context.currentBuffer = response.result as! String
+        self.refresh_buffer(context)
+    }
+    
     func handle_buffer_select(request: RpcRequest, response: RpcResponse, context: CedContext) {
-        let buffer_name = response.result as! String
-        context.currentBuffer = buffer_name
-        
-        self.buffer.string = context.buffer()["content"]!
-        self.setWindowTitle(context)
+        context.currentBuffer = response.result as! String
+        self.refresh_buffer(context)
     }
     
 }

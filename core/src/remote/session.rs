@@ -53,7 +53,8 @@ impl FromStr for ConnectionMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use self::ConnectionMode::*;
         if let Some(caps) = RE_ADDR.captures(s) {
-            let address = caps.name("address")
+            let address = caps
+                .name("address")
                 .and_then(|m| Some(m.as_str()))
                 .unwrap_or("127.0.0.1");
             let port = caps.name("port").unwrap().as_str();

@@ -1,7 +1,7 @@
 import sys
 import traceback
 
-from .jsonrpc import Request, Response
+from ced.jsonrpc import Request, Response
 
 
 class State(object):
@@ -67,7 +67,6 @@ class RpcHandler(object):
 
     def handle_buffer_changed(self, response: Response):
         buf = response.params
-        self.state.buffer_current = buf["name"]
         self.state.buffer_list[buf["name"]] = buf
 
     def handle_buffer_list(self, response: Response):
@@ -81,8 +80,8 @@ class RpcHandler(object):
 
     def handle_buffer_delete(self, response: Response):
         deleted = response.result["buffer_deleted"]
-        if deleted in self.state.buffer_list:
-            del self.state.buffer_list[deleted]
+        del self.state.buffer_list[deleted]
+        self.state.buffer_current = response.result["buffer_selected"]
 
     def handle_edit(self, response: Response):
-        self.handle_buffer_select(response)
+        self.state.buffer_current = response.result

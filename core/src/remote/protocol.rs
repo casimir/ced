@@ -5,7 +5,7 @@ use std::str::FromStr;
 use jsonrpc_lite;
 use serde_json;
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Id {
     Number(i64),
     String(String),
@@ -22,7 +22,7 @@ impl From<jsonrpc_lite::Id> for Id {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Object {
     inner: jsonrpc_lite::JsonRpc,
     pub id: Option<Id>,
@@ -60,6 +60,7 @@ impl From<jsonrpc_lite::JsonRpc> for Object {
 type Buffer = HashMap<String, String>;
 
 pub mod notification {
+    /// Sent to to the client when connection is complete.
     pub mod init {
         use jsonrpc_lite;
 
@@ -92,6 +93,7 @@ pub mod notification {
         }
     }
 
+    /// Sent to all clients when a buffer has changed (e.g. content modified).
     pub mod buffer_changed {
         use std::collections::HashMap;
         use std::ops::Deref;
@@ -173,6 +175,8 @@ pub mod request {
     }
 
     pub mod edit {
+        use std::ops::Deref;
+
         use jsonrpc_lite;
         use serde_json::Value;
 
@@ -185,6 +189,22 @@ pub mod request {
             let inner = jsonrpc_lite::JsonRpc::request_with_params(id, "edit", values);
             let id = Some(inner.get_id().unwrap().into());
             Object { inner, id }
+        }
+
+        pub struct Result(String);
+
+        impl Deref for Result {
+            type Target = String;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl From<Value> for Result {
+            fn from(value: Value) -> Result {
+                Result(value.as_str().unwrap().to_string())
+            }
         }
     }
 }

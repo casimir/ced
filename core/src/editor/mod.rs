@@ -2,6 +2,7 @@ pub mod buffer;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use failure::Error;
 use jsonrpc_lite::{Error as JRError, JsonRpc, Params};
@@ -9,6 +10,7 @@ use serde_json::{Map, Value};
 
 use self::buffer::{Buffer, BufferSource};
 use remote::protocol::Object;
+use server::BroadcastMessage;
 use stackmap::StackMap;
 
 lazy_static! {
@@ -35,14 +37,20 @@ pub struct Editor {
     session_name: String,
     clients: StackMap<usize, ClientContext>,
     buffers: StackMap<String, Buffer>,
+    broadcaster: mpsc::Sender<BroadcastMessage>,
 }
 
 impl Editor {
-    pub fn new(session: &str, filenames: &[&str]) -> Editor {
+    pub fn new(
+        session: &str,
+        filenames: &[&str],
+        broadcaster: mpsc::Sender<BroadcastMessage>,
+    ) -> Editor {
         let mut editor = Editor {
             session_name: session.into(),
             clients: StackMap::new(),
             buffers: StackMap::new(),
+            broadcaster,
         };
         editor.open_scratch("*debug*");
         if filenames.is_empty() {
@@ -53,6 +61,11 @@ impl Editor {
             }
         }
         editor
+    }
+
+    fn broadcast(&self, message: Object) -> Result<(), Error> {
+        let bm = BroadcastMessage::new(message);
+        self.broadcaster.send(bm).map_err(Error::from)
     }
 
     fn notification_init(&self, client_id: usize) -> Object {
@@ -71,7 +84,7 @@ impl Editor {
         JsonRpc::notification_with_params("init", params).into()
     }
 
-    pub fn add_client(&mut self, id: usize) -> Result<(Object, Option<Object>), Error> {
+    pub fn add_client(&mut self, id: usize) -> Result<Object, Error> {
         let context = if let Some(c) = self.clients.latest() {
             self.clients[c].clone()
         } else {
@@ -80,11 +93,13 @@ impl Editor {
             }
         };
         self.clients.insert(id, context);
-        Ok((self.notification_init(id), None))
+        self.append_debug(&format!("new client: {}", id));
+        Ok(self.notification_init(id))
     }
 
     pub fn remove_client(&mut self, id: usize) -> Result<Option<Object>, Error> {
         self.clients.remove(&id);
+        self.append_debug(&format!("client left: {}", id));
         Ok(None)
     }
 
@@ -124,23 +139,24 @@ impl Editor {
             debug_buffer.append(content);
         }
         info!("{}", content);
+        let message = JsonRpc::notification_with_params(
+            "buffer-changed",
+            self.get_buffer_value("*debug*", &self.buffers["*debug*"]),
+        );
+        self.broadcast(message.into())
+            .expect("append debug message");
     }
 
-    fn notification_buffer_changed(&mut self) -> Object {
-        let name = self.buffers.latest().unwrap();
+    fn notification_buffer_changed(&self, name: &str) -> Object {
         JsonRpc::notification_with_params(
             "buffer-changed",
             self.get_buffer_value(name, &self.buffers[name]),
         ).into()
     }
 
-    pub fn handle(
-        &mut self,
-        client_id: usize,
-        line: &str,
-    ) -> Result<(Object, Option<Object>), Error> {
-        trace!("<- ({}) {:?}", client_id, line);
+    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Object, Error> {
         let message: Object = line.parse()?;
+        trace!("<- ({}) {}", client_id, message);
         let to_write = match message.inner().get_method() {
             Some(name) => match name {
                 "buffer-list" => self.command_buffer_list(client_id, &message),
@@ -149,50 +165,36 @@ impl Editor {
                 "command-list" => self.command_list(client_id, &message),
                 "edit" => self.command_edit(client_id, &message),
                 _ => match message.inner().get_id() {
-                    Some(req_id) => (
-                        JsonRpc::error(req_id, JRError::method_not_found()).into(),
-                        None,
-                    ),
-                    None => (JsonRpc::error((), JRError::invalid_request()).into(), None),
+                    Some(req_id) => JsonRpc::error(req_id, JRError::method_not_found()).into(),
+                    None => JsonRpc::error((), JRError::invalid_request()).into(),
                 },
             },
             _ => {
                 let dm = format!("unknown command: {}\n", message);
                 self.append_debug(&dm);
                 match message.inner().get_id() {
-                    Some(req_id) => (
-                        JsonRpc::error(req_id, JRError::method_not_found()).into(),
-                        None,
-                    ),
-                    None => (JsonRpc::error((), JRError::invalid_request()).into(), None),
+                    Some(req_id) => JsonRpc::error(req_id, JRError::method_not_found()).into(),
+                    None => JsonRpc::error((), JRError::invalid_request()).into(),
                 }
             }
         };
         Ok(to_write)
     }
 
-    fn command_buffer_list(
-        &mut self,
-        _client_id: usize,
-        message: &Object,
-    ) -> (Object, Option<Object>) {
+    fn command_buffer_list(&mut self, _client_id: usize, message: &Object) -> Object {
         if let Some(req_id) = message.inner().get_id() {
             let params = self
                 .buffers
                 .iter()
                 .map(|(n, b)| self.get_buffer_value(n, b))
                 .collect::<Vec<Value>>();
-            (JsonRpc::success(req_id, &params.into()).into(), None)
+            JsonRpc::success(req_id, &params.into()).into()
         } else {
-            (JsonRpc::error((), JRError::invalid_request()).into(), None)
+            JsonRpc::error((), JRError::invalid_request()).into()
         }
     }
 
-    fn command_buffer_select(
-        &mut self,
-        client_id: usize,
-        message: &Object,
-    ) -> (Object, Option<Object>) {
+    fn command_buffer_select(&mut self, client_id: usize, message: &Object) -> Object {
         if let Some(req_id) = message.inner().get_id() {
             let buffer_name = match message.inner().get_params().unwrap() {
                 Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -206,23 +208,19 @@ impl Editor {
                     let context = self.clients.get_mut(&client_id).unwrap();
                     context.buffer = self.buffers.latest().unwrap().to_string();
                 }
-                (JsonRpc::success(req_id, &buffer_name.into()).into(), None)
+                JsonRpc::success(req_id, &buffer_name.into()).into()
             } else {
                 let mut error = JRError::invalid_params();
                 let details = format!("buffer '{}' does not exist", buffer_name);
                 error.data = Some(details.to_string().into());
-                (JsonRpc::error(req_id, error).into(), None)
+                JsonRpc::error(req_id, error).into()
             }
         } else {
-            (JsonRpc::error((), JRError::invalid_request()).into(), None)
+            JsonRpc::error((), JRError::invalid_request()).into()
         }
     }
 
-    fn command_buffer_delete(
-        &mut self,
-        client_id: usize,
-        message: &Object,
-    ) -> (Object, Option<Object>) {
+    fn command_buffer_delete(&mut self, client_id: usize, message: &Object) -> Object {
         if let Some(req_id) = message.inner().get_id() {
             let buffer_name = match message.inner().get_params().unwrap() {
                 Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -238,34 +236,37 @@ impl Editor {
                 }
                 let mut params: Map<String, Value> = Map::new();
                 params.insert("buffer_deleted".into(), buffer_name.into());
-                (
-                    JsonRpc::success(req_id, &params.into()).into(),
-                    Some(self.notification_buffer_changed()),
-                )
+                params.insert(
+                    "buffer_selected".into(),
+                    self.clients[&client_id].buffer.clone().into(),
+                );
+                self.broadcast(self.notification_buffer_changed(self.buffers.latest().unwrap()))
+                    .expect("broadcast buffer change after edit");
+                JsonRpc::success(req_id, &params.into()).into()
             } else {
                 let mut error = JRError::invalid_params();
                 let details = format!("buffer '{}' does not exist", buffer_name);
                 error.data = Some(details.to_string().into());
-                (JsonRpc::error(req_id, error).into(), None)
+                JsonRpc::error(req_id, error).into()
             }
         } else {
-            (JsonRpc::error((), JRError::invalid_request()).into(), None)
+            JsonRpc::error((), JRError::invalid_request()).into()
         }
     }
 
-    fn command_list(&mut self, _client_id: usize, message: &Object) -> (Object, Option<Object>) {
+    fn command_list(&mut self, _client_id: usize, message: &Object) -> Object {
         if let Some(req_id) = message.inner().get_id() {
             let mut result = Map::new();
             for (cmd, help) in HELP.iter() {
                 result.insert(cmd.to_string(), help.to_string().into());
             }
-            (JsonRpc::success(req_id, &result.into()).into(), None)
+            JsonRpc::success(req_id, &result.into()).into()
         } else {
-            (JsonRpc::error((), JRError::invalid_request()).into(), None)
+            JsonRpc::error((), JRError::invalid_request()).into()
         }
     }
 
-    fn command_edit(&mut self, client_id: usize, message: &Object) -> (Object, Option<Object>) {
+    fn command_edit(&mut self, client_id: usize, message: &Object) -> Object {
         if let Some(req_id) = message.inner().get_id() {
             let file_path = match message.inner().get_params().unwrap() {
                 Params::Array(args) => args[0].as_str().unwrap().to_owned(),
@@ -279,7 +280,7 @@ impl Editor {
                 .set_last(file_path.clone())
                 .unwrap_or_else(|_| {
                     self.open_file(&file_path, &path);
-                    notify_change = true
+                    notify_change = true;
                 });
             {
                 let buffer = self.buffers.get_mut(&file_path).unwrap();
@@ -289,16 +290,14 @@ impl Editor {
                 let context = self.clients.get_mut(&client_id).unwrap();
                 context.buffer = self.buffers.latest().unwrap().to_string();
             }
-            (
-                JsonRpc::success(req_id, &file_path.into()).into(),
-                if notify_change {
-                    Some(self.notification_buffer_changed())
-                } else {
-                    None
-                },
-            )
+            if notify_change {
+                self.broadcast(self.notification_buffer_changed(&file_path))
+                    .expect("broadcast buffer change after edit");
+                trace!("new file: {}", file_path);
+            }
+            JsonRpc::success(req_id, &file_path.into()).into()
         } else {
-            (JsonRpc::error((), JRError::invalid_request()).into(), None)
+            JsonRpc::error((), JRError::invalid_request()).into()
         }
     }
 }
