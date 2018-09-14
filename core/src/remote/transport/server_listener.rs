@@ -8,9 +8,9 @@ use remote::transport::EventedStream;
 use remote::{ConnectionMode, Session};
 
 #[cfg(unix)]
-use remote::transport::socket_unix::{get_socket_listener, SocketListener};
+use remote::transport::socket_unix::SocketListener;
 #[cfg(windows)]
-use remote::transport::socket_win::{get_socket_listener, SocketListener};
+use remote::transport::socket_win::SocketListener;
 
 pub enum ServerListener {
     Socket(SocketListener),
@@ -20,7 +20,7 @@ pub enum ServerListener {
 impl ServerListener {
     pub fn new(session: &Session) -> Result<ServerListener, Error> {
         match &session.mode {
-            ConnectionMode::Socket(_) => Ok(ServerListener::Socket(get_socket_listener(&session)?)),
+            ConnectionMode::Socket(path) => Ok(ServerListener::Socket(SocketListener::bind(path)?)),
             ConnectionMode::Tcp(sock_addr) => {
                 Ok(ServerListener::Tcp(TcpListener::bind(&sock_addr)?))
             }
