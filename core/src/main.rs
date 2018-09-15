@@ -5,6 +5,7 @@
 extern crate cfg_if;
 #[macro_use]
 extern crate clap;
+extern crate crossbeam_channel;
 extern crate env_logger;
 extern crate failure;
 #[macro_use]
@@ -51,7 +52,7 @@ use std::time::Duration;
 use clap::{App, Arg};
 use failure::Error;
 
-use remote::{start_client, ConnectionMode, Session};
+use remote::{ConnectionMode, Session, StdioClient};
 use server::Server;
 use standalone::start_standalone;
 use tui::start as start_tui;
@@ -124,28 +125,24 @@ fn main() -> Result<(), Error> {
                 .short("l")
                 .long("list")
                 .help("Lists running sessions"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("SESSION")
                 .short("s")
                 .long("session")
                 .takes_value(true)
                 .help("Sets session name"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("MODE")
                 .short("m")
                 .long("mode")
                 .possible_values(&Mode::variants())
                 .default_value(Mode::default_value())
                 .help("Mode to use"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("FILE")
                 .multiple(true)
                 .help("A list of files to open"),
-        )
-        .get_matches();
+        ).get_matches();
 
     if matches.is_present("list") {
         for session_name in Session::list() {
@@ -167,12 +164,11 @@ fn main() -> Result<(), Error> {
             Mode::daemon => start_daemon(&session, &filenames, false),
             Mode::json => {
                 ensure_session(&session, &filenames)?;
-                start_client(&session)
+                StdioClient::new(&session)?.run()
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
-                let server = Server::new(session);
-                server.run(&filenames)
+                Server::new(session).run(&filenames)
             }
             Mode::standalone => {
                 let stdin = io::stdin();

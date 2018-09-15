@@ -6,6 +6,7 @@ authors = ["Martin Chaine <martin@casimir.me>"]
 [dependencies]
 cfg-if = "0.1"
 clap = "2.31"
+crossbeam-channel = "0.2"
 env_logger = "0.5"
 failure = "0.1"
 failure_derive = "0.1"

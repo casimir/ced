@@ -8,7 +8,7 @@ use std::io;
 use mio::Evented;
 
 pub use self::server_listener::ServerListener;
-pub use self::server_stream::ServerStream;
+pub use self::server_stream::{ServerStream, ServerStream2};
 
 pub trait Stream: io::Read + io::Write + Send {}
 

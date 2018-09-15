@@ -3,6 +3,7 @@
 use std::fs;
 use std::io;
 use std::ops::Deref;
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 
 use failure::Error;
@@ -49,6 +50,22 @@ impl Evented for SocketListener {
 
 impl Deref for SocketListener {
     type Target = UnixListener;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct SocketStream(UnixStream);
+
+impl SocketStream {
+    pub fn connect(path: &Path) -> io::Result<SocketStream> {
+        Ok(SocketStream(UnixStream::connect(path)?))
+    }
+}
+
+impl Deref for SocketStream {
+    type Target = UnixStream;
 
     fn deref(&self) -> &Self::Target {
         &self.0

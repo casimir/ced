@@ -1,13 +1,16 @@
 #![cfg(windows)]
 
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::ops::Deref;
+use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Path;
 
 use failure::Error;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
 use mio_named_pipes::NamedPipe;
+use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 pub struct Socket(NamedPipe);
 
@@ -23,6 +26,14 @@ impl Socket {
     pub fn accept(&self) -> io::Result<Option<(Socket, ())>> {
         self.0.connect()?;
         Ok(Some((self.try_clone().unwrap(), ())))
+    }
+}
+
+impl Deref for Socket {
+    type Target = NamedPipe;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -68,34 +79,6 @@ impl Evented for Socket {
     }
 }
 
-// pub type SocketStream = Socket;
-
-// pub fn get_socket_stream(session: &Session) -> Result<SocketStream> {
-//     if let ConnectionMode::Socket(path) = &session.mode {
-//         let file = OpenOptions::new()
-//             .read(true)
-//             .write(true)
-//             .custom_flags(FILE_FLAG_OVERLAPPED)
-//             .open(path)?;
-//         let pipe = unsafe { NamedPipe::from_raw_handle(file.into_raw_handle()) };
-//         loop {
-//             match pipe.connect() {
-//                 Ok(_) => break,
-//                 Err(e) => {
-//                     if e.kind() == ::std::io::ErrorKind::WouldBlock {
-//                         continue;
-//                     } else {
-//                         return Err(Error::Communication(e));
-//                     }
-//                 }
-//             }
-//         }
-//         Ok(Socket(pipe))
-//     } else {
-//         unreachable!()
-//     }
-// }
-
 pub struct SocketListener(Socket);
 
 impl SocketListener {
@@ -132,6 +115,27 @@ impl Evented for SocketListener {
 
 impl Deref for SocketListener {
     type Target = Socket;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct SocketStream(File);
+
+impl SocketStream {
+    pub fn connect(path: &Path) -> io::Result<SocketStream> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
+            .open(path)?;
+        Ok(SocketStream(file))
+    }
+}
+
+impl Deref for SocketStream {
+    type Target = File;
 
     fn deref(&self) -> &Self::Target {
         &self.0

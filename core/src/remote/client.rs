@@ -1,14 +1,14 @@
-use std::io::{self, BufReader, BufWriter, LineWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, LineWriter, Write};
 use std::thread;
-use tokio_core::reactor::Handle;
 
+use crossbeam_channel as channel;
 use failure::Error;
-use futures::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::{Async, Future, Poll, Stream};
 use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
-use remote::{ServerStream, Session};
+use remote::{ServerStream, ServerStream2, Session};
 
 pub struct Client {
     lines: Lines<BufReader<ReadHalf<ServerStream>>>,
@@ -78,43 +78,67 @@ impl Future for Client {
     }
 }
 
-pub struct StdioClient {
-    inner: Client,
+pub struct Client2 {
+    stream: ServerStream2,
+    requests: channel::Receiver<Object>,
 }
 
-impl StdioClient {
-    pub fn new(handle: &Handle, session: &Session) -> Result<StdioClient, Error> {
-        let (events_tx, events_rx) = mpsc::unbounded();
-        handle.spawn(events_rx.for_each(|e| {
-            println!("{}", e);
-            Ok(())
-        }));
-        let (requests_tx, requests_rx) = mpsc::unbounded();
+impl Client2 {
+    pub fn new(session: &Session) -> Result<(Client2, channel::Sender<Object>), Error> {
+        let (requests_tx, requests) = channel::unbounded();
+        let client = Client2 {
+            stream: ServerStream2::new(&session.mode)?,
+            requests,
+        };
+        Ok((client, requests_tx))
+    }
+
+    pub fn run(&self) -> impl Iterator<Item = Result<Object, Error>> {
+        let requests_rx = self.requests.clone();
+        let mut writer = self.stream.inner_clone().expect("clone server stream");
         thread::spawn(move || {
-            let stdin = io::stdin();
-            let mut line = String::new();
-            while let Ok(n) = stdin.read_line(&mut line) {
-                if n == 0 {
-                    break;
-                }
-                match line.parse() {
-                    Ok(msg) => requests_tx.unbounded_send(msg).unwrap(),
-                    Err(e) => error!("invalid message: {}: {}", e, line),
-                }
-                line.clear();
+            for message in requests_rx {
+                writer.write_fmt(format_args!("{}\n", message)).unwrap();
             }
         });
-        Ok(StdioClient {
-            inner: Client::new(session, events_tx, requests_rx)?,
-        })
+        let reader = BufReader::new(self.stream.inner_clone().expect("clone server stream"));
+        reader
+            .lines()
+            .map(|l| l.unwrap().parse().map_err(Error::from))
     }
 }
 
-impl Future for StdioClient {
-    type Item = ();
-    type Error = ();
+pub struct StdioClient {
+    client: Client2,
+    requests: channel::Sender<Object>,
+}
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.inner.poll()
+impl StdioClient {
+    pub fn new(session: &Session) -> Result<StdioClient, Error> {
+        let (client, requests) = Client2::new(session)?;
+        Ok(StdioClient { client, requests })
+    }
+
+    pub fn run(&self) -> Result<(), Error> {
+        let requests_tx = self.requests.clone();
+        thread::spawn(move || {
+            let stdin = io::stdin();
+            for maybe_line in stdin.lock().lines() {
+                match maybe_line {
+                    Ok(line) => match line.parse() {
+                        Ok(msg) => requests_tx.send(msg),
+                        Err(e) => error!("invalid message: {}: {}", e, line),
+                    },
+                    Err(e) => error!("failed to read line from stdin: {}", e),
+                }
+            }
+        });
+        for event in self.client.run() {
+            match event {
+                Ok(msg) => println!("{}", msg),
+                Err(e) => error!("invalid event: {}", e),
+            }
+        }
+        Ok(())
     }
 }
