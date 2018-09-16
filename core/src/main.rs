@@ -5,12 +5,12 @@
 extern crate cfg_if;
 #[macro_use]
 extern crate clap;
+#[macro_use]
 extern crate crossbeam_channel;
 extern crate env_logger;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
-extern crate futures;
 extern crate jsonrpc_lite;
 #[macro_use]
 extern crate human_panic;
@@ -21,8 +21,6 @@ extern crate log;
 extern crate mio;
 extern crate regex;
 extern crate serde_json;
-extern crate tokio;
-extern crate tokio_core;
 
 cfg_if! {
     if #[cfg(unix)] {
@@ -31,7 +29,6 @@ cfg_if! {
         extern crate termion;
     } else if #[cfg(windows)] {
         extern crate mio_named_pipes;
-        extern crate tokio_named_pipes;
         extern crate winapi;
     }
 }

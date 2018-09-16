@@ -1,93 +1,22 @@
-use std::io::{self, BufRead, BufReader, BufWriter, LineWriter, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::thread;
 
 use crossbeam_channel as channel;
 use failure::Error;
-use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use futures::{Async, Future, Poll, Stream};
-use tokio::io::{lines, AsyncRead, Lines, ReadHalf, WriteHalf};
 
 use remote::protocol::Object;
-use remote::{ServerStream, ServerStream2, Session};
+use remote::{ServerStream, Session};
 
 pub struct Client {
-    lines: Lines<BufReader<ReadHalf<ServerStream>>>,
-    conn: LineWriter<BufWriter<WriteHalf<ServerStream>>>,
-    exit_pending: bool,
-    events: UnboundedSender<Object>,
-    requests: UnboundedReceiver<Object>,
-}
-
-impl Client {
-    pub fn new(
-        session: &Session,
-        events: UnboundedSender<Object>,
-        requests: UnboundedReceiver<Object>,
-    ) -> Result<Client, Error> {
-        let stream = ServerStream::new(&session.mode)?;
-        let (stream_r, stream_w) = stream.split();
-        let reader = BufReader::new(stream_r);
-        let writer = BufWriter::new(stream_w);
-        Ok(Client {
-            lines: lines(reader),
-            conn: LineWriter::new(writer),
-            exit_pending: false,
-            events,
-            requests,
-        })
-    }
-
-    fn send_request(&mut self, message: &Object) -> Result<(), io::Error> {
-        self.conn.write_fmt(format_args!("{}\n", message))
-    }
-
-    fn handle_error(&self, error: &Error, line: &str) {
-        error!("{}: {}", error, line);
-    }
-}
-
-impl Future for Client {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            match self.lines.poll().unwrap() {
-                Async::Ready(Some(line)) => match line.parse() {
-                    Ok(msg) => self.events.unbounded_send(msg).unwrap(),
-                    Err(e) => self.handle_error(&e.into(), &line),
-                },
-                Async::Ready(None) => self.exit_pending = true,
-                Async::NotReady => break,
-            }
-        }
-
-        while !self.exit_pending {
-            match self.requests.poll()? {
-                Async::Ready(Some(request)) => self.send_request(&request).unwrap(),
-                Async::Ready(None) => self.exit_pending = true,
-                Async::NotReady => break,
-            }
-        }
-
-        if self.exit_pending {
-            Ok(Async::Ready(()))
-        } else {
-            Ok(Async::NotReady)
-        }
-    }
-}
-
-pub struct Client2 {
-    stream: ServerStream2,
+    stream: ServerStream,
     requests: channel::Receiver<Object>,
 }
 
-impl Client2 {
-    pub fn new(session: &Session) -> Result<(Client2, channel::Sender<Object>), Error> {
+impl Client {
+    pub fn new(session: &Session) -> Result<(Client, channel::Sender<Object>), Error> {
         let (requests_tx, requests) = channel::unbounded();
-        let client = Client2 {
-            stream: ServerStream2::new(&session.mode)?,
+        let client = Client {
+            stream: ServerStream::new(&session.mode)?,
             requests,
         };
         Ok((client, requests_tx))
@@ -109,13 +38,13 @@ impl Client2 {
 }
 
 pub struct StdioClient {
-    client: Client2,
+    client: Client,
     requests: channel::Sender<Object>,
 }
 
 impl StdioClient {
     pub fn new(session: &Session) -> Result<StdioClient, Error> {
-        let (client, requests) = Client2::new(session)?;
+        let (client, requests) = Client::new(session)?;
         Ok(StdioClient { client, requests })
     }
 

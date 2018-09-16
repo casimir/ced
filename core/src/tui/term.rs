@@ -7,9 +7,8 @@ use std::ops::Drop;
 use std::thread;
 use std::time::Duration;
 
+use crossbeam_channel as channel;
 use failure::Error;
-use futures::sync::mpsc::{self, SendError, UnboundedReceiver, UnboundedSender};
-use futures::{Async, Future, Poll, Stream};
 use ignore::Walk;
 use termion;
 use termion::cursor::Goto;
@@ -17,27 +16,41 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
-use tokio_core::reactor::{Core, Handle};
 
 use remote::protocol::{self, Id, Object};
 use remote::{Client, Session};
 use tui::finder::{Candidates, Finder};
 
 struct Connection {
-    events: UnboundedReceiver<Object>,
-    requests: UnboundedSender<Object>,
+    client: Client,
+    requests: channel::Sender<Object>,
     next_request_id: i64,
     pending: HashMap<Id, Object>,
 }
 
 impl Connection {
-    fn new(events: UnboundedReceiver<Object>, requests: UnboundedSender<Object>) -> Connection {
-        Connection {
-            events,
+    fn new(session: &Session) -> Result<Connection, Error> {
+        let (client, requests) = Client::new(session)?;
+        Ok(Connection {
+            client,
             requests,
             next_request_id: 0,
             pending: HashMap::new(),
-        }
+        })
+    }
+
+    fn connect(&self) -> channel::Receiver<Object> {
+        let messages_iter = self.client.run();
+        let (tx, rx) = channel::unbounded();
+        thread::spawn(move || {
+            for msg in messages_iter {
+                match msg {
+                    Ok(m) => tx.send(m),
+                    Err(e) => error!("{}", e),
+                }
+            }
+        });
+        rx
     }
 
     fn request_id(&mut self) -> i64 {
@@ -46,11 +59,10 @@ impl Connection {
         id
     }
 
-    fn request(&mut self, message: Object) -> Result<(), SendError<Object>> {
-        self.requests.unbounded_send(message.clone())?;
+    fn request(&mut self, message: Object) {
+        self.requests.send(message.clone());
         let id = message.clone().id.unwrap();
         self.pending.insert(id, message);
-        Ok(())
     }
 }
 
@@ -158,7 +170,6 @@ struct Term<'a> {
     connection: Connection,
     context: Context,
     exit_pending: bool,
-    events: UnboundedReceiver<Event>,
     last_size: (u16, u16),
     screen: AlternateScreen<RawTerminal<io::Stdout>>,
     status_view: String,
@@ -167,53 +178,16 @@ struct Term<'a> {
 }
 
 impl<'a> Term<'a> {
-    fn new(handle: &Handle, session: &Session, filenames: &[&str]) -> Result<Term<'a>, Error> {
-        let (cevents_tx, cevents_rx) = mpsc::unbounded();
-        let (crequests_tx, crequests_rx) = mpsc::unbounded();
-        let client = Client::new(session, cevents_tx, crequests_rx)?;
-        handle.spawn(client);
-
-        let (events_tx, events_rx) = mpsc::unbounded();
-        let keys_tx = events_tx.clone();
-        thread::spawn(move || {
-            for key in io::stdin().keys() {
-                match key {
-                    Ok(k) => keys_tx.unbounded_send(Event::Input(k)).unwrap(),
-                    Err(e) => error!("{}", e),
-                }
-            }
-        });
-
-        let term_size = termion::terminal_size()?;
-        let resize_tx = events_tx.clone();
-        thread::spawn(move || {
-            let mut current = term_size;
-            loop {
-                match termion::terminal_size() {
-                    Ok(size) => {
-                        if current != size {
-                            resize_tx
-                                .unbounded_send(Event::Resize(size.0, size.1))
-                                .unwrap();
-                            current = size;
-                        }
-                    }
-                    Err(e) => error!("{}", e),
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-        });
-
+    fn new(session: &Session, filenames: &[&str]) -> Result<Term<'a>, Error> {
         let mut term = Term {
-            connection: Connection::new(cevents_rx, crequests_tx),
+            connection: Connection::new(session)?,
             context: Context {
                 buffer_list: HashMap::new(),
                 buffer_current: String::new(),
             },
             exit_pending: false,
-            events: events_rx,
             screen: AlternateScreen::from(io::stdout().into_raw_mode()?),
-            last_size: term_size,
+            last_size: termion::terminal_size()?,
             status_view: String::new(),
             buffer_view: Vec::new(),
             menu: None,
@@ -223,6 +197,51 @@ impl<'a> Term<'a> {
             term.do_edit(filename);
         }
         Ok(term)
+    }
+
+    pub fn start(&mut self) -> Result<(), Error> {
+        let (events_tx, events_rx) = channel::unbounded();
+        let keys_tx = events_tx.clone();
+        thread::spawn(move || {
+            for key in io::stdin().keys() {
+                match key {
+                    Ok(k) => keys_tx.send(Event::Input(k)),
+                    Err(e) => error!("{}", e),
+                }
+            }
+        });
+        let resize_tx = events_tx.clone();
+        let starting_size = self.last_size;
+        thread::spawn(move || {
+            let mut current = starting_size;
+            loop {
+                match termion::terminal_size() {
+                    Ok(size) => {
+                        if current != size {
+                            resize_tx.send(Event::Resize(size.0, size.1));
+                            current = size;
+                        }
+                    }
+                    Err(e) => error!("{}", e),
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let messages = self.connection.connect();
+        while !self.exit_pending {
+            select!{
+                recv(messages, msg) => match msg {
+                    Some(m) => self.handle_client_event(&m),
+                    None => break,
+                }
+                recv(events_rx, event) => match event {
+                    Some(Event::Input(key)) => self.handle_key(key),
+                    Some(Event::Resize(w, h)) => self.resize(w, h),
+                    None => break,
+                },
+            }
+        }
+        Ok(())
     }
 
     fn flush(&mut self) {
@@ -371,10 +390,8 @@ impl<'a> Term<'a> {
             if set_title {
                 self.status_view = buffer["label"].clone();
             }
-        } else {
-            if set_title {
-                self.status_view = self.context.buffer_current.clone();
-            }
+        } else if set_title {
+            self.status_view = self.context.buffer_current.clone();
         }
         self.draw();
     }
@@ -439,7 +456,7 @@ impl<'a> Term<'a> {
             self.connection.request_id(),
             &protocol::request::buffer_select::Params(buffer_name),
         );
-        self.connection.request(message).unwrap();
+        self.connection.request(message);
     }
 
     fn do_edit(&mut self, file_name: &str) {
@@ -447,7 +464,7 @@ impl<'a> Term<'a> {
             self.connection.request_id(),
             &protocol::request::edit::Params(vec![file_name]),
         );
-        self.connection.request(message).unwrap();
+        self.connection.request(message);
     }
 
     fn handle_key(&mut self, key: Key) {
@@ -509,42 +526,6 @@ impl<'a> Drop for Term<'a> {
     }
 }
 
-impl<'a> Future for Term<'a> {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            match self.connection.events.poll()? {
-                Async::Ready(Some(message)) => self.handle_client_event(&message),
-                Async::Ready(None) => self.exit_pending = true,
-                Async::NotReady => break,
-            }
-        }
-
-        while !self.exit_pending {
-            match self.events.poll()? {
-                Async::Ready(Some(event)) => match event {
-                    Event::Input(key) => self.handle_key(key),
-                    Event::Resize(w, h) => self.resize(w, h),
-                },
-                Async::Ready(None) => self.exit_pending = true,
-                Async::NotReady => break,
-            }
-        }
-
-        if self.exit_pending {
-            Ok(Async::Ready(()))
-        } else {
-            Ok(Async::NotReady)
-        }
-    }
-}
-
 pub fn start(session: &Session, filenames: &[&str]) -> Result<(), Error> {
-    let mut core = Core::new()?;
-    let handle = core.handle();
-    let tui = Term::new(&handle, session, filenames)?;
-    core.run(tui).expect("failed to start reactor");
-    Ok(())
+    Term::new(session, filenames)?.start()
 }
