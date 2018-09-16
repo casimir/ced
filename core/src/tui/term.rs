@@ -375,7 +375,7 @@ impl<'a> Term<'a> {
         }
     }
 
-    fn set_buffer(&mut self, content: &String) {
+    fn set_buffer(&mut self, content: &str) {
         self.buffer_view = content.lines().map(String::from).collect();
     }
 

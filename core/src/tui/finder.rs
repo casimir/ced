@@ -12,7 +12,7 @@ pub struct Candidate {
 }
 
 impl Candidate {
-    fn new(re: Regex, text: &str) -> Candidate {
+    fn new(re: &Regex, text: &str) -> Candidate {
         let mut locations = re.capture_locations();
         let score = re
             .captures_read(&mut locations, &text)
@@ -126,17 +126,15 @@ impl Finder {
     }
 
     pub fn search(&mut self, items: &[String]) -> Candidates {
-        let mut candidates: Vec<Candidate> = items
-            .iter()
-            .map(|i| Candidate::new(self.re.clone(), i))
-            .collect();
+        let mut candidates: Vec<Candidate> =
+            items.iter().map(|i| Candidate::new(&self.re, i)).collect();
         candidates.sort_by(|a, b| b.cmp(a));
         Candidates(candidates)
     }
 }
 
 mod tests {
-    use super::Finder;
+    use super::*;
 
     #[test]
     fn test_match_path() {

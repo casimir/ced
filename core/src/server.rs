@@ -170,8 +170,7 @@ impl Server {
                                 .filter(|(client_id, _)| !bm.skiplist.contains(&client_id))
                                 .map(|(client_id, c)| {
                                     self.write_message(*client_id, c, &bm.message)
-                                })
-                                .filter_map(Result::err)
+                                }).filter_map(Result::err)
                                 .map(Error::from)
                                 .collect();
                             for e in &errors {

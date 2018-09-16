@@ -106,8 +106,7 @@ impl Session {
                                 .file_name()
                                 .and_then(|n| n.to_str().map(String::from))
                         })
-                    })
-                    .collect::<Vec<String>>(),
+                    }).collect::<Vec<String>>(),
                 Err(_) => Vec::new(),
             }
         } else {
@@ -126,8 +125,7 @@ impl Session {
                                     }
                                 })
                             })
-                        })
-                        .collect::<Vec<String>>()
+                        }).collect::<Vec<String>>()
                 }
                 Err(_) => Vec::new(),
             }

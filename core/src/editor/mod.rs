@@ -113,8 +113,8 @@ impl Editor {
         self.buffers.insert(buffer_name.to_string(), buffer);
     }
 
-    fn delete_buffer(&mut self, buffer_name: &String) {
-        self.buffers.remove(buffer_name);
+    fn delete_buffer(&mut self, buffer_name: &str) {
+        self.buffers.remove(&buffer_name.to_owned());
         if self.buffers.is_empty() {
             self.open_scratch("*scratch*");
         }

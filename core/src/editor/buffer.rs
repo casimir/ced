@@ -124,7 +124,7 @@ impl Buffer {
                     let mut file = File::open(&path).unwrap();
                     let mut content = String::new();
                     file.read_to_string(&mut content)
-                        .expect(&format!("failed to read: {}", path.display()));
+                        .unwrap_or_else(|_| panic!("failed to read: {}", path.display()));
                     self.lines = content.lines().map(ToOwned::to_owned).collect();
                     self.last_sync = Some(SystemTime::now());
                     true
