@@ -1,47 +1,14 @@
-#![allow(unknown_lints)]
-#![warn(clippy)]
-
-#[macro_use]
-extern crate cfg_if;
+extern crate ced;
 #[macro_use]
 extern crate clap;
-#[macro_use]
-extern crate crossbeam_channel;
 extern crate env_logger;
 extern crate failure;
 #[macro_use]
-extern crate failure_derive;
-extern crate jsonrpc_lite;
-#[macro_use]
 extern crate human_panic;
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate log;
-extern crate mio;
-extern crate regex;
-extern crate serde_json;
-
-cfg_if! {
-    if #[cfg(unix)] {
-        extern crate ignore;
-        extern crate mio_uds;
-        extern crate termion;
-    } else if #[cfg(windows)] {
-        extern crate mio_named_pipes;
-        extern crate winapi;
-    }
-}
-
-mod editor;
-mod remote;
-mod server;
-mod stackmap;
-mod standalone;
-mod tui;
 
 use std::env;
-use std::io;
 use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -49,10 +16,10 @@ use std::time::Duration;
 use clap::{App, Arg};
 use failure::Error;
 
-use remote::{ConnectionMode, Session, StdioClient};
-use server::Server;
-use standalone::start_standalone;
-use tui::start as start_tui;
+use ced::remote::{ConnectionMode, Session, StdioClient};
+use ced::server::Server;
+use ced::standalone::start_standalone;
+use ced::tui::start as start_tui;
 
 arg_enum!{
     #[allow(non_camel_case_types)]
@@ -76,34 +43,28 @@ impl Mode {
     }
 }
 
-fn start_daemon(session: &Session, filenames: &[&str], quiet: bool) -> Result<(), Error> {
-    let mut args = vec![
+fn start_daemon(session: &Session) -> Result<u32, Error> {
+    let args = vec![
         env::args().next().unwrap(),
         "--mode=server".to_string(),
         format!("--session={}", session.mode),
     ];
-    for filename in filenames {
-        args.push(filename.to_string());
-    }
     let prg = Command::new(&args[0])
         .args(&args[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    if !quiet {
-        eprintln!("server started with pid {}", prg.id());
-    }
     info!("server command: {:?}", args);
-    Ok(())
+    Ok(prg.id())
 }
 
-fn ensure_session(session: &Session, filenames: &[&str]) -> Result<(), Error> {
+fn ensure_session(session: &Session) -> Result<(), Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         if !path.exists() {
-            start_daemon(&session, &filenames, true)?;
+            start_daemon(&session)?;
             // ensures the daemon process got time to create the socket
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(150));
         }
     }
     Ok(())
@@ -158,27 +119,20 @@ fn main() -> Result<(), Error> {
         };
 
         match value_t!(matches.value_of("MODE"), Mode).unwrap() {
-            Mode::daemon => start_daemon(&session, &filenames, false),
+            Mode::daemon => {
+                start_daemon(&session).map(|pid| eprintln!("server started with pid {}", pid))
+            }
             Mode::json => {
-                ensure_session(&session, &filenames)?;
+                ensure_session(&session)?;
                 StdioClient::new(&session)?.run()
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
-                Server::new(session).run(&filenames)
+                Server::new(session).run()
             }
-            Mode::standalone => {
-                let stdin = io::stdin();
-                start_standalone(
-                    &mut stdin.lock(),
-                    &mut io::stdout(),
-                    &mut io::stderr(),
-                    &filenames,
-                )?;
-                Ok(())
-            }
+            Mode::standalone => start_standalone(&filenames),
             Mode::term => {
-                ensure_session(&session, &filenames)?;
+                ensure_session(&session)?;
                 start_tui(&session, &filenames)
             }
         }

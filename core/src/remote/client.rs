@@ -1,19 +1,33 @@
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Lines, Write};
 use std::thread;
 
 use crossbeam_channel as channel;
 use failure::Error;
 
-use remote::protocol::Object;
-use remote::{ServerStream, Session};
+use remote::jsonrpc::{ClientEvent, Request};
+use remote::{ServerStream, Session, Stream};
+
+pub struct Events {
+    lines: Lines<BufReader<Box<Stream>>>,
+}
+
+impl Iterator for Events {
+    type Item = Result<ClientEvent, Error>;
+
+    fn next(&mut self) -> Option<Result<ClientEvent, Error>> {
+        self.lines
+            .next()
+            .map(|l| l.unwrap().parse().map_err(Error::from))
+    }
+}
 
 pub struct Client {
     stream: ServerStream,
-    requests: channel::Receiver<Object>,
+    requests: channel::Receiver<Request>,
 }
 
 impl Client {
-    pub fn new(session: &Session) -> Result<(Client, channel::Sender<Object>), Error> {
+    pub fn new(session: &Session) -> Result<(Client, channel::Sender<Request>), Error> {
         let (requests_tx, requests) = channel::unbounded();
         let client = Client {
             stream: ServerStream::new(&session.mode)?,
@@ -22,7 +36,7 @@ impl Client {
         Ok((client, requests_tx))
     }
 
-    pub fn run(&self) -> impl Iterator<Item = Result<Object, Error>> {
+    pub fn run(&self) -> Events {
         let requests_rx = self.requests.clone();
         let mut writer = self.stream.inner_clone().expect("clone server stream");
         thread::spawn(move || {
@@ -31,15 +45,15 @@ impl Client {
             }
         });
         let reader = BufReader::new(self.stream.inner_clone().expect("clone server stream"));
-        reader
-            .lines()
-            .map(|l| l.unwrap().parse().map_err(Error::from))
+        Events {
+            lines: reader.lines(),
+        }
     }
 }
 
 pub struct StdioClient {
     client: Client,
-    requests: channel::Sender<Object>,
+    requests: channel::Sender<Request>,
 }
 
 impl StdioClient {

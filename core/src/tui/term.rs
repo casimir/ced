@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+use remote::jsonrpc::Request;
 use std::collections::HashMap;
 use std::env;
 use std::io::{self, Write};
@@ -17,15 +18,17 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use remote::protocol::{self, Id, Object};
+use remote::jsonrpc::{ClientEvent, Id};
+use remote::protocol;
+use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
 use remote::{Client, Session};
 use tui::finder::{Candidates, Finder};
 
 struct Connection {
     client: Client,
-    requests: channel::Sender<Object>,
-    next_request_id: i64,
-    pending: HashMap<Id, Object>,
+    requests: channel::Sender<Request>,
+    next_request_id: i32,
+    pending: HashMap<Id, Request>,
 }
 
 impl Connection {
@@ -39,7 +42,7 @@ impl Connection {
         })
     }
 
-    fn connect(&self) -> channel::Receiver<Object> {
+    fn connect(&self) -> channel::Receiver<ClientEvent> {
         let messages_iter = self.client.run();
         let (tx, rx) = channel::unbounded();
         thread::spawn(move || {
@@ -53,24 +56,25 @@ impl Connection {
         rx
     }
 
-    fn request_id(&mut self) -> i64 {
+    fn request_id(&mut self) -> Id {
         let id = self.next_request_id;
         self.next_request_id += 1;
-        id
+        Id::Number(id)
     }
 
-    fn request(&mut self, message: Object) {
-        self.requests.send(message.clone());
-        let id = message.clone().id.unwrap();
-        self.pending.insert(id, message);
+    fn request(&mut self, message: Request) {
+        self.pending.insert(message.id.clone(), message.clone());
+        self.requests.send(message);
     }
 }
 
 type Buffer = HashMap<String, String>;
 
 struct Context {
+    session: String,
     buffer_list: HashMap<String, Buffer>,
     buffer_current: String,
+    view: Vec<ViewParamsItem>,
 }
 
 enum Event {
@@ -166,14 +170,32 @@ impl<'a> Menu<'a> {
     }
 }
 
+macro_rules! process_params {
+    ($msg:ident, $call:expr) => {
+        match $msg.params() {
+            Ok(Some(params)) => $call(params),
+            Ok(None) => error!("missing field: params"),
+            Err(err) => error!("{}", err),
+        }
+    };
+}
+
+macro_rules! process_result {
+    ($msg:ident, $call:expr) => {
+        match $msg.result() {
+            Ok(Ok(result)) => $call(result),
+            Ok(Ok(err)) => error!("error from server: {}"),
+            Err(err) => error!("{}", err),
+        }
+    };
+}
+
 struct Term<'a> {
     connection: Connection,
     context: Context,
     exit_pending: bool,
     last_size: (u16, u16),
     screen: AlternateScreen<RawTerminal<io::Stdout>>,
-    status_view: String,
-    buffer_view: Vec<String>,
     menu: Option<Menu<'a>>,
 }
 
@@ -182,14 +204,14 @@ impl<'a> Term<'a> {
         let mut term = Term {
             connection: Connection::new(session)?,
             context: Context {
+                session: String::new(),
                 buffer_list: HashMap::new(),
                 buffer_current: String::new(),
+                view: Vec::new(),
             },
             exit_pending: false,
             screen: AlternateScreen::from(io::stdout().into_raw_mode()?),
             last_size: termion::terminal_size()?,
-            status_view: String::new(),
-            buffer_view: Vec::new(),
             menu: None,
         };
         term.cursor_visible(false);
@@ -231,7 +253,7 @@ impl<'a> Term<'a> {
         while !self.exit_pending {
             select!{
                 recv(messages, msg) => match msg {
-                    Some(m) => self.handle_client_event(&m),
+                    Some(m) => self.handle_client_event(m),
                     None => break,
                 }
                 recv(events_rx, event) => match event {
@@ -259,36 +281,50 @@ impl<'a> Term<'a> {
 
     fn draw_buffer(&mut self) {
         let (width, height) = self.last_size;
-        write!(self.screen, "{}", termion::clear::All).unwrap();
-
-        let padding = " ".repeat(width as usize - self.status_view.len());
-        write!(
-            self.screen,
-            "{}{}{}{}{}",
-            Goto(1, 1),
-            termion::style::Invert,
-            self.status_view,
-            padding,
-            termion::style::Reset
-        ).unwrap();
+        write!(self.screen, "{}", termion::clear::All,).unwrap();
 
         {
-            let display_size = (height - 1) as usize;
+            let mut i = 0;
             let mut content = Vec::new();
-            for i in 0..self.buffer_view.len() {
-                if i == display_size {
-                    break;
+            'outer: for item in &self.context.view {
+                use self::ViewParamsItem::*;
+                match item {
+                    Header(header) => {
+                        let buffer = &header.buffer;
+                        let coords = format!("{}:{}", header.start, header.end);
+                        let padding = "-".repeat(width as usize - 5 - buffer.len() - coords.len());
+                        content.push(format!("-[{}][{}]{}", buffer, coords, padding));
+                        i += 1;
+                    }
+                    Lines(lines) => {
+                        for line in &lines.lines {
+                            if i == (height - 1) {
+                                break 'outer;
+                            }
+                            let line_view = if line.len() > width as usize {
+                                &line[..width as usize]
+                            } else {
+                                &line
+                            };
+                            content.push(line_view.to_string());
+                            i += 1;
+                        }
+                    }
                 }
-                let line = &self.buffer_view[i];
-                let line_view = if line.len() > width as usize {
-                    &line[..width as usize]
-                } else {
-                    &line
-                };
-                content.push(line_view);
             }
-            write!(self.screen, "{}{}", Goto(1, 2), content.join("\r\n")).unwrap();
+            write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
         }
+
+        let padding = " ".repeat(width as usize - 2 - self.context.session.len());
+        write!(
+            self.screen,
+            "{}{}{}[{}]{}",
+            Goto(1, height),
+            termion::style::Invert,
+            padding,
+            self.context.session,
+            termion::style::Reset
+        ).unwrap();
     }
 
     fn draw_menu(&mut self) {
@@ -375,95 +411,42 @@ impl<'a> Term<'a> {
         }
     }
 
-    fn set_buffer(&mut self, content: &str) {
-        self.buffer_view = content.lines().map(String::from).collect();
+    fn handle_client_event(&mut self, message: ClientEvent) {
+        use self::ClientEvent::*;
+        match message {
+            Notification(notif) => match notif.method.as_str() {
+                "info" => process_params!(notif, |params| self.process_info(params)),
+                "view" => process_params!(notif, |params| self.process_view(params)),
+                method => error!("unknown notification method: {}", method),
+            },
+            Response(resp) => match self.connection.pending.remove(&resp.id) {
+                Some(req) => match req.method.as_str() {
+                    "edit" | "buffer-select" => {}
+                    method => error!("unknown response method: {}", method),
+                },
+                None => error!("unexpected response: {}", resp),
+            },
+        }
     }
 
-    fn refresh_buffer(&mut self, set_title: bool) {
-        if self
-            .context
-            .buffer_list
-            .contains_key(&self.context.buffer_current)
-        {
-            let buffer = self.context.buffer_list[&self.context.buffer_current].clone();
-            self.set_buffer(&buffer["content"]);
-            if set_title {
-                self.status_view = buffer["label"].clone();
-            }
-        } else if set_title {
-            self.status_view = self.context.buffer_current.clone();
-        }
+    fn process_info(&mut self, params: protocol::notification::info::Params) {
+        self.context.session = params.session;
         self.draw();
     }
 
-    fn handle_client_event(&mut self, message: &Object) {
-        if let Some(ref id) = message.id {
-            if let Some(request) = self.connection.pending.remove(id) {
-                if let Some(result) = message.inner().get_result() {
-                    match request.inner().get_method().unwrap() {
-                        "edit" => self.process_edit(&result.clone().into()),
-                        "buffer-select" => self.process_buffer_select(&result.clone().into()),
-                        method => error!("unknown response method: {}", method),
-                    }
-                } else {
-                    let inner_message = &message.inner();
-                    let error = inner_message.get_error().unwrap();
-                    error!("{} (code: {})", error.message, error.code);
-                }
-            }
-        } else {
-            let params = message.inner().get_params().unwrap();
-            match message.inner().get_method().unwrap() {
-                "init" => self.process_init(params.into()),
-                "buffer-changed" => self.process_buffer_changed(params.into()),
-                method => error!("unknown notification method: {}", method),
-            }
-        }
-    }
-
-    fn process_init(&mut self, params: protocol::notification::init::Params) {
-        for buffer in params.buffer_list {
-            self.context
-                .buffer_list
-                .insert(buffer["name"].clone(), buffer);
-        }
-        self.context.buffer_current = params.buffer_current;
-        self.refresh_buffer(true);
-    }
-
-    fn process_buffer_changed(&mut self, params: protocol::notification::buffer_changed::Params) {
-        let name = &params["name"];
-        self.context
-            .buffer_list
-            .insert(name.to_owned(), params.clone());
-        if self.context.buffer_current == *name {
-            self.refresh_buffer(true);
-        }
-    }
-
-    fn process_edit(&mut self, result: &protocol::request::edit::Result) {
-        self.context.buffer_current = result.to_string();
-        self.refresh_buffer(false);
-    }
-
-    fn process_buffer_select(&mut self, result: &protocol::request::buffer_select::Result) {
-        self.context.buffer_current = result.to_string();
-        self.refresh_buffer(true);
+    fn process_view(&mut self, params: protocol::notification::view::Params) {
+        self.context.view = params;
+        self.draw();
     }
 
     fn do_buffer_select(&mut self, buffer_name: &str) {
-        let message = protocol::request::buffer_select::new(
-            self.connection.request_id(),
-            &protocol::request::buffer_select::Params(buffer_name),
-        );
+        let message =
+            protocol::request::buffer_select::new(self.connection.request_id(), buffer_name);
         self.connection.request(message);
     }
 
     fn do_edit(&mut self, file_name: &str) {
-        let message = protocol::request::edit::new(
-            self.connection.request_id(),
-            &protocol::request::edit::Params(vec![file_name]),
-        );
+        let message = protocol::request::edit::new(self.connection.request_id(), file_name);
         self.connection.request(message);
     }
 

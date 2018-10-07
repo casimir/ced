@@ -5,6 +5,8 @@ use std::ops::Index;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use editor::view::Focus;
+
 fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
     let head = path.parent().unwrap();
     let tail = path.file_name().unwrap();
@@ -88,6 +90,17 @@ impl Buffer {
         };
         buffer.load_from_disk(true);
         buffer
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    pub fn lines(&self, focus: Focus) -> &[String] {
+        match focus {
+            Focus::Range(range) => &self.lines[range],
+            Focus::Whole => &self.lines[..],
+        }
     }
 
     pub fn shortest_name(&self, sources: &[BufferSource]) -> String {

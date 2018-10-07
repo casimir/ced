@@ -2,13 +2,6 @@
 
 target
 
-# python
-
-__pycache__
-.cache
-.pytest_cache
-.python-version
-
 # xcode
 
 xcuserdata/

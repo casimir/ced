@@ -1,35 +1,14 @@
 language: rust
-dist: trusty
-sudo: required
-osx_image: xcode8.3
-
 rust:
   - stable
   - beta
-
 os:
   - linux
   - osx
 
 cache: cargo
 
-addons:
-  apt:
-    sources:
-      - deadsnakes
-    packages:
-      - python3.6-venv
-
-before_install:
-  - if [ $TRAVIS_OS_NAME = osx ]; then brew upgrade python; fi
-  - if [ $TRAVIS_OS_NAME = osx ]; then python3 -m venv .venv; else pyvenv-3.6 .venv; fi
-  - source .venv/bin/activate
-  - pip install pytest
-  - pytest --version
-
 script:
   - cd $TRAVIS_BUILD_DIR/core
-  - cargo build
-  - cargo test -v
-  - cd $TRAVIS_BUILD_DIR/python
-  - pytest -v
+  - cargo build --verbose --all
+  - cargo test --verbose --all

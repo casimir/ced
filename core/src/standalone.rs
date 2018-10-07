@@ -1,42 +1,46 @@
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead};
+use std::thread;
 
 use failure::Error;
 
 use editor::Editor;
+use remote::protocol::request::edit::Params as EditParams;
 use server::Broadcaster;
 
 const CLIENT_ID: usize = 1;
 
-pub fn start_standalone(
-    input: &mut BufRead,
-    output: &mut Write,
-    error: &mut Write,
-    filenames: &[&str],
-) -> Result<(), Error> {
-    let broadcaster = Broadcaster::new();
-    let mut editor = Editor::new("", &filenames, broadcaster.tx);
-    writeln!(output, "{}", editor.add_client(1).unwrap())?;
+pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
+    let broadcaster = Broadcaster::default();
+    let mut editor = Editor::new("", broadcaster.tx);
 
-    let mut buf = String::new();
-    while let Ok(n) = input.read_line(&mut buf) {
-        if n == 0 {
-            break;
-        }
-        match editor.handle(CLIENT_ID, &buf) {
-            Ok(response) => {
-                while let Ok(bm) = broadcaster.rx.try_recv() {
-                    if !bm.skiplist.contains(&CLIENT_ID) {
-                        writeln!(output, "{}", &bm.message)?;
-                    }
-                }
-                writeln!(output, "{}", &response)?;
-            }
-            Err(e) => {
-                writeln!(error, "{}: {:?}", e, buf)?;
-            }
-        }
-        buf.clear();
+    editor.add_client(CLIENT_ID);
+    for fname in filenames {
+        let params = EditParams {
+            file: fname.to_string(),
+        };
+        let _ = editor
+            .command_edit(CLIENT_ID, &params)
+            .map_err(|err| error!("could not open file '{}': {}", fname, err));
     }
-    let _ = editor.remove_client(1);
+    let rx = broadcaster.rx.clone();
+    thread::spawn(move || loop {
+        let bm = rx.recv().expect("receive broadcast message");
+        if !bm.skiplist.contains(&CLIENT_ID) {
+            println!("{}", &bm.message);
+        }
+    });
+
+    let stdin = io::stdin();
+    for maybe_line in stdin.lock().lines() {
+        match maybe_line {
+            Ok(line) => match editor.handle(CLIENT_ID, &line) {
+                Ok(response) => println!("{}", &response),
+                Err(e) => eprintln!("{}: {:?}", e, line),
+            },
+            Err(e) => eprintln!("failed to read line: {}", e),
+        }
+    }
+
+    editor.remove_client(CLIENT_ID);
     Ok(())
 }

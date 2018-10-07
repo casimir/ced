@@ -1,54 +1,54 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::io::ErrorKind::WouldBlock;
 use std::io::{self, BufRead, BufReader, Write};
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::thread;
 
+use crossbeam_channel as channel;
 use failure::Error;
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 
 use editor::Editor;
-use remote::protocol::Object;
+use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 
 #[derive(Debug)]
 pub struct BroadcastMessage {
-    pub message: Object,
+    pub message: Notification,
     pub skiplist: Vec<usize>,
 }
 
 impl BroadcastMessage {
-    pub fn new_skip(message: Object, skiplist: Vec<usize>) -> BroadcastMessage {
+    pub fn new_skip(message: Notification, skiplist: Vec<usize>) -> BroadcastMessage {
         BroadcastMessage { message, skiplist }
     }
 
-    pub fn new(message: Object) -> BroadcastMessage {
+    pub fn new(message: Notification) -> BroadcastMessage {
         Self::new_skip(message, Vec::new())
     }
 }
 
 pub struct Broadcaster {
     registration: Registration,
-    pub tx: mpsc::Sender<BroadcastMessage>,
-    pub rx: mpsc::Receiver<BroadcastMessage>,
+    pub tx: channel::Sender<BroadcastMessage>,
+    pub rx: channel::Receiver<BroadcastMessage>,
 }
 
-impl Broadcaster {
-    pub fn new() -> Broadcaster {
+impl Default for Broadcaster {
+    fn default() -> Self {
         let (registration, set_readiness) = Registration::new2();
-        let (tx, inner_rx) = mpsc::channel();
-        let (inner_tx, rx) = mpsc::channel();
+        let (tx, inner_rx) = channel::unbounded();
+        let (inner_tx, rx) = channel::unbounded();
         thread::spawn(move || loop {
-            let message = inner_rx.recv().expect("receive broadcast message");
-            inner_tx
-                .send(message)
-                .expect("transmit broadcasted message");
-            set_readiness
-                .set_readiness(Ready::readable())
-                .expect("set broadcast queue readable")
+            if let Some(message) = inner_rx.recv() {
+                inner_tx.send(message);
+                set_readiness
+                    .set_readiness(Ready::readable())
+                    .expect("set broadcast queue readable")
+            }
         });
         Broadcaster {
             registration,
@@ -83,7 +83,7 @@ impl Server {
 
     fn cleanup(&self) {
         if let ConnectionMode::Socket(path) = &self.session.mode {
-            fs::remove_file(path).expect(&format!("could not clean session {}", self.session));
+            fs::remove_file(path).expect("clean session");
             if Session::list().is_empty() {
                 fs::remove_dir(path.parent().unwrap())
                     .unwrap_or_else(|e| warn!("could not clean session directory: {}", e));
@@ -91,25 +91,29 @@ impl Server {
         }
     }
 
-    fn write_message(
+    fn write_message<T>(
         &self,
         client_id: usize,
         conn: &mut Connection,
-        message: &Object,
-    ) -> Result<(), io::Error> {
+        message: &T,
+    ) -> Result<(), io::Error>
+    where
+        T: fmt::Display,
+    {
         trace!("-> ({}) {}", client_id, message);
         conn.handle.write_fmt(format_args!("{}\n", message))
     }
 
-    pub fn run(&self, filenames: &[&str]) -> Result<(), Error> {
-        let broadcaster = Broadcaster::new();
-        let mut editor = Editor::new(&self.session.to_string(), filenames, broadcaster.tx);
+    pub fn run(&self) -> Result<(), Error> {
+        let broadcaster = Broadcaster::default();
+        let mut editor = Editor::new(&self.session.to_string(), broadcaster.tx);
         let listener = ServerListener::new(&self.session)?;
         let poll = Poll::new()?;
         let mut next_client_id = FIRST_CLIENT_ID;
         let connections = Rc::new(RefCell::new(HashMap::new()));
         let mut events = Events::with_capacity(1024);
 
+        // TODO remove `.inner()`
         poll.register(listener.inner(), SERVER, Ready::readable(), PollOpt::edge())
             .unwrap();
         poll.register(
@@ -143,27 +147,12 @@ impl Server {
                         info!("client {} connected", next_client_id);
                         let conn = Connection::new(stream);
                         // TODO check if ping or real client
-                        match editor.add_client(next_client_id) {
-                            Ok(message) => {
-                                connections.borrow_mut().insert(next_client_id, conn);
-                                let mut conns = connections.borrow_mut();
-                                let conn = conns.get_mut(&next_client_id).unwrap();
-                                self.write_message(next_client_id, conn, &message).expect(
-                                    &format!(
-                                        "could not send init message to client {}",
-                                        next_client_id
-                                    ),
-                                );
-                                next_client_id += 1;
-                            }
-                            Err(e) => {
-                                poll.deregister(conn.handle.as_ref()).unwrap();
-                                error!("could not connect client: {}", e);
-                            }
-                        }
+                        connections.borrow_mut().insert(next_client_id, conn);
+                        editor.add_client(next_client_id);
+                        next_client_id += 1;
                     }
                     BROADCAST => {
-                        while let Ok(bm) = broadcaster.rx.try_recv() {
+                        while let Some(bm) = broadcaster.rx.try_recv() {
                             let mut conns = connections.borrow_mut();
                             let errors: Vec<Error> = conns
                                 .iter_mut()
@@ -200,18 +189,15 @@ impl Server {
                                     Ok(message) => {
                                         let mut conns = connections.borrow_mut();
                                         let mut conn = conns.get_mut(&client_id).unwrap();
-                                        self.write_message(client_id, conn, &message).expect(
-                                            &format!(
-                                                "could not send message to client {}",
-                                                client_id
-                                            ),
-                                        );
+                                        self.write_message(client_id, conn, &message)
+                                            .expect("send response to client");
                                     }
                                     Err(e) => error!("{}: {:?}", e, line),
                                 }
                             }
                         }
                         if line.is_empty() {
+                            editor.remove_client(client_id);
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
                             poll.deregister(conn.handle.as_ref()).unwrap();
                             info!("client {} disconnected", client_id);
