@@ -1,17 +1,19 @@
-pub mod buffer;
+mod buffer;
+mod menu;
 pub mod view;
 
-pub use self::buffer::{Buffer, BufferSource};
-pub use self::view::{View, ViewItem};
-use std::collections::HashMap;
-
 use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
 
 use crossbeam_channel as channel;
 use failure::Error;
 
+pub use self::buffer::{Buffer, BufferSource};
+use self::menu::Menu;
 use self::view::{Focus, Lens};
+pub use self::view::{View, ViewItem};
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use remote::protocol;
 use server::BroadcastMessage;
@@ -57,6 +59,7 @@ pub struct Editor {
     broadcaster: channel::Sender<BroadcastMessage>,
     buffers: HashMap<String, Buffer>,
     views: StackMap<String, View>,
+    menu_cache: Option<Menu>,
 }
 
 impl Editor {
@@ -67,9 +70,10 @@ impl Editor {
             broadcaster,
             buffers: HashMap::new(),
             views: StackMap::new(),
+            menu_cache: None,
         };
 
-        let mut view = View::new();
+        let mut view = View::default();
         editor.open_scratch("*debug*");
         view.add_lens(Lens {
             buffer: String::from("*debug*"),
@@ -180,6 +184,9 @@ impl Editor {
                 .command_command_list(client_id, params)),
             "edit" => response!(message, |params| self.command_edit(client_id, params)),
             "view" => response!(message, |params| self.command_view(client_id, params)),
+            "menu" => response!(message, |params| self.command_menu(client_id, params)),
+            "menu-select" => response!(message, |params| self
+                .command_menu_select(client_id, params)),
             method => {
                 let dm = format!("unknown command: {}\n", message);
                 self.append_debug(&dm);
@@ -204,7 +211,14 @@ impl Editor {
         client_id: usize,
         params: &protocol::request::edit::Params,
     ) -> Result<protocol::request::edit::Result, JError> {
-        let path = PathBuf::from(&params.file);
+        let path = match params.path.as_ref() {
+            Some(path) => PathBuf::from(path),
+            None => {
+                let mut absolute = env::current_dir().unwrap();
+                absolute.push(&params.file);
+                absolute
+            }
+        };
         let notify_change = if self.buffers.contains_key(&params.file) {
             let buffer = self.buffers.get_mut(&params.file).unwrap();
             buffer.load_from_disk(false)
@@ -215,7 +229,7 @@ impl Editor {
 
         {
             let context = self.clients.get_mut(&client_id).unwrap();
-            let mut view = View::new();
+            let mut view = View::default();
             view.add_lens(Lens {
                 buffer: params.file.clone(),
                 focus: Focus::Whole,
@@ -267,5 +281,63 @@ impl Editor {
                 Err(JError::invalid_request(&reason))
             }
         }
+    }
+
+    pub fn command_menu(
+        &mut self,
+        _client_id: usize,
+        params: &protocol::request::menu::Params,
+    ) -> Result<protocol::request::menu::Result, JError> {
+        let in_cache = match self.menu_cache.as_ref() {
+            Some(menu) => menu.kind == params.kind,
+            None => false,
+        };
+        self.menu_cache = if in_cache {
+            let mut menu = self.menu_cache.take().unwrap();
+            menu.filter.search = params.search.to_owned();
+            Some(menu)
+        } else {
+            Some(match params.kind.as_str() {
+                "files" => Ok(Menu::files(&params.search)),
+                kind => {
+                    let reason = &format!("unknown menu kind: {}", kind);
+                    Err(JError::invalid_params(reason))
+                }
+            }?)
+        };
+
+        let menu = &self.menu_cache.as_ref().unwrap();
+        let entries = menu
+            .filtered()
+            .iter()
+            .filter(|c| c.is_match())
+            .map(|c| c.text.clone())
+            .collect();
+        Ok(protocol::request::menu::Result {
+            kind: params.kind.to_owned(),
+            title: menu.title.to_owned(),
+            search: params.search.to_owned(),
+            entries,
+        })
+    }
+
+    pub fn command_menu_select(
+        &mut self,
+        client_id: usize,
+        params: &protocol::request::menu_select::Params,
+    ) -> Result<protocol::request::menu_select::Result, JError> {
+        match params.kind.as_str() {
+            "files" => {
+                let mut path = env::current_dir().unwrap();
+                path.push(&params.choice);
+                let params = protocol::request::edit::Params {
+                    file: params.choice.to_owned(),
+                    path: Some(path.into_os_string().into_string().unwrap()),
+                };
+                self.command_edit(client_id, &params)?;
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }

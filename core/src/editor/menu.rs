@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 
+use ignore::Walk;
 use regex::{CaptureLocations, Regex};
 
 #[derive(Debug)]
@@ -85,22 +86,8 @@ impl PartialEq for Candidate {
 
 impl Eq for Candidate {}
 
+#[derive(Default)]
 pub struct Candidates(Vec<Candidate>);
-
-impl Candidates {
-    pub fn new() -> Candidates {
-        Candidates(Vec::new())
-    }
-
-    pub fn has_matches(&self) -> bool {
-        for candidate in &self.0 {
-            if candidate.is_match() {
-                return true;
-            }
-        }
-        false
-    }
-}
 
 impl Deref for Candidates {
     type Target = Vec<Candidate>;
@@ -110,29 +97,36 @@ impl Deref for Candidates {
     }
 }
 
-pub struct Finder {
-    re: Regex,
+pub struct MenuFilter {
+    pub search: String,
 }
 
-impl Finder {
-    pub fn new(terms: &str) -> Finder {
-        let elements: Vec<String> = terms
+impl MenuFilter {
+    pub fn new(search: &str) -> MenuFilter {
+        MenuFilter {
+            search: search.to_string(),
+        }
+    }
+
+    fn build_regex(&self) -> Regex {
+        let elements: Vec<String> = self
+            .search
             .split_whitespace()
             .map(|e| format!("({})", e))
             .collect();
         let raw_re = format!("(?i){}", elements.join(".*"));
-        let re = Regex::new(&raw_re).unwrap();
-        Finder { re }
+        Regex::new(&raw_re).unwrap()
     }
 
-    pub fn search(&mut self, items: &[String]) -> Candidates {
-        let mut candidates: Vec<Candidate> =
-            items.iter().map(|i| Candidate::new(&self.re, i)).collect();
+    pub fn filter(&self, items: &[String]) -> Candidates {
+        let re = self.build_regex();
+        let mut candidates: Vec<Candidate> = items.iter().map(|i| Candidate::new(&re, i)).collect();
         candidates.sort_by(|a, b| b.cmp(a));
         Candidates(candidates)
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -160,15 +154,15 @@ mod tests {
             "/project/file",               // no match (p)
             "/tmp",                        // no match (t)
         ];
-        let mut f = Finder::new("proj fil ext");
-        let candidates = &f.search(&items);
+        let f = MenuFilter::new("proj fil ext");
+        let candidates = &f.filter(&items);
         let res: Vec<String> = candidates.iter().map(|ref c| c.text.clone()).collect();
         assert_eq!(res, expected);
     }
 
     #[test]
     fn test_multiple_searches() {
-        let mut f = Finder::new("proj fil ext");
+        let f = MenuFilter::new("proj fil ext");
 
         let items1 = vec![
             "/abs/path/here".into(),
@@ -184,7 +178,7 @@ mod tests {
             "/abs/path/here",
             "/project/file",
         ];
-        let candidates1 = &f.search(&items1);
+        let candidates1 = &f.filter(&items1);
         let res1: Vec<String> = candidates1.iter().map(|ref c| c.text.clone()).collect();
 
         let items2 = vec![
@@ -199,7 +193,7 @@ mod tests {
             "/project/amodule/file.ext",
             "/tmp",
         ];
-        let candidates2 = &f.search(&items2);
+        let candidates2 = &f.filter(&items2);
         let res2: Vec<String> = candidates2.iter().map(|ref c| c.text.clone()).collect();
 
         assert_eq!(res1, expected1);
@@ -213,8 +207,8 @@ mod tests {
             "project/no/match/file.ext".into(),
         ];
         let upper_fn = |cap: &str| cap.chars().flat_map(char::to_uppercase).collect();
-        let mut f = Finder::new("proj src ext");
-        let candidates = &f.search(&items);
+        let f = MenuFilter::new("proj src ext");
+        let candidates = &f.filter(&items);
         assert_eq!(candidates[0].decorate(&upper_fn), "/PROJect/SRC/file.EXT");
         assert_eq!(
             candidates[0].decorate(&|cap: &str| format!("${}$", cap)),
@@ -224,5 +218,40 @@ mod tests {
             candidates[1].decorate(&upper_fn),
             "project/no/match/file.ext"
         );
+    }
+}
+
+pub struct Menu {
+    pub kind: String,
+    pub title: String,
+    pub entries: Vec<String>,
+    pub filter: MenuFilter,
+}
+
+impl Menu {
+    pub fn new<T>(kind: &str, title: &str, entries: T, search: &str) -> Menu
+    where
+        T: Into<Vec<String>>,
+    {
+        Menu {
+            kind: kind.to_string(),
+            title: title.to_string(),
+            entries: entries.into(),
+            filter: MenuFilter::new(search),
+        }
+    }
+
+    pub fn filtered(&self) -> Candidates {
+        self.filter.filter(&self.entries)
+    }
+
+    pub fn files(search: &str) -> Menu {
+        let files: Vec<String> = Walk::new("./")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
+            .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
+            .collect();
+        Menu::new("files", "file", files, search)
     }
 }

@@ -18,6 +18,7 @@ pub struct Request {
     jsonrpc: String,
     pub id: Id,
     pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     params: Option<Value>,
 }
 
@@ -68,6 +69,7 @@ impl fmt::Display for Request {
 pub struct Notification {
     jsonrpc: String,
     pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     params: Option<Value>,
 }
 
@@ -189,7 +191,9 @@ impl fmt::Display for Error {
 pub struct Response {
     jsonrpc: String,
     pub id: Id,
+    #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<Error>,
 }
 
@@ -338,7 +342,7 @@ impl fmt::Display for ClientEvent {
     }
 }
 
-#[macro_use]
+#[macro_export]
 macro_rules! response {
     ($msg:ident, $call:expr) => {
         Response::new(

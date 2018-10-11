@@ -2,7 +2,6 @@
 
 use remote::jsonrpc::Request;
 use std::collections::HashMap;
-use std::env;
 use std::io::{self, Write};
 use std::ops::Drop;
 use std::thread;
@@ -10,7 +9,6 @@ use std::time::Duration;
 
 use crossbeam_channel as channel;
 use failure::Error;
-use ignore::Walk;
 use termion;
 use termion::cursor::Goto;
 use termion::event::Key;
@@ -22,7 +20,6 @@ use remote::jsonrpc::{ClientEvent, Id};
 use remote::protocol;
 use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
 use remote::{Client, Session};
-use tui::finder::{Candidates, Finder};
 
 struct Connection {
     client: Client,
@@ -68,12 +65,8 @@ impl Connection {
     }
 }
 
-type Buffer = HashMap<String, String>;
-
 struct Context {
     session: String,
-    buffer_list: HashMap<String, Buffer>,
-    buffer_current: String,
     view: Vec<ViewParamsItem>,
 }
 
@@ -82,42 +75,32 @@ enum Event {
     Resize(u16, u16),
 }
 
-enum MenuChoice {
-    Buffer(String),
-    File(String),
-    None,
-}
-
-struct Menu<'a> {
-    title: &'a str,
+struct Menu {
+    kind: String,
+    title: String,
     items: Vec<String>,
     search: String,
-    candidates: Candidates,
     selected: usize,
     needs_redraw: bool,
-    done: bool,
 }
 
-impl<'a> Menu<'a> {
-    fn new(title: &'a str, items: Vec<String>) -> Menu<'a> {
-        let mut menu = Menu {
+enum MenuAction {
+    Choice,
+    Cancel,
+    Search,
+    Noop,
+}
+
+impl Menu {
+    fn new(kind: String, title: String, search: String, items: Vec<String>) -> Menu {
+        Menu {
+            kind,
             title,
             items,
-            search: String::new(),
-            candidates: Candidates::new(),
+            search,
             selected: 0,
             needs_redraw: true,
-            done: false,
-        };
-        menu.perform_search();
-        menu
-    }
-
-    fn perform_search(&mut self) {
-        let mut f = Finder::new(&self.search);
-        self.candidates = f.search(&self.items);
-        self.selected = 0;
-        self.needs_redraw = true;
+        }
     }
 
     fn select_next(&mut self) {
@@ -135,38 +118,31 @@ impl<'a> Menu<'a> {
     }
 
     fn selected_item(&self) -> &str {
-        &self.candidates[self.selected].text
+        &self.items[self.selected]
     }
 
-    fn choose(&mut self) -> MenuChoice {
-        self.done = true;
-        let choice = self.selected_item().to_owned();
-        match self.title {
-            "buffer" => MenuChoice::Buffer(choice),
-            "file" => MenuChoice::File(choice),
-            _ => unreachable!(),
-        }
-    }
-
-    fn handle_key(&mut self, key: Key) -> MenuChoice {
+    fn handle_key(&mut self, key: Key) -> MenuAction {
         match key {
-            Key::Esc => self.done = true,
-            Key::Down => self.select_next(),
-            Key::Up => self.select_previous(),
-            Key::Char('\n') => {
-                return self.choose();
+            Key::Esc => MenuAction::Cancel,
+            Key::Down => {
+                self.select_next();
+                MenuAction::Noop
             }
+            Key::Up => {
+                self.select_previous();
+                MenuAction::Noop
+            }
+            Key::Char('\n') => MenuAction::Choice,
             Key::Char(c) => {
                 self.search.push(c);
-                self.perform_search();
+                MenuAction::Search
             }
             Key::Backspace => {
                 self.search.pop();
-                self.perform_search();
+                MenuAction::Search
             }
-            _ => {}
+            _ => MenuAction::Noop,
         }
-        MenuChoice::None
     }
 }
 
@@ -184,29 +160,27 @@ macro_rules! process_result {
     ($msg:ident, $call:expr) => {
         match $msg.result() {
             Ok(Ok(result)) => $call(result),
-            Ok(Ok(err)) => error!("error from server: {}"),
+            Ok(Err(err)) => error!("jsonrpc error: {}", err),
             Err(err) => error!("{}", err),
         }
     };
 }
 
-struct Term<'a> {
+struct Term {
     connection: Connection,
     context: Context,
     exit_pending: bool,
     last_size: (u16, u16),
     screen: AlternateScreen<RawTerminal<io::Stdout>>,
-    menu: Option<Menu<'a>>,
+    menu: Option<Menu>,
 }
 
-impl<'a> Term<'a> {
-    fn new(session: &Session, filenames: &[&str]) -> Result<Term<'a>, Error> {
+impl Term {
+    fn new(session: &Session, filenames: &[&str]) -> Result<Term, Error> {
         let mut term = Term {
             connection: Connection::new(session)?,
             context: Context {
                 session: String::new(),
-                buffer_list: HashMap::new(),
-                buffer_current: String::new(),
                 view: Vec::new(),
             },
             exit_pending: false,
@@ -328,69 +302,66 @@ impl<'a> Term<'a> {
     }
 
     fn draw_menu(&mut self) {
-        if let Some(ref mut menu) = self.menu {
-            if menu.needs_redraw {
-                let (width, height) = self.last_size;
-                write!(self.screen, "{}", termion::clear::All).unwrap();
+        let mut menu = self.menu.take().unwrap();
+        if menu.needs_redraw {
+            let (width, height) = self.last_size;
+            write!(self.screen, "{}", termion::clear::All).unwrap();
 
-                let title = format!("{}:{}", menu.title, menu.search);
-                let padding = " ".repeat(width as usize - title.len());
-                write!(
-                    self.screen,
-                    "{}{}{}{}{}",
-                    Goto(1, 1),
-                    termion::style::Invert,
-                    title,
-                    padding,
-                    termion::style::Reset
-                ).unwrap();
+            let title = format!("{}:{}", menu.title, menu.search);
+            let padding = " ".repeat(width as usize - title.len());
+            write!(
+                self.screen,
+                "{}{}{}{}{}",
+                Goto(1, 1),
+                termion::style::Invert,
+                title,
+                padding,
+                termion::style::Reset
+            ).unwrap();
 
-                {
-                    let display_size = (height - 1) as usize;
-                    for i in 0..menu.candidates.len() {
-                        if i == display_size {
-                            break;
-                        }
-                        let candidate = &menu.candidates[i];
-                        if menu.candidates.has_matches() && !candidate.is_match() {
-                            break;
-                        }
-                        let item = candidate.decorate(&|cap| {
-                            format!(
-                                "{}{}{}",
-                                termion::style::Underline,
-                                cap,
-                                termion::style::NoUnderline,
-                            )
-                        });
-                        let item_view = if item.len() > width as usize {
-                            &item[..width as usize]
-                        } else {
-                            &item
-                        };
-                        if i == menu.selected {
-                            write!(
-                                self.screen,
-                                "{}{}{}{}{}",
-                                Goto(1, 2 + i as u16),
-                                termion::style::Invert,
-                                item_view,
-                                termion::style::Reset,
-                                termion::clear::UntilNewline
-                            ).unwrap();
-                        } else {
-                            write!(
-                                self.screen,
-                                "{}{}{}",
-                                Goto(1, 2 + i as u16),
-                                item_view,
-                                termion::clear::UntilNewline
-                            ).unwrap();
-                        }
+            {
+                let display_size = (height - 1) as usize;
+                for i in 0..menu.items.len() {
+                    if i == display_size {
+                        break;
+                    }
+                    // let item = candidate.decorate(&|cap| {
+                    //     format!(
+                    //         "{}{}{}",
+                    //         termion::style::Underline,
+                    //         cap,
+                    //         termion::style::NoUnderline,
+                    //     )
+                    // });
+                    let item = &menu.items[i];
+                    let item_view = if item.len() > width as usize {
+                        &item[..width as usize]
+                    } else {
+                        &item
+                    };
+                    if i == menu.selected {
+                        write!(
+                            self.screen,
+                            "{}{}{}{}{}",
+                            Goto(1, 2 + i as u16),
+                            termion::style::Invert,
+                            item_view,
+                            termion::style::Reset,
+                            termion::clear::UntilNewline
+                        ).unwrap();
+                    } else {
+                        write!(
+                            self.screen,
+                            "{}{}{}",
+                            Goto(1, 2 + i as u16),
+                            item_view,
+                            termion::clear::UntilNewline
+                        ).unwrap();
                     }
                 }
-                menu.needs_redraw = false;
             }
+            menu.needs_redraw = false;
+            self.menu = Some(menu);
         }
     }
 
@@ -421,7 +392,8 @@ impl<'a> Term<'a> {
             },
             Response(resp) => match self.connection.pending.remove(&resp.id) {
                 Some(req) => match req.method.as_str() {
-                    "edit" | "buffer-select" => {}
+                    "menu" => process_result!(resp, |result| self.process_menu(result)),
+                    "edit" | "buffer-select" | "menu-select" => {}
                     method => error!("unknown response method: {}", method),
                 },
                 None => error!("unexpected response: {}", resp),
@@ -439,72 +411,70 @@ impl<'a> Term<'a> {
         self.draw();
     }
 
-    fn do_buffer_select(&mut self, buffer_name: &str) {
-        let message =
-            protocol::request::buffer_select::new(self.connection.request_id(), buffer_name);
+    fn process_menu(&mut self, result: protocol::request::menu::Result) {
+        self.menu = Some(Menu::new(
+            result.kind.to_owned(),
+            result.title.to_owned(),
+            result.search,
+            result.entries,
+        ));
+        self.draw();
+    }
+
+    fn do_edit(&mut self, fname: &str) {
+        let message = protocol::request::edit::new(self.connection.request_id(), fname);
         self.connection.request(message);
     }
 
-    fn do_edit(&mut self, file_name: &str) {
-        let message = protocol::request::edit::new(self.connection.request_id(), file_name);
+    fn do_menu(&mut self, kind: &str, search: &str) {
+        let message = protocol::request::menu::new(self.connection.request_id(), kind, search);
+        self.connection.request(message);
+    }
+
+    fn do_menu_select(&mut self, kind: &str, choice: &str) {
+        let message =
+            protocol::request::menu_select::new(self.connection.request_id(), kind, choice);
         self.connection.request(message);
     }
 
     fn handle_key(&mut self, key: Key) {
-        let mut needs_redraw = false;
-        let mut menu_choice = MenuChoice::None;
-        let mut remove_menu = false;
-        if let Some(ref mut menu) = self.menu {
-            menu_choice = menu.handle_key(key);
-            needs_redraw = menu.needs_redraw;
-            remove_menu = menu.done;
+        if self.menu.is_some() {
+            let mut menu = self.menu.take().unwrap();
+            match menu.handle_key(key) {
+                MenuAction::Choice => {
+                    self.do_menu_select(&menu.kind, menu.selected_item());
+                    self.menu = None;
+                    self.draw();
+                }
+                MenuAction::Cancel => {
+                    self.menu = None;
+                    self.draw();
+                }
+                MenuAction::Search => {
+                    self.do_menu(&menu.kind, &menu.search);
+                    self.menu = Some(menu);
+                }
+                MenuAction::Noop => {
+                    self.menu = Some(menu);
+                    self.draw();
+                }
+            }
         } else {
             match key {
                 Key::Esc => self.exit_pending = true,
-                Key::Char('b') => {
-                    let items: Vec<String> = self.context.buffer_list.keys().cloned().collect();
-                    self.menu = Some(Menu::new("buffer", items));
-                    self.draw();
-                }
-                Key::Char('e') => {
-                    let current = &self.context.buffer_current.clone();
-                    self.do_edit(current);
-                }
                 Key::Char('f') => {
-                    let files: Vec<String> = Walk::new("./")
-                        .into_iter()
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
-                        .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
-                        .collect();
-                    self.menu = Some(Menu::new("file", files));
-                    self.draw();
+                    self.do_menu("files", "");
                 }
                 Key::Char('p') => panic!("panic mode activated!"),
                 _ => {}
             }
         }
-        match menu_choice {
-            MenuChoice::Buffer(name) => self.do_buffer_select(&name),
-            MenuChoice::File(path) => {
-                let mut absolute_path = env::current_dir().unwrap();
-                absolute_path.push(path);
-                self.do_edit(&absolute_path.to_str().unwrap());
-            }
-            MenuChoice::None => {}
-        }
-        if remove_menu {
-            self.menu = None;
-            needs_redraw = true;
-        }
-        if needs_redraw {
-            self.draw();
-        }
     }
 }
 
-impl<'a> Drop for Term<'a> {
+impl Drop for Term {
     fn drop(&mut self) {
+        self.flush();
         self.cursor_visible(true);
     }
 }

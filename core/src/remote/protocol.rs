@@ -110,11 +110,13 @@ pub mod request {
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub file: String,
+            pub path: Option<String>,
         }
 
         pub fn new(id: Id, file: &str) -> Request {
             let params = Params {
                 file: file.to_string(),
+                path: None,
             };
             Request::new(id, "edit".to_string(), Some(params)).unwrap()
         }
@@ -126,6 +128,52 @@ pub mod request {
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub view_id: String,
+        }
+
+        pub type Result = ();
+    }
+
+    pub mod menu {
+        use remote::jsonrpc::{Id, Request};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub kind: String,
+            pub search: String,
+        }
+
+        pub fn new(id: Id, kind: &str, search: &str) -> Request {
+            let params = Params {
+                kind: kind.to_string(),
+                search: search.to_string(),
+            };
+            Request::new(id, "menu".to_string(), Some(params)).unwrap()
+        }
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Result {
+            pub kind: String,
+            pub title: String,
+            pub search: String,
+            pub entries: Vec<String>,
+        }
+    }
+
+    pub mod menu_select {
+        use remote::jsonrpc::{Id, Request};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub kind: String,
+            pub choice: String,
+        }
+
+        pub fn new(id: Id, kind: &str, choice: &str) -> Request {
+            let params = Params {
+                kind: kind.to_string(),
+                choice: choice.to_string(),
+            };
+            Request::new(id, "menu-select".to_string(), Some(params)).unwrap()
         }
 
         pub type Result = ();

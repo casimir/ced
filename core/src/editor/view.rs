@@ -45,14 +45,10 @@ pub struct Lens {
     pub focus: Focus,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LensGroup(Vec<Lens>);
 
 impl LensGroup {
-    pub fn new() -> LensGroup {
-        LensGroup(Vec::new())
-    }
-
     pub fn add(&mut self, lens: Lens) {
         self.0.push(lens);
         self.0.sort_by(|a, b| a.focus.cmp(&b.focus));
@@ -80,14 +76,10 @@ pub enum ViewItem {
     Lens(Lens),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct View(BTreeMap<String, LensGroup>);
 
 impl View {
-    pub fn new() -> View {
-        View(BTreeMap::new())
-    }
-
     pub fn key(&self) -> String {
         let mut parts = Vec::new();
         for (buffer, group) in &self.0 {
@@ -103,7 +95,7 @@ impl View {
     pub fn add_lens(&mut self, lens: Lens) {
         self.0
             .entry(lens.buffer.clone())
-            .or_insert_with(LensGroup::new)
+            .or_insert_with(LensGroup::default)
             .add(lens);
     }
 
@@ -129,10 +121,10 @@ mod tests {
 
     #[test]
     fn key() {
-        let empty = View::new();
+        let empty = View::default();
         assert_eq!(empty.key(), "");
 
-        let mut simple = View::new();
+        let mut simple = View::default();
         simple.add_lens(Lens {
             buffer: "buffer1".into(),
             focus: Focus::Range(10..12),
@@ -143,7 +135,7 @@ mod tests {
         });
         assert_eq!(simple.key(), "buffer1{10..12}|buffer2{*}");
 
-        let mut double = View::new();
+        let mut double = View::default();
         double.add_lens(Lens {
             buffer: "buffer1".into(),
             focus: Focus::Range(10..12),
