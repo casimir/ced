@@ -1,3 +1,9 @@
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub enum Markup {
+    None,
+    Term,
+}
+
 pub mod notification {
     /// Sent to to the client when connection is complete.
     pub mod info {
@@ -134,18 +140,21 @@ pub mod request {
     }
 
     pub mod menu {
+        use super::super::Markup;
         use remote::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub kind: String,
             pub search: String,
+            pub markup: Markup,
         }
 
-        pub fn new(id: Id, kind: &str, search: &str) -> Request {
+        pub fn new(id: Id, kind: &str, search: &str, markup: Markup) -> Request {
             let params = Params {
                 kind: kind.to_string(),
                 search: search.to_string(),
+                markup,
             };
             Request::new(id, "menu".to_string(), Some(params)).unwrap()
         }

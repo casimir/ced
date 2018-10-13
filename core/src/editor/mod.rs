@@ -1,4 +1,5 @@
 mod buffer;
+mod decorator;
 mod menu;
 pub mod view;
 
@@ -11,6 +12,7 @@ use crossbeam_channel as channel;
 use failure::Error;
 
 pub use self::buffer::{Buffer, BufferSource};
+use self::decorator::Decorator;
 use self::menu::Menu;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
@@ -307,11 +309,12 @@ impl Editor {
         };
 
         let menu = &self.menu_cache.as_ref().unwrap();
+        let decorator = Decorator::new(params.markup);
         let entries = menu
             .filtered()
             .iter()
             .filter(|c| c.is_match())
-            .map(|c| c.text.clone())
+            .map(|c| c.decorate(|cap| decorator.em(cap)))
             .collect();
         Ok(protocol::request::menu::Result {
             kind: params.kind.to_owned(),

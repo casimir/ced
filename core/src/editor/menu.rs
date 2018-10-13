@@ -39,7 +39,10 @@ impl Candidate {
         self.score.is_some()
     }
 
-    pub fn decorate(&self, decorator: &Fn(&str) -> String) -> String {
+    pub fn decorate<F>(&self, decorator: F) -> String
+    where
+        F: Fn(&str) -> String,
+    {
         let mut decorated = self.text.clone();
         let mut offset = 0;
         for i in 1..self.locations.len() {

@@ -17,8 +17,8 @@ use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
 use remote::jsonrpc::{ClientEvent, Id};
-use remote::protocol;
 use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
+use remote::protocol::{self, Markup};
 use remote::{Client, Session};
 
 struct Connection {
@@ -325,14 +325,6 @@ impl Term {
                     if i == display_size {
                         break;
                     }
-                    // let item = candidate.decorate(&|cap| {
-                    //     format!(
-                    //         "{}{}{}",
-                    //         termion::style::Underline,
-                    //         cap,
-                    //         termion::style::NoUnderline,
-                    //     )
-                    // });
                     let item = &menu.items[i];
                     let item_view = if item.len() > width as usize {
                         &item[..width as usize]
@@ -427,7 +419,8 @@ impl Term {
     }
 
     fn do_menu(&mut self, kind: &str, search: &str) {
-        let message = protocol::request::menu::new(self.connection.request_id(), kind, search);
+        let message =
+            protocol::request::menu::new(self.connection.request_id(), kind, search, Markup::Term);
         self.connection.request(message);
     }
 
