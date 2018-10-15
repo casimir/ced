@@ -1,10 +1,8 @@
 mod buffer;
-mod decorator;
 mod menu;
 pub mod view;
 
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::path::PathBuf;
 
@@ -12,12 +10,11 @@ use crossbeam_channel as channel;
 use failure::Error;
 
 pub use self::buffer::{Buffer, BufferSource};
-use self::decorator::Decorator;
 use self::menu::Menu;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
+use protocol::{self, Face, TextFragment};
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
-use remote::protocol;
 use server::BroadcastMessage;
 use stackmap::StackMap;
 
@@ -309,13 +306,24 @@ impl Editor {
         };
 
         let menu = &self.menu_cache.as_ref().unwrap();
-        let decorator = Decorator::new(params.markup);
         let entries = menu
             .filtered()
             .iter()
             .filter(|c| c.is_match())
-            .map(|c| c.decorate(|cap| decorator.em(cap)))
-            .collect();
+            .map(|c| protocol::request::menu::Entry {
+                text: c.text.clone(),
+                fragments: c
+                    .tokenize()
+                    .iter()
+                    .map(|t| TextFragment {
+                        text: t.text.clone(),
+                        face: if t.is_match {
+                            Face::Match
+                        } else {
+                            Face::Default
+                        },
+                    }).collect(),
+            }).collect();
         Ok(protocol::request::menu::Result {
             kind: params.kind.to_owned(),
             title: menu.title.to_owned(),

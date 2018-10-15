@@ -5,6 +5,12 @@ use std::ops::Deref;
 use ignore::Walk;
 use regex::{CaptureLocations, Regex};
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct Token {
+    pub text: String,
+    pub is_match: bool,
+}
+
 #[derive(Debug)]
 pub struct Candidate {
     pub text: String,
@@ -39,21 +45,29 @@ impl Candidate {
         self.score.is_some()
     }
 
-    pub fn decorate<F>(&self, decorator: F) -> String
-    where
-        F: Fn(&str) -> String,
-    {
-        let mut decorated = self.text.clone();
-        let mut offset = 0;
+    pub fn tokenize(&self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        let mut last_end = 0;
         for i in 1..self.locations.len() {
             if let Some((start, end)) = self.locations.get(i) {
-                let decorated_part = decorator(&self.text[start..end]);
-                let (ostart, oend) = (start + offset, end + offset);
-                decorated.replace_range(ostart..oend, &decorated_part);
-                offset += decorated_part.len() - (end - start);
+                tokens.push(Token {
+                    text: self.text[last_end..start].to_owned(),
+                    is_match: false,
+                });
+                tokens.push(Token {
+                    text: self.text[start..end].to_owned(),
+                    is_match: true,
+                });
+                last_end = end;
             }
         }
-        decorated
+        if last_end < self.text.len() {
+            tokens.push(Token {
+                text: self.text[last_end..].to_owned(),
+                is_match: false,
+            });
+        }
+        tokens
     }
 }
 
@@ -204,22 +218,47 @@ mod tests {
     }
 
     #[test]
-    fn test_decorate() {
+    fn test_tokenize() {
         let items = vec![
-            "/project/src/file.ext".into(),
-            "project/no/match/file.ext".into(),
+            "/project/src/file.ext".to_owned(),
+            "project/no/match/file.ext".to_owned(),
         ];
-        let upper_fn = |cap: &str| cap.chars().flat_map(char::to_uppercase).collect();
-        let f = MenuFilter::new("proj src ext");
-        let candidates = &f.filter(&items);
-        assert_eq!(candidates[0].decorate(&upper_fn), "/PROJect/SRC/file.EXT");
+        let candidates = MenuFilter::new("proj src ext").filter(&items);
         assert_eq!(
-            candidates[0].decorate(&|cap: &str| format!("${}$", cap)),
-            "/$proj$ect/$src$/file.$ext$"
+            candidates[0].tokenize(),
+            vec![
+                Token {
+                    text: "/".to_owned(),
+                    is_match: false
+                },
+                Token {
+                    text: "proj".to_owned(),
+                    is_match: true
+                },
+                Token {
+                    text: "ect/".to_owned(),
+                    is_match: false
+                },
+                Token {
+                    text: "src".to_owned(),
+                    is_match: true
+                },
+                Token {
+                    text: "/file.".to_owned(),
+                    is_match: false
+                },
+                Token {
+                    text: "ext".to_owned(),
+                    is_match: true
+                },
+            ]
         );
         assert_eq!(
-            candidates[1].decorate(&upper_fn),
-            "project/no/match/file.ext"
+            candidates[1].tokenize(),
+            vec![Token {
+                text: "project/no/match/file.ext".to_owned(),
+                is_match: false
+            }],
         );
     }
 }

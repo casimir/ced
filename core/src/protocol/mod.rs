@@ -1,7 +1,13 @@
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub enum Markup {
-    None,
-    Term,
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Face {
+    Default,
+    Match,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TextFragment {
+    pub text: String,
+    pub face: Face,
 }
 
 pub mod notification {
@@ -140,23 +146,27 @@ pub mod request {
     }
 
     pub mod menu {
-        use super::super::Markup;
+        use protocol::TextFragment;
         use remote::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub kind: String,
             pub search: String,
-            pub markup: Markup,
         }
 
-        pub fn new(id: Id, kind: &str, search: &str, markup: Markup) -> Request {
+        pub fn new(id: Id, kind: &str, search: &str) -> Request {
             let params = Params {
                 kind: kind.to_string(),
                 search: search.to_string(),
-                markup,
             };
             Request::new(id, "menu".to_string(), Some(params)).unwrap()
+        }
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Entry {
+            pub text: String,
+            pub fragments: Vec<TextFragment>,
         }
 
         #[derive(Serialize, Deserialize)]
@@ -164,7 +174,7 @@ pub mod request {
             pub kind: String,
             pub title: String,
             pub search: String,
-            pub entries: Vec<String>,
+            pub entries: Vec<Entry>,
         }
     }
 

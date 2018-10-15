@@ -16,9 +16,10 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
+use protocol::notification::view::ParamsItem as ViewParamsItem;
+use protocol::request::menu::Entry as MenuEntry;
+use protocol::{self, Face};
 use remote::jsonrpc::{ClientEvent, Id};
-use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
-use remote::protocol::{self, Markup};
 use remote::{Client, Session};
 
 struct Connection {
@@ -78,7 +79,7 @@ enum Event {
 struct Menu {
     kind: String,
     title: String,
-    items: Vec<String>,
+    items: Vec<MenuEntry>,
     search: String,
     selected: usize,
     needs_redraw: bool,
@@ -92,7 +93,7 @@ enum MenuAction {
 }
 
 impl Menu {
-    fn new(kind: String, title: String, search: String, items: Vec<String>) -> Menu {
+    fn new(kind: String, title: String, search: String, items: Vec<MenuEntry>) -> Menu {
         Menu {
             kind,
             title,
@@ -118,7 +119,7 @@ impl Menu {
     }
 
     fn selected_item(&self) -> &str {
-        &self.items[self.selected]
+        &self.items[self.selected].text
     }
 
     fn handle_key(&mut self, key: Key) -> MenuAction {
@@ -325,7 +326,19 @@ impl Term {
                     if i == display_size {
                         break;
                     }
-                    let item = &menu.items[i];
+                    let item = &menu.items[i]
+                        .fragments
+                        .iter()
+                        .map(|f| match f.face {
+                            Face::Match => format!(
+                                "{}{}{}",
+                                termion::style::Underline,
+                                f.text,
+                                termion::style::NoUnderline,
+                            ),
+                            _ => f.text.clone(),
+                        }).collect::<Vec<String>>()
+                        .join("");
                     let item_view = if item.len() > width as usize {
                         &item[..width as usize]
                     } else {
@@ -419,8 +432,7 @@ impl Term {
     }
 
     fn do_menu(&mut self, kind: &str, search: &str) {
-        let message =
-            protocol::request::menu::new(self.connection.request_id(), kind, search, Markup::Term);
+        let message = protocol::request::menu::new(self.connection.request_id(), kind, search);
         self.connection.request(message);
     }
 

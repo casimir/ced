@@ -4,7 +4,7 @@ use std::thread;
 use failure::Error;
 
 use editor::Editor;
-use remote::protocol::request::edit::Params as EditParams;
+use protocol::request::edit::Params as EditParams;
 use server::Broadcaster;
 
 const CLIENT_ID: usize = 1;

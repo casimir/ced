@@ -1,6 +1,5 @@
 mod client;
 pub mod jsonrpc;
-pub mod protocol;
 mod session;
 mod transport;
 

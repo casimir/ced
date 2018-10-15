@@ -9,6 +9,7 @@ extern crate env_logger;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+extern crate ignore;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -22,7 +23,6 @@ extern crate serde_json;
 
 cfg_if! {
     if #[cfg(unix)] {
-        extern crate ignore;
         extern crate mio_uds;
         extern crate termion;
     } else if #[cfg(windows)] {
@@ -32,6 +32,7 @@ cfg_if! {
 }
 
 pub mod editor;
+pub mod protocol;
 pub mod remote;
 pub mod server;
 pub mod stackmap;
