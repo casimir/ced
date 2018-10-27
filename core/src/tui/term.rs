@@ -398,7 +398,7 @@ impl Term {
             Response(resp) => match self.connection.pending.remove(&resp.id) {
                 Some(req) => match req.method.as_str() {
                     "menu" => process_result!(resp, |result| self.process_menu(result)),
-                    "edit" | "buffer-select" | "menu-select" => {}
+                    "edit" | "menu-select" => {}
                     method => error!("unknown response method: {}", method),
                 },
                 None => error!("unexpected response: {}", resp),

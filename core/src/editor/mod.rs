@@ -13,6 +13,7 @@ pub use self::buffer::{Buffer, BufferSource};
 use self::menu::Menu;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
+use crate::response;
 use protocol::{self, Face, TextFragment};
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use server::BroadcastMessage;
@@ -29,20 +30,6 @@ lazy_static! {
         );
         h.insert("view <view_id>", "select an existing view");
         h
-    };
-}
-
-// FIXME duplicated from jsonrpc
-macro_rules! response {
-    ($msg:ident, $call:expr) => {
-        Response::new(
-            $msg.id.clone(),
-            match $msg.params() {
-                Ok(Some(ref params)) => $call(params),
-                Ok(None) => Err(JError::invalid_request("missing field: params")),
-                Err(err) => Err(JError::invalid_params(&err.to_string())),
-            },
-        )
     };
 }
 

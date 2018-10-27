@@ -1,4 +1,5 @@
 mod client;
+#[macro_use]
 pub mod jsonrpc;
 mod session;
 mod transport;

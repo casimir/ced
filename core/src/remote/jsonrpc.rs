@@ -346,9 +346,9 @@ impl fmt::Display for ClientEvent {
 macro_rules! response {
     ($msg:ident, $call:expr) => {
         Response::new(
-            $msg.id,
+            $msg.id.clone(),
             match $msg.params() {
-                Ok(Some(params)) => $call(params),
+                Ok(Some(ref params)) => $call(params),
                 Ok(None) => Err(JError::invalid_request("missing field: params")),
                 Err(err) => Err(JError::invalid_params(&err.to_string())),
             },

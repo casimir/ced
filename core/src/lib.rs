@@ -33,6 +33,7 @@ cfg_if! {
 
 pub mod editor;
 pub mod protocol;
+#[macro_use]
 pub mod remote;
 pub mod server;
 pub mod stackmap;
