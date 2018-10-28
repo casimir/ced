@@ -23,11 +23,12 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new<T>(id: Id, method: String, params: Option<T>) -> serde_json::Result<Request>
+    pub fn new<T, P>(id: Id, method: String, params: P) -> serde_json::Result<Request>
     where
         T: Serialize,
+        P: Into<Option<T>>,
     {
-        let serialized_params = match params {
+        let serialized_params = match params.into() {
             Some(p) => Some(serde_json::to_value(p)?),
             None => None,
         };
@@ -74,11 +75,12 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn new<T>(method: String, params: Option<T>) -> serde_json::Result<Notification>
+    pub fn new<T, P>(method: String, params: P) -> serde_json::Result<Notification>
     where
         T: Serialize,
+        P: Into<Option<T>>,
     {
-        let serialized_params = match params {
+        let serialized_params = match params.into() {
             Some(p) => Some(serde_json::to_value(p)?),
             None => None,
         };
@@ -123,11 +125,12 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new<T>(code: i32, message: String, data: Option<T>) -> serde_json::Result<Error>
+    pub fn new<T, D>(code: i32, message: String, data: D) -> serde_json::Result<Error>
     where
         T: Serialize,
+        D: Into<Option<T>>,
     {
-        let serialized_data = match data {
+        let serialized_data = match data.into() {
             Some(d) => Some(serde_json::to_value(d)?),
             None => None,
         };
@@ -159,7 +162,7 @@ impl Error {
         Error::new(
             -32600,
             "The JSON sent is not a valid Request object.".to_string(),
-            Some(source),
+            source,
         ).unwrap()
     }
 
@@ -167,16 +170,12 @@ impl Error {
         Error::new(
             -32601,
             "The method does not exist / is not available.".to_string(),
-            Some(method),
+            method,
         ).unwrap()
     }
 
     pub fn invalid_params(reason: &str) -> Error {
-        Error::new(
-            -32602,
-            "Invalid method parameter(s).".to_string(),
-            Some(reason),
-        ).unwrap()
+        Error::new(-32602, "Invalid method parameter(s).".to_string(), reason).unwrap()
     }
 }
 

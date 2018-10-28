@@ -24,7 +24,7 @@ pub mod notification {
             let params = Params {
                 session: session.to_string(),
             };
-            Notification::new("info".to_string(), Some(params)).expect("new 'info' notification")
+            Notification::new("info".to_string(), params).expect("new 'info' notification")
         }
     }
 
@@ -85,7 +85,7 @@ pub mod notification {
                         })
                     }
                 }).collect();
-            Notification::new("view".to_string(), Some(params)).expect("new 'init' notification")
+            Notification::new("view".to_string(), params).expect("new 'init' notification")
         }
     }
 }
@@ -111,7 +111,7 @@ pub mod request {
             let params = Params {
                 buffer: buffer.to_string(),
             };
-            Request::new(id, "buffer-select".to_string(), Some(params))
+            Request::new(id, "buffer-select".to_string(), params)
                 .expect("new 'buffer-select' request")
         }
     }
@@ -130,7 +130,7 @@ pub mod request {
                 file: file.to_string(),
                 path: None,
             };
-            Request::new(id, "edit".to_string(), Some(params)).unwrap()
+            Request::new(id, "edit".to_string(), params).unwrap()
         }
 
         pub type Result = ();
@@ -160,7 +160,7 @@ pub mod request {
                 kind: kind.to_string(),
                 search: search.to_string(),
             };
-            Request::new(id, "menu".to_string(), Some(params)).unwrap()
+            Request::new(id, "menu".to_string(), params).unwrap()
         }
 
         #[derive(Serialize, Deserialize)]
@@ -192,7 +192,7 @@ pub mod request {
                 kind: kind.to_string(),
                 choice: choice.to_string(),
             };
-            Request::new(id, "menu-select".to_string(), Some(params)).unwrap()
+            Request::new(id, "menu-select".to_string(), params).unwrap()
         }
 
         pub type Result = ();

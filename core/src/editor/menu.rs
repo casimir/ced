@@ -289,7 +289,6 @@ impl Menu {
 
     pub fn files(search: &str) -> Menu {
         let files: Vec<String> = Walk::new("./")
-            .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
             .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
