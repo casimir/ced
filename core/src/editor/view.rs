@@ -9,6 +9,16 @@ pub enum Focus {
     Whole,
 }
 
+impl Focus {
+    pub fn start(&self) -> usize {
+        use self::Focus::*;
+        match self {
+            Range(r) => r.start,
+            Whole => 0,
+        }
+    }
+}
+
 impl fmt::Display for Focus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Focus::*;

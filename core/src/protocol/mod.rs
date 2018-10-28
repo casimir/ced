@@ -44,6 +44,7 @@ pub mod notification {
         #[derive(Clone, Serialize, Deserialize)]
         pub struct ParamsLines {
             pub lines: Vec<String>,
+            pub first_line_num: usize,
         }
 
         #[derive(Clone, Serialize, Deserialize)]
@@ -82,6 +83,7 @@ pub mod notification {
                         let buffer = &buffers[&lens.buffer];
                         ParamsItem::Lines(ParamsLines {
                             lines: buffer.lines(lens.focus.clone()).to_vec(),
+                            first_line_num: lens.focus.start() + 1,
                         })
                     }
                 }).collect();
