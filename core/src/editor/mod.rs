@@ -275,7 +275,7 @@ impl Editor {
         params: &protocol::request::menu::Params,
     ) -> Result<protocol::request::menu::Result, JError> {
         let in_cache = match self.menu_cache.as_ref() {
-            Some(menu) => menu.kind == params.kind,
+            Some(menu) => menu.command == params.command,
             None => false,
         };
         self.menu_cache = if in_cache {
@@ -283,7 +283,7 @@ impl Editor {
             menu.filter.search = params.search.to_owned();
             Some(menu)
         } else {
-            Some(match params.kind.as_str() {
+            Some(match params.command.as_str() {
                 "files" => Ok(Menu::files(&params.search)),
                 kind => {
                     let reason = &format!("unknown menu kind: {}", kind);
@@ -298,7 +298,7 @@ impl Editor {
             .iter()
             .filter(|c| c.is_match())
             .map(|c| protocol::request::menu::Entry {
-                text: c.text.clone(),
+                value: c.object.key.clone(),
                 fragments: c
                     .tokenize()
                     .iter()
@@ -310,9 +310,10 @@ impl Editor {
                             Face::Default
                         },
                     }).collect(),
+                description: c.object.description.clone(),
             }).collect();
         Ok(protocol::request::menu::Result {
-            kind: params.kind.to_owned(),
+            kind: params.command.to_owned(),
             title: menu.title.to_owned(),
             search: params.search.to_owned(),
             entries,
@@ -324,7 +325,7 @@ impl Editor {
         client_id: usize,
         params: &protocol::request::menu_select::Params,
     ) -> Result<protocol::request::menu_select::Result, JError> {
-        match params.kind.as_str() {
+        match params.command.as_str() {
             "files" => {
                 let mut path = env::current_dir().unwrap();
                 path.push(&params.choice);

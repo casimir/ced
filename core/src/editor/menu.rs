@@ -11,33 +11,43 @@ pub struct Token {
     pub is_match: bool,
 }
 
+pub trait Searchable {
+    fn field(&self) -> &str;
+}
+
+impl Searchable for String {
+    fn field(&self) -> &str {
+        &self
+    }
+}
+
+fn compute_candidate_score(locations: &CaptureLocations) -> f32 {
+    if locations.len() > 0 {
+        let (start, _) = locations.get(0).unwrap();
+        let (_, end) = locations.get(locations.len() - 1).unwrap();
+        100.0 / (1 + end - start) as f32
+    } else {
+        0.0
+    }
+}
+
 #[derive(Debug)]
-pub struct Candidate {
-    pub text: String,
+pub struct Candidate<T: Searchable> {
+    pub object: T,
     score: Option<f32>,
     locations: CaptureLocations,
 }
 
-impl Candidate {
-    fn new(re: &Regex, text: &str) -> Candidate {
+impl<T: Searchable> Candidate<T> {
+    fn new(re: &Regex, object: T) -> Candidate<T> {
         let mut locations = re.capture_locations();
         let score = re
-            .captures_read(&mut locations, &text)
-            .map(|_| Candidate::compute_score(&locations));
+            .captures_read(&mut locations, object.field())
+            .map(|_| compute_candidate_score(&locations));
         Candidate {
-            text: text.to_owned(),
+            object,
             score,
             locations,
-        }
-    }
-
-    fn compute_score(locations: &CaptureLocations) -> f32 {
-        if locations.len() > 0 {
-            let (start, _) = locations.get(0).unwrap();
-            let (_, end) = locations.get(locations.len() - 1).unwrap();
-            100.0 / (1 + end - start) as f32
-        } else {
-            0.0
         }
     }
 
@@ -48,22 +58,23 @@ impl Candidate {
     pub fn tokenize(&self) -> Vec<Token> {
         let mut tokens = Vec::new();
         let mut last_end = 0;
+        let text = self.object.field();
         for i in 1..self.locations.len() {
             if let Some((start, end)) = self.locations.get(i) {
                 tokens.push(Token {
-                    text: self.text[last_end..start].to_owned(),
+                    text: text[last_end..start].to_owned(),
                     is_match: false,
                 });
                 tokens.push(Token {
-                    text: self.text[start..end].to_owned(),
+                    text: text[start..end].to_owned(),
                     is_match: true,
                 });
                 last_end = end;
             }
         }
-        if last_end < self.text.len() {
+        if last_end < text.len() {
             tokens.push(Token {
-                text: self.text[last_end..].to_owned(),
+                text: text[last_end..].to_owned(),
                 is_match: false,
             });
         }
@@ -71,16 +82,21 @@ impl Candidate {
     }
 }
 
-impl fmt::Display for Candidate {
+impl<T: Searchable> fmt::Display for Candidate<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:.2} {}", self.score.unwrap_or(-1.0), self.text)
+        write!(
+            f,
+            "{:.2} {}",
+            self.score.unwrap_or(-1.0),
+            self.object.field()
+        )
     }
 }
 
-impl Ord for Candidate {
-    fn cmp(&self, other: &Candidate) -> Ordering {
+impl<T: Searchable> Ord for Candidate<T> {
+    fn cmp(&self, other: &Candidate<T>) -> Ordering {
         if self == other {
-            other.text.cmp(&self.text)
+            other.object.field().cmp(&self.object.field())
         } else if self.score > other.score {
             Ordering::Greater
         } else {
@@ -89,27 +105,27 @@ impl Ord for Candidate {
     }
 }
 
-impl PartialOrd for Candidate {
-    fn partial_cmp(&self, other: &Candidate) -> Option<Ordering> {
+impl<T: Searchable> PartialOrd for Candidate<T> {
+    fn partial_cmp(&self, other: &Candidate<T>) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for Candidate {
-    fn eq(&self, other: &Candidate) -> bool {
+impl<T: Searchable> PartialEq for Candidate<T> {
+    fn eq(&self, other: &Candidate<T>) -> bool {
         self.score == other.score
     }
 }
 
-impl Eq for Candidate {}
+impl<T: Searchable> Eq for Candidate<T> {}
 
 #[derive(Default)]
-pub struct Candidates(Vec<Candidate>);
+pub struct Candidates<T: Searchable>(Vec<Candidate<T>>);
 
-impl Deref for Candidates {
-    type Target = Vec<Candidate>;
+impl<T: Searchable> Deref for Candidates<T> {
+    type Target = Vec<Candidate<T>>;
 
-    fn deref(&self) -> &Vec<Candidate> {
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
@@ -135,9 +151,15 @@ impl MenuFilter {
         Regex::new(&raw_re).unwrap()
     }
 
-    pub fn filter(&self, items: &[String]) -> Candidates {
+    pub fn filter<T>(&self, items: &[T]) -> Candidates<T>
+    where
+        T: Searchable + Clone,
+    {
         let re = self.build_regex();
-        let mut candidates: Vec<Candidate> = items.iter().map(|i| Candidate::new(&re, i)).collect();
+        let mut candidates: Vec<Candidate<T>> = items
+            .iter()
+            .map(|ref i| Candidate::new(&re, (*i).clone()))
+            .collect();
         candidates.sort_by(|a, b| b.cmp(a));
         Candidates(candidates)
     }
@@ -172,8 +194,11 @@ mod tests {
             "/tmp",                        // no match (t)
         ];
         let f = MenuFilter::new("proj fil ext");
-        let candidates = &f.filter(&items);
-        let res: Vec<String> = candidates.iter().map(|ref c| c.text.clone()).collect();
+        let candidates: Candidates<String> = f.filter(&items);
+        let res: Vec<String> = candidates
+            .iter()
+            .map(|ref c| c.object.field().to_string())
+            .collect();
         assert_eq!(res, expected);
     }
 
@@ -195,8 +220,11 @@ mod tests {
             "/abs/path/here",
             "/project/file",
         ];
-        let candidates1 = &f.filter(&items1);
-        let res1: Vec<String> = candidates1.iter().map(|ref c| c.text.clone()).collect();
+        let candidates1: Candidates<String> = f.filter(&items1);
+        let res1: Vec<String> = candidates1
+            .iter()
+            .map(|ref c| c.object.field().to_string())
+            .collect();
 
         let items2 = vec![
             "/tmp".into(),
@@ -210,8 +238,11 @@ mod tests {
             "/project/amodule/file.ext",
             "/tmp",
         ];
-        let candidates2 = &f.filter(&items2);
-        let res2: Vec<String> = candidates2.iter().map(|ref c| c.text.clone()).collect();
+        let candidates2: Candidates<String> = f.filter(&items2);
+        let res2: Vec<String> = candidates2
+            .iter()
+            .map(|ref c| c.object.field().to_string())
+            .collect();
 
         assert_eq!(res1, expected1);
         assert_eq!(res2, expected2);
@@ -263,36 +294,50 @@ mod tests {
     }
 }
 
+#[derive(Clone)]
+pub struct MenuEntry {
+    pub key: String,
+    pub label: String,
+    pub description: Option<String>,
+}
+
+impl Searchable for MenuEntry {
+    fn field(&self) -> &str {
+        &self.label
+    }
+}
+
 pub struct Menu {
-    pub kind: String,
+    pub command: String,
     pub title: String,
-    pub entries: Vec<String>,
+    pub entries: Vec<MenuEntry>,
     pub filter: MenuFilter,
 }
 
 impl Menu {
-    pub fn new<T>(kind: &str, title: &str, entries: T, search: &str) -> Menu
-    where
-        T: Into<Vec<String>>,
-    {
+    pub fn new(command: &str, title: &str, entries: Vec<MenuEntry>, search: &str) -> Menu {
         Menu {
-            kind: kind.to_string(),
+            command: command.to_string(),
             title: title.to_string(),
-            entries: entries.into(),
+            entries,
             filter: MenuFilter::new(search),
         }
     }
 
-    pub fn filtered(&self) -> Candidates {
+    pub fn filtered(&self) -> Candidates<MenuEntry> {
         self.filter.filter(&self.entries)
     }
 
     pub fn files(search: &str) -> Menu {
-        let files: Vec<String> = Walk::new("./")
+        let entries: Vec<MenuEntry> = Walk::new("./")
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
             .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
-            .collect();
-        Menu::new("files", "file", files, search)
+            .map(|f| MenuEntry {
+                key: f.to_string(),
+                label: f.to_string(),
+                description: None,
+            }).collect();
+        Menu::new("files", "file", entries, search)
     }
 }

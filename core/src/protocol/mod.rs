@@ -153,13 +153,13 @@ pub mod request {
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
-            pub kind: String,
+            pub command: String,
             pub search: String,
         }
 
-        pub fn new(id: Id, kind: &str, search: &str) -> Request {
+        pub fn new(id: Id, command: &str, search: &str) -> Request {
             let params = Params {
-                kind: kind.to_string(),
+                command: command.to_string(),
                 search: search.to_string(),
             };
             Request::new(id, "menu".to_string(), params).unwrap()
@@ -167,8 +167,9 @@ pub mod request {
 
         #[derive(Serialize, Deserialize)]
         pub struct Entry {
-            pub text: String,
+            pub value: String,
             pub fragments: Vec<TextFragment>,
+            pub description: Option<String>,
         }
 
         #[derive(Serialize, Deserialize)]
@@ -185,13 +186,13 @@ pub mod request {
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
-            pub kind: String,
+            pub command: String,
             pub choice: String,
         }
 
-        pub fn new(id: Id, kind: &str, choice: &str) -> Request {
+        pub fn new(id: Id, command: &str, choice: &str) -> Request {
             let params = Params {
-                kind: kind.to_string(),
+                command: command.to_string(),
                 choice: choice.to_string(),
             };
             Request::new(id, "menu-select".to_string(), params).unwrap()

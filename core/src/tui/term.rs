@@ -119,7 +119,7 @@ impl Menu {
     }
 
     fn selected_item(&self) -> &str {
-        &self.items[self.selected].text
+        &self.items[self.selected].value
     }
 
     fn handle_key(&mut self, key: Key) -> MenuAction {
