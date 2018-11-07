@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{self, from_value, to_string, to_value, Value};
+use serde_json::{from_value, to_string, to_value, Value};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -156,7 +156,7 @@ impl Error {
     // -32600   Invalid Request     The JSON sent is not a valid Request object.
     // -32601   Method not found    The method does not exist / is not available.
     // -32602   Invalid params 	    Invalid method parameter(s).
-    // TODO -32603   Internal error      Internal JSON-RPC error.
+    // -32603   Internal error      Internal JSON-RPC error.
 
     pub fn invalid_request(source: &str) -> Error {
         Error::new(
@@ -177,6 +177,10 @@ impl Error {
     pub fn invalid_params(reason: &str) -> Error {
         Error::new(-32602, "Invalid method parameter(s).".to_string(), reason).unwrap()
     }
+
+    pub fn internal_error(details: &str) -> Error {
+        Error::new(-32603, "Internal JSON-RPC error.".to_string(), details).unwrap()
+    }
 }
 
 impl fmt::Display for Error {
@@ -185,6 +189,8 @@ impl fmt::Display for Error {
         f.write_str(&payload)
     }
 }
+
+impl std::error::Error for Error {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response {

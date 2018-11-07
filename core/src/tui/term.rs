@@ -16,8 +16,7 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use protocol::notification::view::ParamsItem as ViewParamsItem;
-use protocol::request::menu::Entry as MenuEntry;
+use protocol::notification::{menu::Entry as MenuEntry, view::ParamsItem as ViewParamsItem};
 use protocol::{self, Face};
 use remote::jsonrpc::{ClientEvent, Id};
 use remote::{Client, Session};
@@ -77,7 +76,7 @@ enum Event {
 }
 
 struct Menu {
-    kind: String,
+    command: String,
     title: String,
     items: Vec<MenuEntry>,
     search: String,
@@ -93,9 +92,9 @@ enum MenuAction {
 }
 
 impl Menu {
-    fn new(kind: String, title: String, search: String, items: Vec<MenuEntry>) -> Menu {
+    fn new(command: String, title: String, search: String, items: Vec<MenuEntry>) -> Menu {
         Menu {
-            kind,
+            command,
             title,
             items,
             search,
@@ -393,12 +392,12 @@ impl Term {
             Notification(notif) => match notif.method.as_str() {
                 "info" => process_params!(notif, |params| self.process_info(params)),
                 "view" => process_params!(notif, |params| self.process_view(params)),
+                "menu" => process_params!(notif, |params| self.process_menu(params)),
                 method => error!("unknown notification method: {}", method),
             },
             Response(resp) => match self.connection.pending.remove(&resp.id) {
                 Some(req) => match req.method.as_str() {
-                    "menu" => process_result!(resp, |result| self.process_menu(result)),
-                    "edit" | "menu-select" => {}
+                    "edit" | "menu" | "menu-select" => {}
                     method => error!("unknown response method: {}", method),
                 },
                 None => error!("unexpected response: {}", resp),
@@ -416,9 +415,9 @@ impl Term {
         self.draw();
     }
 
-    fn process_menu(&mut self, result: protocol::request::menu::Result) {
+    fn process_menu(&mut self, result: protocol::notification::menu::Params) {
         self.menu = Some(Menu::new(
-            result.kind.to_owned(),
+            result.command.to_owned(),
             result.title.to_owned(),
             result.search,
             result.entries,
@@ -431,14 +430,14 @@ impl Term {
         self.connection.request(message);
     }
 
-    fn do_menu(&mut self, kind: &str, search: &str) {
-        let message = protocol::request::menu::new(self.connection.request_id(), kind, search);
+    fn do_menu(&mut self, command: &str, search: &str) {
+        let message = protocol::request::menu::new(self.connection.request_id(), command, search);
         self.connection.request(message);
     }
 
-    fn do_menu_select(&mut self, kind: &str, choice: &str) {
+    fn do_menu_select(&mut self, command: &str, choice: &str) {
         let message =
-            protocol::request::menu_select::new(self.connection.request_id(), kind, choice);
+            protocol::request::menu_select::new(self.connection.request_id(), command, choice);
         self.connection.request(message);
     }
 
@@ -447,7 +446,7 @@ impl Term {
             let mut menu = self.menu.take().unwrap();
             match menu.handle_key(key) {
                 MenuAction::Choice => {
-                    self.do_menu_select(&menu.kind, menu.selected_item());
+                    self.do_menu_select(&menu.command, menu.selected_item());
                     self.menu = None;
                     self.draw();
                 }
@@ -456,7 +455,7 @@ impl Term {
                     self.draw();
                 }
                 MenuAction::Search => {
-                    self.do_menu(&menu.kind, &menu.search);
+                    self.do_menu(&menu.command, &menu.search);
                     self.menu = Some(menu);
                 }
                 MenuAction::Noop => {
@@ -468,9 +467,12 @@ impl Term {
             match key {
                 Key::Esc => self.exit_pending = true,
                 Key::Char('f') => {
-                    self.do_menu("files", "");
+                    self.do_menu("open", "");
                 }
-                Key::Char('p') => panic!("panic mode activated!"),
+                Key::Char('p') => {
+                    self.do_menu("", "");
+                }
+                Key::Char('x') => panic!("panic mode activated!"),
                 _ => {}
             }
         }

@@ -28,6 +28,58 @@ pub mod notification {
         }
     }
 
+    pub mod menu {
+        use editor::menu::Menu;
+        use protocol::{Face, TextFragment};
+        use remote::jsonrpc::Notification;
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Entry {
+            pub value: String,
+            pub fragments: Vec<TextFragment>,
+            pub description: Option<String>,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub command: String,
+            pub title: String,
+            pub search: String,
+            pub entries: Vec<Entry>,
+        }
+
+        pub fn new(menu: &Menu, search: &str) -> Notification {
+            let command = menu.command.to_string();
+            let title = menu.title.to_string();
+            let entries = menu
+                .filter(search)
+                .iter()
+                .filter(|c| c.is_match())
+                .map(|c| Entry {
+                    value: c.object.key.clone(),
+                    fragments: c
+                        .tokenize()
+                        .iter()
+                        .map(|t| TextFragment {
+                            text: t.text.clone(),
+                            face: if t.is_match {
+                                Face::Match
+                            } else {
+                                Face::Default
+                            },
+                        }).collect(),
+                    description: c.object.description.clone(),
+                }).collect();
+            let params = Params {
+                command,
+                title,
+                search: search.to_string(),
+                entries,
+            };
+            Notification::new("menu".to_string(), params).unwrap()
+        }
+    }
+
     pub mod view {
         use std::collections::HashMap;
 
@@ -148,7 +200,6 @@ pub mod request {
     }
 
     pub mod menu {
-        use protocol::TextFragment;
         use remote::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
@@ -165,20 +216,7 @@ pub mod request {
             Request::new(id, "menu".to_string(), params).unwrap()
         }
 
-        #[derive(Serialize, Deserialize)]
-        pub struct Entry {
-            pub value: String,
-            pub fragments: Vec<TextFragment>,
-            pub description: Option<String>,
-        }
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Result {
-            pub kind: String,
-            pub title: String,
-            pub search: String,
-            pub entries: Vec<Entry>,
-        }
+        pub type Result = ();
     }
 
     pub mod menu_select {

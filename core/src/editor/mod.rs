@@ -1,5 +1,5 @@
 mod buffer;
-mod menu;
+pub mod menu;
 pub mod view;
 
 use std::collections::{BTreeMap, HashMap};
@@ -8,13 +8,14 @@ use std::path::PathBuf;
 
 use crossbeam_channel as channel;
 use failure::Error;
+use ignore::Walk;
 
 pub use self::buffer::{Buffer, BufferSource};
-use self::menu::Menu;
+use self::menu::{Menu, MenuEntry};
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::response;
-use protocol::{self, Face, TextFragment};
+use protocol;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use server::BroadcastMessage;
 use stackmap::StackMap;
@@ -45,7 +46,7 @@ pub struct Editor {
     broadcaster: channel::Sender<BroadcastMessage>,
     buffers: HashMap<String, Buffer>,
     views: StackMap<String, View>,
-    menu_cache: Option<Menu>,
+    command_map: HashMap<String, Menu>,
 }
 
 impl Editor {
@@ -56,7 +57,7 @@ impl Editor {
             broadcaster,
             buffers: HashMap::new(),
             views: StackMap::new(),
-            menu_cache: None,
+            command_map: HashMap::new(),
         };
 
         let mut view = View::default();
@@ -72,7 +73,51 @@ impl Editor {
         });
         editor.views.insert(view.key(), view);
 
+        editor.register_command(Menu::new("", "command", || {
+            let mut entries = Vec::new();
+
+            entries.push(MenuEntry {
+                key: "open".to_string(),
+                label: "Open file".to_string(),
+                description: Some("Open and read a new file.".to_string()),
+                action: |_key, editor, client_id| {
+                    editor.notify(
+                        client_id,
+                        protocol::notification::menu::new(&editor.command_map["open"], ""),
+                    );
+                    Ok(())
+                },
+            });
+
+            entries
+        }));
+        editor.register_command(Menu::new("open", "file", || {
+            Walk::new("./")
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
+                .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
+                .map(|fpath| MenuEntry {
+                    key: fpath.to_string(),
+                    label: fpath.to_string(),
+                    description: None,
+                    action: |key, editor, client_id| {
+                        let mut path = std::env::current_dir().unwrap();
+                        path.push(key);
+                        let params = crate::protocol::request::edit::Params {
+                            file: key.to_owned(),
+                            path: Some(path.into_os_string().into_string().unwrap()),
+                        };
+                        editor.command_edit(client_id, &params)?;
+                        Ok(())
+                    },
+                }).collect()
+        }));
+
         editor
+    }
+
+    fn register_command(&mut self, menu: Menu) {
+        self.command_map.insert(menu.command.to_string(), menu);
     }
 
     fn broadcast<F>(&self, message: Notification, filter: F)
@@ -271,53 +316,24 @@ impl Editor {
 
     pub fn command_menu(
         &mut self,
-        _client_id: usize,
+        client_id: usize,
         params: &protocol::request::menu::Params,
     ) -> Result<protocol::request::menu::Result, JError> {
-        let in_cache = match self.menu_cache.as_ref() {
-            Some(menu) => menu.command == params.command,
-            None => false,
-        };
-        self.menu_cache = if in_cache {
-            let mut menu = self.menu_cache.take().unwrap();
-            menu.filter.search = params.search.to_owned();
-            Some(menu)
-        } else {
-            Some(match params.command.as_str() {
-                "files" => Ok(Menu::files(&params.search)),
-                kind => {
-                    let reason = &format!("unknown menu kind: {}", kind);
-                    Err(JError::invalid_params(reason))
-                }
-            }?)
-        };
-
-        let menu = &self.menu_cache.as_ref().unwrap();
-        let entries = menu
-            .filtered()
-            .iter()
-            .filter(|c| c.is_match())
-            .map(|c| protocol::request::menu::Entry {
-                value: c.object.key.clone(),
-                fragments: c
-                    .tokenize()
-                    .iter()
-                    .map(|t| TextFragment {
-                        text: t.text.clone(),
-                        face: if t.is_match {
-                            Face::Match
-                        } else {
-                            Face::Default
-                        },
-                    }).collect(),
-                description: c.object.description.clone(),
-            }).collect();
-        Ok(protocol::request::menu::Result {
-            kind: params.command.to_owned(),
-            title: menu.title.to_owned(),
-            search: params.search.to_owned(),
-            entries,
-        })
+        {
+            let menu = self.command_map.get_mut(&params.command).ok_or({
+                let reason = &format!("unknown command: {}", &params.command);
+                JError::invalid_params(reason)
+            })?;
+            if params.search.is_empty() {
+                menu.populate();
+            }
+        }
+        let menu = self.command_map[&params.command].clone();
+        self.notify(
+            client_id,
+            protocol::notification::menu::new(&menu, &params.search),
+        );
+        Ok(())
     }
 
     pub fn command_menu_select(
@@ -325,17 +341,27 @@ impl Editor {
         client_id: usize,
         params: &protocol::request::menu_select::Params,
     ) -> Result<protocol::request::menu_select::Result, JError> {
-        match params.command.as_str() {
-            "files" => {
-                let mut path = env::current_dir().unwrap();
-                path.push(&params.choice);
-                let params = protocol::request::edit::Params {
-                    file: params.choice.to_owned(),
-                    path: Some(path.into_os_string().into_string().unwrap()),
-                };
-                self.command_edit(client_id, &params)?;
+        let menu = self
+            .command_map
+            .get(&params.command)
+            .ok_or({
+                let reason = &format!("unknown command: {}", &params.command);
+                JError::invalid_params(reason)
+            })?.clone();
+        match menu.get(&params.choice) {
+            Some(entry) => {
+                let res = (entry.action)(&params.choice, self, client_id);
+                if let Some(error) = res.err() {
+                    match error.downcast::<JError>() {
+                        Ok(err) => return Err(err),
+                        Err(err) => return Err(JError::internal_error(&err.to_string())),
+                    }
+                }
             }
-            _ => {}
+            None => {
+                let reason = &format!("unknown choice: {}", params.choice);
+                return Err(JError::invalid_params(reason));
+            }
         }
         Ok(())
     }

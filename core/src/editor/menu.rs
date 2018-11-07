@@ -2,8 +2,9 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 
-use ignore::Walk;
 use regex::{CaptureLocations, Regex};
+
+use editor::Editor;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Token {
@@ -294,11 +295,14 @@ mod tests {
     }
 }
 
+pub type MenuAction = fn(&str, &mut Editor, usize) -> Result<(), failure::Error>;
+
 #[derive(Clone)]
 pub struct MenuEntry {
     pub key: String,
     pub label: String,
     pub description: Option<String>,
+    pub action: MenuAction,
 }
 
 impl Searchable for MenuEntry {
@@ -307,37 +311,38 @@ impl Searchable for MenuEntry {
     }
 }
 
+pub type EntryProvider = fn() -> Vec<MenuEntry>;
+
+#[derive(Clone)]
 pub struct Menu {
     pub command: String,
     pub title: String,
-    pub entries: Vec<MenuEntry>,
-    pub filter: MenuFilter,
+    provider: EntryProvider,
+    entries: Vec<MenuEntry>,
 }
 
 impl Menu {
-    pub fn new(command: &str, title: &str, entries: Vec<MenuEntry>, search: &str) -> Menu {
-        Menu {
+    pub fn new(command: &str, title: &str, provider: EntryProvider) -> Menu {
+        let mut menu = Menu {
             command: command.to_string(),
             title: title.to_string(),
-            entries,
-            filter: MenuFilter::new(search),
-        }
+            provider,
+            entries: Vec::new(),
+        };
+        menu.populate();
+        menu
     }
 
-    pub fn filtered(&self) -> Candidates<MenuEntry> {
-        self.filter.filter(&self.entries)
+    pub fn populate(&mut self) {
+        self.entries = (self.provider)();
     }
 
-    pub fn files(search: &str) -> Menu {
-        let entries: Vec<MenuEntry> = Walk::new("./")
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
-            .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
-            .map(|f| MenuEntry {
-                key: f.to_string(),
-                label: f.to_string(),
-                description: None,
-            }).collect();
-        Menu::new("files", "file", entries, search)
+    pub fn get(&self, key: &str) -> Option<&MenuEntry> {
+        self.entries.iter().find(|e| e.key == key)
+    }
+
+    pub fn filter(&self, search: &str) -> Candidates<MenuEntry> {
+        let filter = MenuFilter::new(search);
+        filter.filter(&self.entries)
     }
 }
