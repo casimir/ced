@@ -122,6 +122,8 @@ impl Server {
             Ready::readable(),
             PollOpt::edge(),
         ).unwrap();
+        // notify readiness to a potentially awaiting client
+        println!("");
         loop {
             poll.poll(&mut events, None).unwrap();
             for event in events.iter() {

@@ -9,9 +9,8 @@ extern crate human_panic;
 extern crate log;
 
 use std::env;
+use std::io::{BufRead, BufReader};
 use std::process::{self, Command, Stdio};
-use std::thread;
-use std::time::Duration;
 
 use clap::{App, Arg};
 use failure::Error;
@@ -52,19 +51,37 @@ fn start_daemon(session: &Session) -> Result<u32, Error> {
     let prg = Command::new(&args[0])
         .args(&args[1..])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
+    let pid = prg.id();
+
+    //  Once ready to accept connections the server send an empty line on stdout.
+    if let Some(stdout) = prg.stdout {
+        for line in BufReader::new(stdout).lines() {
+            let should_stop = match line {
+                Ok(l) => l.is_empty(),
+                Err(err) => {
+                    error!("failed to read stdout: {}", err);
+                    true
+                }
+            };
+            if should_stop {
+                break;
+            }
+        }
+    } else {
+        error!("could not capture stdout");
+    }
+
     info!("server command: {:?}", args);
-    Ok(prg.id())
+    Ok(pid)
 }
 
 fn ensure_session(session: &Session) -> Result<(), Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         if !path.exists() {
             start_daemon(&session)?;
-            // ensures the daemon process got time to create the socket
-            thread::sleep(Duration::from_millis(150));
         }
     }
     Ok(())
