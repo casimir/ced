@@ -13,7 +13,7 @@ pub struct TextFragment {
 pub mod notification {
     /// Sent to to the client when connection is complete.
     pub mod info {
-        use remote::jsonrpc::Notification;
+        use jsonrpc::Notification;
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -29,9 +29,8 @@ pub mod notification {
     }
 
     pub mod menu {
-        use editor::menu::Menu;
-        use protocol::{Face, TextFragment};
-        use remote::jsonrpc::Notification;
+        use jsonrpc::Notification;
+        use protocol::TextFragment;
 
         #[derive(Serialize, Deserialize)]
         pub struct Entry {
@@ -48,43 +47,16 @@ pub mod notification {
             pub entries: Vec<Entry>,
         }
 
-        pub fn new(menu: &Menu, search: &str) -> Notification {
-            let command = menu.command.to_string();
-            let title = menu.title.to_string();
-            let entries = menu
-                .filter(search)
-                .iter()
-                .filter(|c| c.is_match())
-                .map(|c| Entry {
-                    value: c.object.key.clone(),
-                    fragments: c
-                        .tokenize()
-                        .iter()
-                        .map(|t| TextFragment {
-                            text: t.text.clone(),
-                            face: if t.is_match {
-                                Face::Match
-                            } else {
-                                Face::Default
-                            },
-                        }).collect(),
-                    description: c.object.description.clone(),
-                }).collect();
-            let params = Params {
-                command,
-                title,
-                search: search.to_string(),
-                entries,
-            };
-            Notification::new("menu".to_string(), params).unwrap()
+        pub fn new<P>(params: P) -> Notification
+        where
+            P: Into<Params>,
+        {
+            Notification::new("menu".to_string(), params.into()).unwrap()
         }
     }
 
     pub mod view {
-        use std::collections::HashMap;
-
-        use editor::{Buffer, View, ViewItem};
-        use remote::jsonrpc::Notification;
+        use jsonrpc::Notification;
 
         #[derive(Clone, Serialize, Deserialize)]
         pub struct ParamsHeader {
@@ -108,38 +80,11 @@ pub mod notification {
 
         pub type Params = Vec<ParamsItem>;
 
-        pub fn new(view: &View, buffers: &HashMap<String, Buffer>) -> Notification {
-            let params: Params = view
-                .as_vec()
-                .iter()
-                .map(|item| match item {
-                    ViewItem::Header((buffer, focus)) => {
-                        use editor::view::Focus;
-                        match focus {
-                            Focus::Range(range) => ParamsItem::Header(ParamsHeader {
-                                buffer: buffer.to_string(),
-                                start: range.start + 1,
-                                end: range.end,
-                            }),
-                            Focus::Whole => {
-                                let b = &buffers[&buffer.to_string()];
-                                ParamsItem::Header(ParamsHeader {
-                                    buffer: buffer.to_string(),
-                                    start: 1,
-                                    end: b.line_count(),
-                                })
-                            }
-                        }
-                    }
-                    ViewItem::Lens(lens) => {
-                        let buffer = &buffers[&lens.buffer];
-                        ParamsItem::Lines(ParamsLines {
-                            lines: buffer.lines(lens.focus.clone()).to_vec(),
-                            first_line_num: lens.focus.start() + 1,
-                        })
-                    }
-                }).collect();
-            Notification::new("view".to_string(), params).expect("new 'init' notification")
+        pub fn new<P>(params: P) -> Notification
+        where
+            P: Into<Params>,
+        {
+            Notification::new("view".to_string(), params.into()).expect("new 'init' notification")
         }
     }
 }
@@ -154,7 +99,7 @@ pub mod request {
     }
 
     pub mod buffer_select {
-        use remote::jsonrpc::{Id, Request};
+        use jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -171,7 +116,7 @@ pub mod request {
     }
 
     pub mod edit {
-        use remote::jsonrpc::{Id, Request};
+        use jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -200,7 +145,7 @@ pub mod request {
     }
 
     pub mod menu {
-        use remote::jsonrpc::{Id, Request};
+        use jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -220,7 +165,7 @@ pub mod request {
     }
 
     pub mod menu_select {
-        use remote::jsonrpc::{Id, Request};
+        use jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {

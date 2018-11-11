@@ -11,8 +11,8 @@ use std::time::Duration;
 use itertools::Itertools;
 
 use ced::editor::Editor;
+use ced::jsonrpc::ClientEvent;
 use ced::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
-use ced::remote::jsonrpc::ClientEvent;
 use ced::remote::{Client, Events, Session};
 use ced::server::Broadcaster;
 

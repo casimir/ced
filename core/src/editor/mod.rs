@@ -15,8 +15,8 @@ use self::menu::{Menu, MenuEntry};
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::response;
+use jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use protocol;
-use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use server::BroadcastMessage;
 use stackmap::StackMap;
 
@@ -81,9 +81,10 @@ impl Editor {
                 label: "Open file".to_string(),
                 description: Some("Open and read a new file.".to_string()),
                 action: |_key, editor, client_id| {
+                    let menu = &editor.command_map["open"];
                     editor.notify(
                         client_id,
-                        protocol::notification::menu::new(&editor.command_map["open"], ""),
+                        protocol::notification::menu::new(menu.to_notification_params("")),
                     );
                     Ok(())
                 },
@@ -143,6 +144,14 @@ impl Editor {
         self.broadcast(message, |&k| k == client_id);
     }
 
+    fn notify_view_update(&self, client_id: usize) {
+        let context = &self.clients[&client_id];
+        self.notify(
+            client_id,
+            protocol::notification::view::new(context.view.to_notification_params(&self.buffers)),
+        );
+    }
+
     pub fn add_client(&mut self, id: usize) {
         let context = if let Some(c) = self.clients.latest() {
             self.clients[c].clone()
@@ -156,10 +165,7 @@ impl Editor {
         self.append_debug(&format!("new client: {}", id));
         self.notify(id, protocol::notification::info::new(&self.session_name));
         if !context.view.contains_buffer("*debug*") {
-            self.notify(
-                id,
-                protocol::notification::view::new(&context.view, &self.buffers),
-            );
+            self.notify_view_update(id);
         }
     }
 
@@ -193,10 +199,7 @@ impl Editor {
         info!("{}", content);
         for (client_id, context) in self.clients.iter() {
             if context.view.contains_buffer("*debug*") {
-                self.notify(
-                    *client_id,
-                    protocol::notification::view::new(&context.view, &self.buffers),
-                );
+                self.notify_view_update(*client_id);
             }
         }
     }
@@ -274,18 +277,11 @@ impl Editor {
         if notify_change {
             for (id, ctx) in self.clients.iter() {
                 if ctx.view.contains_buffer(&params.file) {
-                    self.notify(
-                        *id,
-                        protocol::notification::view::new(&ctx.view, &self.buffers),
-                    );
+                    self.notify_view_update(*id);
                 }
             }
         } else {
-            let context = &self.clients[&client_id];
-            self.notify(
-                client_id,
-                protocol::notification::view::new(&context.view, &self.buffers),
-            );
+            self.notify_view_update(client_id);
         }
         Ok(())
     }
@@ -301,10 +297,7 @@ impl Editor {
                     let context = self.clients.get_mut(&client_id).unwrap();
                     context.view = view.clone();
                 }
-                self.notify(
-                    client_id,
-                    protocol::notification::view::new(&view, &self.buffers),
-                );
+                self.notify_view_update(client_id);
                 Ok(())
             }
             None => {
@@ -331,7 +324,7 @@ impl Editor {
         let menu = self.command_map[&params.command].clone();
         self.notify(
             client_id,
-            protocol::notification::menu::new(&menu, &params.search),
+            protocol::notification::menu::new(menu.to_notification_params(&params.search)),
         );
         Ok(())
     }

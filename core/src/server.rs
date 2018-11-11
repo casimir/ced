@@ -12,7 +12,7 @@ use failure::Error;
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 
 use editor::Editor;
-use remote::jsonrpc::Notification;
+use jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 
 #[derive(Debug)]

@@ -5,6 +5,8 @@ use std::ops::Deref;
 use regex::{CaptureLocations, Regex};
 
 use editor::Editor;
+use protocol::notification::menu::{Entry, Params as NotificationParams};
+use protocol::{Face, TextFragment};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Token {
@@ -344,5 +346,35 @@ impl Menu {
     pub fn filter(&self, search: &str) -> Candidates<MenuEntry> {
         let filter = MenuFilter::new(search);
         filter.filter(&self.entries)
+    }
+
+    pub fn to_notification_params(&self, search: &str) -> NotificationParams {
+        let command = self.command.to_string();
+        let title = self.title.to_string();
+        let entries = self
+            .filter(search)
+            .iter()
+            .filter(|c| c.is_match())
+            .map(|c| Entry {
+                value: c.object.key.clone(),
+                fragments: c
+                    .tokenize()
+                    .iter()
+                    .map(|t| TextFragment {
+                        text: t.text.clone(),
+                        face: if t.is_match {
+                            Face::Match
+                        } else {
+                            Face::Default
+                        },
+                    }).collect(),
+                description: c.object.description.clone(),
+            }).collect();
+        NotificationParams {
+            command,
+            title,
+            search: search.to_string(),
+            entries,
+        }
     }
 }

@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use remote::jsonrpc::Request;
+use jsonrpc::Request;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::ops::Drop;
@@ -16,9 +16,9 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
+use jsonrpc::{ClientEvent, Id};
 use protocol::notification::{menu::Entry as MenuEntry, view::ParamsItem as ViewParamsItem};
 use protocol::{self, Face};
-use remote::jsonrpc::{ClientEvent, Id};
 use remote::{Client, Session};
 
 struct Connection {

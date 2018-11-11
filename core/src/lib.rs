@@ -32,8 +32,9 @@ cfg_if! {
 }
 
 pub mod editor;
-pub mod protocol;
 #[macro_use]
+pub mod jsonrpc;
+pub mod protocol;
 pub mod remote;
 pub mod server;
 pub mod stackmap;

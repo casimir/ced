@@ -1,7 +1,12 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::ops::{Deref, Range};
+
+use editor::Buffer;
+use protocol::notification::view::{
+    Params as NotificationParams, ParamsHeader, ParamsItem, ParamsLines,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Focus {
@@ -122,6 +127,38 @@ impl View {
 
     pub fn contains_buffer(&self, buffer: &str) -> bool {
         self.0.contains_key(buffer)
+    }
+
+    pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> NotificationParams {
+        self.as_vec()
+            .iter()
+            .map(|item| match item {
+                ViewItem::Header((buffer, focus)) => {
+                    use editor::view::Focus;
+                    match focus {
+                        Focus::Range(range) => ParamsItem::Header(ParamsHeader {
+                            buffer: buffer.to_string(),
+                            start: range.start + 1,
+                            end: range.end,
+                        }),
+                        Focus::Whole => {
+                            let b = &buffers[&buffer.to_string()];
+                            ParamsItem::Header(ParamsHeader {
+                                buffer: buffer.to_string(),
+                                start: 1,
+                                end: b.line_count(),
+                            })
+                        }
+                    }
+                }
+                ViewItem::Lens(lens) => {
+                    let buffer = &buffers[&lens.buffer];
+                    ParamsItem::Lines(ParamsLines {
+                        lines: buffer.lines(lens.focus.clone()).to_vec(),
+                        first_line_num: lens.focus.start() + 1,
+                    })
+                }
+            }).collect()
     }
 }
 

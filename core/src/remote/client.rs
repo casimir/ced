@@ -4,7 +4,7 @@ use std::thread;
 use crossbeam_channel as channel;
 use failure::Error;
 
-use remote::jsonrpc::{ClientEvent, Request};
+use jsonrpc::{ClientEvent, Request};
 use remote::{ServerStream, Session, Stream};
 
 pub struct Events {
