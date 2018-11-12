@@ -5,17 +5,11 @@ extern crate env_logger;
 extern crate failure;
 #[macro_use]
 extern crate human_panic;
-#[macro_use]
-extern crate log;
-
-use std::env;
-use std::io::{BufRead, BufReader};
-use std::process::{self, Command, Stdio};
 
 use clap::{App, Arg};
 use failure::Error;
 
-use ced::remote::{ConnectionMode, Session, StdioClient};
+use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
 use ced::server::Server;
 use ced::standalone::start_standalone;
 use ced::tui::start as start_tui;
@@ -40,51 +34,6 @@ impl Mode {
             "json"
         }
     }
-}
-
-fn start_daemon(session: &Session) -> Result<u32, Error> {
-    let args = vec![
-        env::args().next().unwrap(),
-        "--mode=server".to_string(),
-        format!("--session={}", session.mode),
-    ];
-    let prg = Command::new(&args[0])
-        .args(&args[1..])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let pid = prg.id();
-
-    //  Once ready to accept connections the server send an empty line on stdout.
-    if let Some(stdout) = prg.stdout {
-        for line in BufReader::new(stdout).lines() {
-            let should_stop = match line {
-                Ok(l) => l.is_empty(),
-                Err(err) => {
-                    error!("failed to read stdout: {}", err);
-                    true
-                }
-            };
-            if should_stop {
-                break;
-            }
-        }
-    } else {
-        error!("could not capture stdout");
-    }
-
-    info!("server command: {:?}", args);
-    Ok(pid)
-}
-
-fn ensure_session(session: &Session) -> Result<(), Error> {
-    if let ConnectionMode::Socket(path) = &session.mode {
-        if !path.exists() {
-            start_daemon(&session)?;
-        }
-    }
-    Ok(())
 }
 
 fn main() -> Result<(), Error> {
@@ -118,6 +67,7 @@ fn main() -> Result<(), Error> {
                 .multiple(true)
                 .help("A list of files to open"),
         ).get_matches();
+    let bin_path = std::env::args().next().unwrap();
 
     if matches.is_present("list") {
         for session_name in Session::list() {
@@ -128,7 +78,7 @@ fn main() -> Result<(), Error> {
         let session = Session::from_name(
             matches
                 .value_of("SESSION")
-                .unwrap_or(&process::id().to_string()),
+                .unwrap_or(&std::process::id().to_string()),
         );
         let filenames = match matches.values_of("FILE") {
             Some(args) => args.collect(),
@@ -136,11 +86,10 @@ fn main() -> Result<(), Error> {
         };
 
         match value_t!(matches.value_of("MODE"), Mode).unwrap() {
-            Mode::daemon => {
-                start_daemon(&session).map(|pid| eprintln!("server started with pid {}", pid))
-            }
+            Mode::daemon => start_daemon(&bin_path, &session)
+                .map(|pid| eprintln!("server started with pid {}", pid)),
             Mode::json => {
-                ensure_session(&session)?;
+                ensure_session(&bin_path, &session)?;
                 StdioClient::new(&session)?.run()
             }
             Mode::server => {
@@ -149,7 +98,7 @@ fn main() -> Result<(), Error> {
             }
             Mode::standalone => start_standalone(&filenames),
             Mode::term => {
-                ensure_session(&session)?;
+                ensure_session(&bin_path, &session)?;
                 start_tui(&session, &filenames)
             }
         }

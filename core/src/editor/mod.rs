@@ -14,9 +14,9 @@ pub use self::buffer::{Buffer, BufferSource};
 use self::menu::{Menu, MenuEntry};
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
-use crate::response;
 use jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use protocol;
+use remote::response;
 use server::BroadcastMessage;
 use stackmap::StackMap;
 

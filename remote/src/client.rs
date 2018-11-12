@@ -5,7 +5,8 @@ use crossbeam_channel as channel;
 use failure::Error;
 
 use jsonrpc::{ClientEvent, Request};
-use remote::{ServerStream, Session, Stream};
+use session::Session;
+use transport::{ServerStream, Stream};
 
 pub struct Events {
     lines: Lines<BufReader<Box<Stream>>>,

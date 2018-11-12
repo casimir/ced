@@ -2,13 +2,11 @@
 #![warn(clippy)]
 
 #[macro_use]
-extern crate cfg_if;
-#[macro_use]
 extern crate crossbeam_channel;
-extern crate env_logger;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+pub extern crate ced_remote as remote;
 extern crate ignore;
 #[macro_use]
 extern crate lazy_static;
@@ -16,27 +14,15 @@ extern crate lazy_static;
 extern crate log;
 extern crate mio;
 extern crate regex;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-
-cfg_if! {
-    if #[cfg(unix)] {
-        extern crate mio_uds;
-        extern crate termion;
-    } else if #[cfg(windows)] {
-        extern crate mio_named_pipes;
-        extern crate winapi;
-    }
-}
+#[cfg(unix)]
+extern crate termion;
 
 pub mod editor;
 #[macro_use]
-pub mod jsonrpc;
-pub mod protocol;
-pub mod remote;
 pub mod server;
 pub mod stackmap;
 pub mod standalone;
 pub mod tui;
+
+pub use remote::jsonrpc;
+pub use remote::protocol;

@@ -9,6 +9,5 @@ os:
 cache: cargo
 
 script:
-  - cd $TRAVIS_BUILD_DIR/core
   - cargo build --verbose --all
   - cargo test --verbose --all

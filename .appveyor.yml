@@ -19,6 +19,5 @@ install:
   - cargo -vV
 build: false
 test_script:
-  - ps: cd core
-  - cargo build
-  - cargo test -v
+  - cargo build --verbose --all
+  - cargo test --verbose --all

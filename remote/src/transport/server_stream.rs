@@ -4,11 +4,11 @@ use std::net::TcpStream;
 use failure::Error;
 
 #[cfg(unix)]
-use remote::transport::socket_unix::SocketStream;
+use transport::socket_unix::SocketStream;
 #[cfg(windows)]
-use remote::transport::socket_win::SocketStream;
-use remote::transport::Stream;
-use remote::ConnectionMode;
+use transport::socket_win::SocketStream;
+use transport::Stream;
+use ConnectionMode;
 
 pub enum ServerStream {
     Socket(SocketStream),

@@ -4,13 +4,13 @@ use failure::Error;
 use mio::net::TcpListener;
 use mio::Evented;
 
-use remote::transport::EventedStream;
-use remote::{ConnectionMode, Session};
+use transport::EventedStream;
+use {ConnectionMode, Session};
 
 #[cfg(unix)]
-use remote::transport::socket_unix::SocketListener;
+use transport::socket_unix::SocketListener;
 #[cfg(windows)]
-use remote::transport::socket_win::SocketListener;
+use transport::socket_win::SocketListener;
 
 pub enum ServerListener {
     Socket(SocketListener),
