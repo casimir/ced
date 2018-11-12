@@ -3,8 +3,6 @@ extern crate crossbeam_channel as channel;
 extern crate failure;
 extern crate itertools;
 
-use std::env;
-use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -13,7 +11,7 @@ use itertools::Itertools;
 use ced::editor::Editor;
 use ced::jsonrpc::ClientEvent;
 use ced::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
-use ced::remote::{Client, Events, Session};
+use ced::remote::{Client, Events, Session, start_daemon};
 use ced::server::Broadcaster;
 
 const CLIENT_ID: usize = 1;
@@ -89,24 +87,11 @@ impl SyncClient {
 }
 
 fn start_client_and_server(session: &Session) -> SyncClient {
-    let args = vec![
-        env::args().next().unwrap(),
-        "--mode=server".to_string(),
-        format!("--session={}", session.mode),
-    ];
-    let mut test_exe = env::current_exe().unwrap();
+    let mut test_exe = std::env::current_exe().unwrap();
     test_exe.pop();
     test_exe.pop();
     test_exe.push("ced");
-    let prg = Command::new(test_exe)
-        .args(&args[1..])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    println!("started server with pid {}", prg.id());
-    sleep(Duration::from_millis(150));
+    start_daemon(test_exe.to_str().unwrap(), &session).expect("start a daemon");
     SyncClient::start(&session).unwrap()
 }
 
