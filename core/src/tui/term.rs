@@ -1,7 +1,5 @@
 #![cfg(unix)]
 
-use jsonrpc::Request;
-use std::collections::HashMap;
 use std::io::{self, Write};
 use std::ops::Drop;
 use std::thread;
@@ -16,59 +14,12 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use jsonrpc::{ClientEvent, Id};
-use protocol::notification::{menu::Entry as MenuEntry, view::ParamsItem as ViewParamsItem};
-use protocol::{self, Face};
-use remote::{Client, Session};
-
-struct Connection {
-    client: Client,
-    requests: channel::Sender<Request>,
-    next_request_id: i32,
-    pending: HashMap<Id, Request>,
-}
-
-impl Connection {
-    fn new(session: &Session) -> Result<Connection, Error> {
-        let (client, requests) = Client::new(session)?;
-        Ok(Connection {
-            client,
-            requests,
-            next_request_id: 0,
-            pending: HashMap::new(),
-        })
-    }
-
-    fn connect(&self) -> channel::Receiver<ClientEvent> {
-        let messages_iter = self.client.run();
-        let (tx, rx) = channel::unbounded();
-        thread::spawn(move || {
-            for msg in messages_iter {
-                match msg {
-                    Ok(m) => tx.send(m),
-                    Err(e) => error!("{}", e),
-                }
-            }
-        });
-        rx
-    }
-
-    fn request_id(&mut self) -> Id {
-        let id = self.next_request_id;
-        self.next_request_id += 1;
-        Id::Number(id)
-    }
-
-    fn request(&mut self, message: Request) {
-        self.pending.insert(message.id.clone(), message.clone());
-        self.requests.send(message);
-    }
-}
-
-struct Context {
-    session: String,
-    view: Vec<ViewParamsItem>,
-}
+use remote::jsonrpc::ClientEvent;
+use remote::protocol::notification::{
+    menu::Entry as MenuEntry, view::ParamsItem as ViewParamsItem,
+};
+use remote::protocol::{self, Face};
+use remote::{Connection, Session};
 
 enum Event {
     Input(Key),
@@ -168,7 +119,6 @@ macro_rules! process_result {
 
 struct Term {
     connection: Connection,
-    context: Context,
     exit_pending: bool,
     last_size: (u16, u16),
     screen: AlternateScreen<RawTerminal<io::Stdout>>,
@@ -179,10 +129,6 @@ impl Term {
     fn new(session: &Session, filenames: &[&str]) -> Result<Term, Error> {
         let mut term = Term {
             connection: Connection::new(session)?,
-            context: Context {
-                session: String::new(),
-                view: Vec::new(),
-            },
             exit_pending: false,
             screen: AlternateScreen::from(io::stdout().into_raw_mode()?),
             last_size: termion::terminal_size()?,
@@ -257,10 +203,11 @@ impl Term {
         let (width, height) = self.last_size;
         write!(self.screen, "{}", termion::clear::All,).unwrap();
 
+        let context = self.connection.context();
         {
             let mut i = 0;
             let mut content = Vec::new();
-            'outer: for item in &self.context.view {
+            'outer: for item in &context.view {
                 use self::ViewParamsItem::*;
                 match item {
                     Header(header) => {
@@ -289,14 +236,14 @@ impl Term {
             write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
         }
 
-        let padding = " ".repeat(width as usize - 2 - self.context.session.len());
+        let padding = " ".repeat(width as usize - 2 - context.session.len());
         write!(
             self.screen,
             "{}{}{}[{}]{}",
             Goto(1, height),
             termion::style::Invert,
             padding,
-            self.context.session,
+            context.session,
             termion::style::Reset
         ).unwrap();
     }
@@ -390,8 +337,7 @@ impl Term {
         use self::ClientEvent::*;
         match message {
             Notification(notif) => match notif.method.as_str() {
-                "info" => process_params!(notif, |params| self.process_info(params)),
-                "view" => process_params!(notif, |params| self.process_view(params)),
+                "info" | "view" => self.draw(),
                 "menu" => process_params!(notif, |params| self.process_menu(params)),
                 method => error!("unknown notification method: {}", method),
             },
@@ -403,16 +349,6 @@ impl Term {
                 None => error!("unexpected response: {}", resp),
             },
         }
-    }
-
-    fn process_info(&mut self, params: protocol::notification::info::Params) {
-        self.context.session = params.session;
-        self.draw();
-    }
-
-    fn process_view(&mut self, params: protocol::notification::view::Params) {
-        self.context.view = params;
-        self.draw();
     }
 
     fn process_menu(&mut self, result: protocol::notification::menu::Params) {

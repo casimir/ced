@@ -23,12 +23,16 @@ pub mod protocol;
 mod session;
 mod transport;
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, RwLock};
 
+use crossbeam_channel as channel;
 use failure::Error;
 
 pub use self::client::{Client, Events, StdioClient};
+pub use self::jsonrpc::{ClientEvent, Id, Request};
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
 
@@ -72,4 +76,85 @@ pub fn ensure_session(command: &str, session: &Session) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Default)]
+pub struct ConnectionContext {
+    pub session: String,
+    pub view: protocol::notification::view::Params,
+}
+impl ConnectionContext {
+    fn update_context(&mut self, event: &ClientEvent) {
+        if let ClientEvent::Notification(notif) = event {
+            use protocol::notification::*;
+            match notif.method.as_str() {
+                "info" => {
+                    if let Ok(Some(params)) = notif.params::<info::Params>() {
+                        self.session = params.session;
+                    }
+                }
+                "view" => {
+                    if let Ok(Some(params)) = notif.params::<view::Params>() {
+                        self.view = params;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+pub struct Connection {
+    client: Client,
+    context_lock: Arc<RwLock<ConnectionContext>>,
+    requests: channel::Sender<Request>,
+    next_request_id: i32,
+    pub pending: HashMap<Id, Request>,
+}
+
+impl Connection {
+    pub fn new(session: &Session) -> Result<Connection, Error> {
+        let (client, requests) = Client::new(session)?;
+        Ok(Connection {
+            client,
+            context_lock: Arc::new(RwLock::new(ConnectionContext::default())),
+            requests,
+            next_request_id: 0,
+            pending: HashMap::new(),
+        })
+    }
+
+    pub fn context(&self) -> ConnectionContext {
+        self.context_lock.read().unwrap().clone()
+    }
+
+    pub fn connect(&self) -> channel::Receiver<ClientEvent> {
+        let events = self.client.run();
+        let (tx, rx) = channel::unbounded();
+        let ctx_lock = self.context_lock.clone();
+        std::thread::spawn(move || {
+            for ev in events {
+                match ev {
+                    Ok(e) => {
+                        let mut ctx = ctx_lock.write().unwrap();
+                        ctx.update_context(&e);
+                        tx.send(e);
+                    }
+                    Err(e) => error!("{}", e),
+                }
+            }
+        });
+        rx
+    }
+
+    pub fn request_id(&mut self) -> Id {
+        let id = self.next_request_id;
+        self.next_request_id += 1;
+        Id::Number(id)
+    }
+
+    pub fn request(&mut self, message: Request) {
+        self.pending.insert(message.id.clone(), message.clone());
+        self.requests.send(message);
+    }
 }
