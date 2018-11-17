@@ -4,7 +4,7 @@ use std::fmt;
 use std::ops::{Deref, Range};
 
 use editor::Buffer;
-use protocol::notification::view::{
+use remote::protocol::notification::view::{
     Params as NotificationParams, ParamsHeader, ParamsItem, ParamsLines,
 };
 

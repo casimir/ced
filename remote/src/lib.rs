@@ -31,10 +31,10 @@ use std::sync::{Arc, RwLock};
 use crossbeam_channel as channel;
 use failure::Error;
 
-pub use self::client::{Client, Events, StdioClient};
-pub use self::jsonrpc::{ClientEvent, Id, Request};
-pub use self::session::{ConnectionMode, Session};
-pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
+pub use client::{Client, Events, StdioClient};
+pub use jsonrpc::{ClientEvent, Id, Request};
+pub use session::{ConnectionMode, Session};
+pub use transport::{EventedStream, ServerListener, ServerStream, Stream};
 
 pub fn start_daemon(command: &str, session: &Session) -> Result<u32, Error> {
     let session_arg = format!("--session={}", session.mode);

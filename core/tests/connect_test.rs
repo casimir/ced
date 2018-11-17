@@ -9,9 +9,9 @@ use std::time::Duration;
 use itertools::Itertools;
 
 use ced::editor::Editor;
-use ced::jsonrpc::ClientEvent;
-use ced::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
-use ced::remote::{Client, Events, Session, start_daemon};
+use ced::remote::jsonrpc::ClientEvent;
+use ced::remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
+use ced::remote::{start_daemon, Client, Events, Session};
 use ced::server::Broadcaster;
 
 const CLIENT_ID: usize = 1;

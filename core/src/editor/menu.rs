@@ -5,8 +5,8 @@ use std::ops::Deref;
 use regex::{CaptureLocations, Regex};
 
 use editor::Editor;
-use protocol::notification::menu::{Entry, Params as NotificationParams};
-use protocol::{Face, TextFragment};
+use remote::protocol::notification::menu::{Entry, Params as NotificationParams};
+use remote::protocol::{Face, TextFragment};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Token {

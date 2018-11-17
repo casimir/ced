@@ -14,8 +14,8 @@ pub use self::buffer::{Buffer, BufferSource};
 use self::menu::{Menu, MenuEntry};
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
-use jsonrpc::{Error as JError, Id, Notification, Request, Response};
-use protocol;
+use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
+use remote::protocol;
 use remote::response;
 use server::BroadcastMessage;
 use stackmap::StackMap;
@@ -104,7 +104,7 @@ impl Editor {
                     action: |key, editor, client_id| {
                         let mut path = std::env::current_dir().unwrap();
                         path.push(key);
-                        let params = crate::protocol::request::edit::Params {
+                        let params = protocol::request::edit::Params {
                             file: key.to_owned(),
                             path: Some(path.into_os_string().into_string().unwrap()),
                         };

@@ -23,6 +23,3 @@ pub mod server;
 pub mod stackmap;
 pub mod standalone;
 pub mod tui;
-
-pub use remote::jsonrpc;
-pub use remote::protocol;
