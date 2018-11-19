@@ -28,7 +28,7 @@ fn starting_notifications() {
     let mut state = State::default();
     editor.add_client(CLIENT_ID);
     sleep(Duration::from_millis(150));
-    while let Some(bm) = broadcaster.rx.try_recv() {
+    while let Ok(bm) = broadcaster.rx.try_recv() {
         match bm.message.method.as_str() {
             "view" => state.view = bm.message.params().unwrap().unwrap(),
             _ => {}
@@ -95,7 +95,6 @@ fn start_client_and_server(session: &Session) -> SyncClient {
     SyncClient::start(&session).unwrap()
 }
 
-#[cfg(unix)]
 #[test]
 fn connect_socket() {
     let session = Session::from_name("_test");

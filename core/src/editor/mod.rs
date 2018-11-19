@@ -132,12 +132,12 @@ impl Editor {
             .cloned()
             .collect();
         let bm = BroadcastMessage::new_skip(message, skiplist);
-        self.broadcaster.send(bm);
+        self.broadcaster.send(bm).expect("broadcast message");
     }
 
     fn broadcast_all(&self, message: Notification) {
         let bm = BroadcastMessage::new(message);
-        self.broadcaster.send(bm);
+        self.broadcaster.send(bm).expect("broadcast message");
     }
 
     fn notify(&self, client_id: usize, message: Notification) {

@@ -1,7 +1,6 @@
 mod server_listener;
 mod server_stream;
-mod socket_unix;
-mod socket_win;
+mod socket;
 
 use std::io;
 

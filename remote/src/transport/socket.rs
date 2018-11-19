@@ -1,14 +1,18 @@
-#![cfg(unix)]
-
 use std::fs;
 use std::io;
 use std::ops::Deref;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
 use failure::Error;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
+#[cfg(unix)]
 use mio_uds::UnixListener;
+#[cfg(windows)]
+use mio_uds_windows::net::UnixStream;
+#[cfg(windows)]
+use mio_uds_windows::UnixListener;
 
 pub struct SocketListener(UnixListener);
 

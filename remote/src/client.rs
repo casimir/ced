@@ -70,7 +70,7 @@ impl StdioClient {
             for maybe_line in stdin.lock().lines() {
                 match maybe_line {
                     Ok(line) => match line.parse() {
-                        Ok(msg) => requests_tx.send(msg),
+                        Ok(msg) => requests_tx.send(msg).expect("send request"),
                         Err(e) => error!("invalid message: {}: {}", e, line),
                     },
                     Err(e) => error!("failed to read line from stdin: {}", e),

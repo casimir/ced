@@ -12,7 +12,10 @@ lazy_static! {
         Regex::new(r"^@(?P<address>\w+|\d+\.\d\.\d+\.\d+)?:(?P<port>\d+)$").unwrap();
 }
 
-const WIN_SOCKET_PREFIX: &str = r"\\.\pipe\ced-";
+#[cfg(unix)]
+const USER_ENV_VAR: &'static str = "LOGNAME";
+#[cfg(windows)]
+const USER_ENV_VAR: &'static str = "USERNAME";
 
 #[derive(Debug, PartialEq)]
 pub enum ConnectionMode {
@@ -30,18 +33,7 @@ impl fmt::Display for ConnectionMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ConnectionMode::*;
         match self {
-            Socket(path) => if cfg!(unix) {
-                write!(f, "{}", path.file_name().unwrap().to_str().unwrap())
-            } else {
-                let username = env::var("USERNAME").unwrap();
-                let session_prefix = format!("{}{}-", WIN_SOCKET_PREFIX, username);
-                let s = path.to_str().unwrap();
-                if s.starts_with(&session_prefix) {
-                    write!(f, "{}", &s[session_prefix.len()..])
-                } else {
-                    write!(f, "{}", s)
-                }
-            },
+            Socket(path) => write!(f, "{}", path.file_name().unwrap().to_str().unwrap()),
             Tcp(addr) => write!(f, "@{}", addr),
         }
     }
@@ -76,20 +68,17 @@ impl Session {
     fn build_root() -> PathBuf {
         let mut app_dir = env::temp_dir();
         app_dir.push("ced");
-        app_dir.push(env::var("LOGNAME").unwrap());
+        app_dir.push(env::var(USER_ENV_VAR).unwrap());
         app_dir
     }
 
     pub fn from_name(name: &str) -> Session {
         let session_name = if ConnectionMode::is_tcp(name) {
             name.to_owned()
-        } else if cfg!(unix) {
+        } else {
             let mut session_path = Self::build_root();
             session_path.push(name);
             session_path.to_str().unwrap().to_owned()
-        } else {
-            let username = env::var("USERNAME").unwrap();
-            format!("{}{}-{}", WIN_SOCKET_PREFIX, username, name)
         };
         Session {
             mode: session_name.parse().unwrap(),
@@ -97,38 +86,16 @@ impl Session {
     }
 
     pub fn list() -> Vec<String> {
-        if cfg!(unix) {
-            match fs::read_dir(Self::build_root()) {
-                Ok(entries) => entries
-                    .filter_map(|entry| {
-                        entry.ok().and_then(|e| {
-                            e.path()
-                                .file_name()
-                                .and_then(|n| n.to_str().map(String::from))
-                        })
-                    }).collect::<Vec<String>>(),
-                Err(_) => Vec::new(),
-            }
-        } else {
-            match fs::read_dir(r"\\.\pipe") {
-                Ok(entries) => {
-                    let username = env::var("USERNAME").unwrap();
-                    let prefix = format!("{}{}-", WIN_SOCKET_PREFIX, username);
-                    entries
-                        .filter_map(|entry| {
-                            entry.ok().and_then(|e| {
-                                e.path().to_str().and_then(|s| {
-                                    if s.starts_with(&prefix) {
-                                        Some(String::from(&s[prefix.len()..]))
-                                    } else {
-                                        None
-                                    }
-                                })
-                            })
-                        }).collect::<Vec<String>>()
-                }
-                Err(_) => Vec::new(),
-            }
+        match fs::read_dir(Self::build_root()) {
+            Ok(entries) => entries
+                .filter_map(|entry| {
+                    entry.ok().and_then(|e| {
+                        e.path()
+                            .file_name()
+                            .and_then(|n| n.to_str().map(String::from))
+                    })
+                }).collect::<Vec<String>>(),
+            Err(_) => Vec::new(),
         }
     }
 }
@@ -165,19 +132,10 @@ mod tests {
 
     #[test]
     fn connection_display() {
-        if cfg!(unix) {
-            assert_eq!(
-                format!("{}", ConnectionMode::Socket("/tmp/foo".into())),
-                "foo",
-            );
-        } else {
-            let username = env::var("USERNAME").unwrap();
-            let pipe_path = format!(r"\\.\pipe\ced-{}-foo", username);
-            assert_eq!(
-                format!("{}", ConnectionMode::Socket(pipe_path.into())),
-                "foo",
-            );
-        }
+        assert_eq!(
+            format!("{}", ConnectionMode::Socket("/tmp/foo".into())),
+            "foo",
+        );
         assert_eq!(format!("{}", ConnectionMode::Socket("@bar".into())), "@bar",);
         let unicode_s = "\u{1F37A} \u{2192} \u{1F603}";
         assert_eq!(

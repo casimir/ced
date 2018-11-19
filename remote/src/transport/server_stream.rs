@@ -3,10 +3,7 @@ use std::net::TcpStream;
 
 use failure::Error;
 
-#[cfg(unix)]
-use transport::socket_unix::SocketStream;
-#[cfg(windows)]
-use transport::socket_win::SocketStream;
+use transport::socket::SocketStream;
 use transport::Stream;
 use ConnectionMode;
 

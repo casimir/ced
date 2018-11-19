@@ -13,6 +13,8 @@ extern crate serde_derive;
 extern crate mio_named_pipes;
 #[cfg(unix)]
 extern crate mio_uds;
+#[cfg(windows)]
+extern crate mio_uds_windows;
 extern crate serde_json;
 #[cfg(windows)]
 extern crate winapi;
@@ -78,11 +80,12 @@ pub fn ensure_session(command: &str, session: &Session) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ConnectionContext {
     pub session: String,
     pub view: protocol::notification::view::Params,
 }
+
 impl ConnectionContext {
     fn update_context(&mut self, event: &ClientEvent) {
         if let ClientEvent::Notification(notif) = event {
@@ -138,7 +141,7 @@ impl Connection {
                     Ok(e) => {
                         let mut ctx = ctx_lock.write().unwrap();
                         ctx.update_context(&e);
-                        tx.send(e);
+                        tx.send(e).expect("send event");
                     }
                     Err(e) => error!("{}", e),
                 }
@@ -155,6 +158,6 @@ impl Connection {
 
     pub fn request(&mut self, message: Request) {
         self.pending.insert(message.id.clone(), message.clone());
-        self.requests.send(message);
+        self.requests.send(message).expect("send request");
     }
 }

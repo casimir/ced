@@ -147,7 +147,7 @@ impl Term {
         thread::spawn(move || {
             for key in io::stdin().keys() {
                 match key {
-                    Ok(k) => keys_tx.send(Event::Input(k)),
+                    Ok(k) => keys_tx.send(Event::Input(k)).expect("send key event"),
                     Err(e) => error!("{}", e),
                 }
             }
@@ -160,7 +160,9 @@ impl Term {
                 match termion::terminal_size() {
                     Ok(size) => {
                         if current != size {
-                            resize_tx.send(Event::Resize(size.0, size.1));
+                            resize_tx
+                                .send(Event::Resize(size.0, size.1))
+                                .expect("send resize event");
                             current = size;
                         }
                     }
@@ -172,15 +174,15 @@ impl Term {
         let messages = self.connection.connect();
         while !self.exit_pending {
             select!{
-                recv(messages, msg) => match msg {
-                    Some(m) => self.handle_client_event(m),
-                    None => break,
-                }
-                recv(events_rx, event) => match event {
-                    Some(Event::Input(key)) => self.handle_key(key),
-                    Some(Event::Resize(w, h)) => self.resize(w, h),
-                    None => break,
+                recv(messages) -> msg => match msg {
+                    Ok(m) => self.handle_client_event(m),
+                    Err(_) => break,
                 },
+                recv(events_rx) -> event => match event {
+                    Ok(Event::Input(key)) => self.handle_key(key),
+                    Ok(Event::Resize(w, h)) => self.resize(w, h),
+                    Err(_) => break,
+                }
             }
         }
         Ok(())

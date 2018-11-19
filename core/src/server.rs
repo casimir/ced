@@ -43,8 +43,8 @@ impl Default for Broadcaster {
         let (tx, inner_rx) = channel::unbounded();
         let (inner_tx, rx) = channel::unbounded();
         thread::spawn(move || loop {
-            if let Some(message) = inner_rx.recv() {
-                inner_tx.send(message);
+            if let Ok(message) = inner_rx.recv() {
+                inner_tx.send(message).expect("send message");
                 set_readiness
                     .set_readiness(Ready::readable())
                     .expect("set broadcast queue readable")
@@ -154,7 +154,7 @@ impl Server {
                         next_client_id += 1;
                     }
                     BROADCAST => {
-                        while let Some(bm) = broadcaster.rx.try_recv() {
+                        while let Ok(bm) = broadcaster.rx.try_recv() {
                             let mut conns = connections.borrow_mut();
                             let errors: Vec<Error> = conns
                                 .iter_mut()

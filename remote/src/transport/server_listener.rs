@@ -7,10 +7,7 @@ use mio::Evented;
 use transport::EventedStream;
 use {ConnectionMode, Session};
 
-#[cfg(unix)]
-use transport::socket_unix::SocketListener;
-#[cfg(windows)]
-use transport::socket_win::SocketListener;
+use transport::socket::SocketListener;
 
 pub enum ServerListener {
     Socket(SocketListener),

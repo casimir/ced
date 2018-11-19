@@ -58,20 +58,20 @@ pub mod notification {
     pub mod view {
         use jsonrpc::Notification;
 
-        #[derive(Clone, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Serialize, Deserialize)]
         pub struct ParamsHeader {
             pub buffer: String,
             pub start: usize,
             pub end: usize,
         }
 
-        #[derive(Clone, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Serialize, Deserialize)]
         pub struct ParamsLines {
             pub lines: Vec<String>,
             pub first_line_num: usize,
         }
 
-        #[derive(Clone, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Serialize, Deserialize)]
         #[serde(tag = "type")]
         pub enum ParamsItem {
             Header(ParamsHeader),
