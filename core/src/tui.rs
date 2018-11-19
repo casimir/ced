@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(all(feature = "term", unix))]
 
 use std::io::{self, Write};
 use std::ops::Drop;
@@ -117,7 +117,7 @@ macro_rules! process_result {
     };
 }
 
-struct Term {
+pub struct Term {
     connection: Connection,
     exit_pending: bool,
     last_size: (u16, u16),
@@ -126,7 +126,7 @@ struct Term {
 }
 
 impl Term {
-    fn new(session: &Session, filenames: &[&str]) -> Result<Term, Error> {
+    pub fn new(session: &Session, filenames: &[&str]) -> Result<Term, Error> {
         let mut term = Term {
             connection: Connection::new(session)?,
             exit_pending: false,
@@ -422,8 +422,4 @@ impl Drop for Term {
         self.flush();
         self.cursor_visible(true);
     }
-}
-
-pub fn start(session: &Session, filenames: &[&str]) -> Result<(), Error> {
-    Term::new(session, filenames)?.start()
 }

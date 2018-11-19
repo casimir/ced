@@ -12,8 +12,8 @@ use failure::Error;
 use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
 use ced::server::Server;
 use ced::standalone::start_standalone;
-use ced::tui::start as start_tui;
 
+#[cfg(all(feature = "term", unix))]
 arg_enum!{
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
@@ -25,10 +25,21 @@ arg_enum!{
         term,
     }
 }
+#[cfg(not(all(feature = "term", unix)))]
+arg_enum!{
+    #[allow(non_camel_case_types)]
+    #[derive(Debug)]
+    pub enum Mode {
+        daemon,
+        json,
+        server,
+        standalone,
+    }
+}
 
 impl Mode {
     fn default_value() -> &'static str {
-        if cfg!(unix) {
+        if cfg!(all(feature = "term", unix)) {
             "term"
         } else {
             "json"
@@ -97,9 +108,11 @@ fn main() -> Result<(), Error> {
                 Server::new(session).run()
             }
             Mode::standalone => start_standalone(&filenames),
+            #[cfg(all(feature = "term", unix))]
             Mode::term => {
+                use ced::tui::Term;
                 ensure_session(&bin_path, &session)?;
-                start_tui(&session, &filenames)
+                Term::new(&session, &filenames)?.start()
             }
         }
     }

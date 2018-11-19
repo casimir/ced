@@ -14,12 +14,15 @@ extern crate lazy_static;
 extern crate log;
 extern crate mio;
 extern crate regex;
-#[cfg(unix)]
-extern crate termion;
 
 pub mod editor;
 #[macro_use]
 pub mod server;
 pub mod stackmap;
 pub mod standalone;
+
+#[cfg(all(feature = "term", unix))]
+extern crate termion;
+
+#[cfg(all(feature = "term", unix))]
 pub mod tui;
