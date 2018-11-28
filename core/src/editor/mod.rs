@@ -2,7 +2,7 @@ mod buffer;
 pub mod menu;
 pub mod view;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
 
@@ -47,6 +47,7 @@ pub struct Editor {
     buffers: HashMap<String, Buffer>,
     views: StackMap<String, View>,
     command_map: HashMap<String, Menu>,
+    stopped_clients: HashSet<usize>,
 }
 
 impl Editor {
@@ -58,6 +59,7 @@ impl Editor {
             buffers: HashMap::new(),
             views: StackMap::new(),
             command_map: HashMap::new(),
+            stopped_clients: HashSet::new(),
         };
 
         let mut view = View::default();
@@ -75,7 +77,6 @@ impl Editor {
 
         editor.register_command(Menu::new("", "command", || {
             let mut entries = Vec::new();
-
             entries.push(MenuEntry {
                 key: "open".to_string(),
                 label: "Open file".to_string(),
@@ -89,7 +90,15 @@ impl Editor {
                     Ok(())
                 },
             });
-
+            entries.push(MenuEntry {
+                key: "quit".to_string(),
+                label: "Quit".to_string(),
+                description: Some("Quit the current client".to_string()),
+                action: |_key, editor, client_id| {
+                    editor.command_quit(client_id, &())?;
+                    Ok(())
+                },
+            });
             entries
         }));
         editor.register_command(Menu::new("open", "file", || {
@@ -174,6 +183,12 @@ impl Editor {
         self.append_debug(&format!("client left: {}", id));
     }
 
+    pub fn removed_clients(&mut self) -> Vec<usize> {
+        let ids: Vec<usize> = self.stopped_clients.iter().cloned().collect();
+        self.stopped_clients.clear();
+        ids
+    }
+
     fn open_scratch(&mut self, name: &str) {
         let buffer = Buffer::new_scratch(name.to_owned());
         self.buffers.insert(name.into(), buffer);
@@ -217,6 +232,7 @@ impl Editor {
             "command-list" => response!(message, |params| self
                 .command_command_list(client_id, params)),
             "edit" => response!(message, |params| self.command_edit(client_id, params)),
+            "quit" => response!(message, |params| self.command_quit(client_id, params)),
             "view" => response!(message, |params| self.command_view(client_id, params)),
             "menu" => response!(message, |params| self.command_menu(client_id, params)),
             "menu-select" => response!(message, |params| self
@@ -283,6 +299,16 @@ impl Editor {
         } else {
             self.notify_view_update(client_id);
         }
+        Ok(())
+    }
+
+    pub fn command_quit(
+        &mut self,
+        client_id: usize,
+        _params: &protocol::request::quit::Params,
+    ) -> Result<protocol::request::quit::Result, JError> {
+        self.remove_client(client_id);
+        self.stopped_clients.insert(client_id);
         Ok(())
     }
 

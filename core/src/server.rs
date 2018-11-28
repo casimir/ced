@@ -202,7 +202,12 @@ impl Server {
                             editor.remove_client(client_id);
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
                             poll.deregister(conn.handle.as_ref()).unwrap();
-                            info!("client {} disconnected", client_id);
+                            info!("client {}: connection lost", client_id);
+                        }
+                        for client_id in editor.removed_clients() {
+                            let conn = connections.borrow_mut().remove(&client_id).unwrap();
+                            poll.deregister(conn.handle.as_ref()).unwrap();
+                            info!("client {}: quit", client_id);
                         }
                     }
                 }
