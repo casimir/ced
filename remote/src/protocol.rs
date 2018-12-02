@@ -98,6 +98,18 @@ pub mod request {
         pub type Result = BTreeMap<String, String>;
     }
 
+    pub mod quit {
+        use jsonrpc::{Id, Request};
+
+        pub type Params = ();
+
+        pub type Result = ();
+
+        pub fn new(id: Id) -> Request {
+            Request::new(id, "quit".to_string(), ()).expect("new quit request")
+        }
+    }
+
     pub mod buffer_select {
         use jsonrpc::{Id, Request};
 
