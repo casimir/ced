@@ -86,11 +86,10 @@ fn main() -> Result<(), Error> {
         }
         Ok(())
     } else {
-        let session = Session::from_name(
-            matches
-                .value_of("SESSION")
-                .unwrap_or(&std::process::id().to_string()),
-        );
+        let session = match matches.value_of("SESSION") {
+            Some(name) => Session::from_name(name),
+            None => Session::from_pid(),
+        };
         let filenames = match matches.values_of("FILE") {
             Some(args) => args.collect(),
             None => Vec::new(),

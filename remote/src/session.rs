@@ -85,6 +85,10 @@ impl Session {
         }
     }
 
+    pub fn from_pid() -> Session {
+        Self::from_name(&std::process::id().to_string())
+    }
+
     pub fn list() -> Vec<String> {
         match fs::read_dir(Self::build_root()) {
             Ok(entries) => entries
