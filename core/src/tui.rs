@@ -205,11 +205,11 @@ impl Term {
         let (width, height) = self.last_size;
         write!(self.screen, "{}", termion::clear::All,).unwrap();
 
-        let context = self.connection.context();
+        let state = self.connection.state();
         {
             let mut i = 0;
             let mut content = Vec::new();
-            'outer: for item in &context.view {
+            'outer: for item in &state.view {
                 use self::ViewParamsItem::*;
                 match item {
                     Header(header) => {
@@ -238,14 +238,14 @@ impl Term {
             write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
         }
 
-        let padding = " ".repeat(width as usize - 2 - context.session.len());
+        let padding = " ".repeat(width as usize - 2 - state.session.len());
         write!(
             self.screen,
             "{}{}{}[{}]{}",
             Goto(1, height),
             termion::style::Invert,
             padding,
-            context.session,
+            state.session,
             termion::style::Reset
         ).unwrap();
     }

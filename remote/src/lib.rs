@@ -81,12 +81,12 @@ pub fn ensure_session(command: &str, session: &Session) -> Result<(), Error> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ConnectionContext {
+pub struct ConnectionState {
     pub session: String,
     pub view: protocol::notification::view::Params,
 }
 
-impl ConnectionContext {
+impl ConnectionState {
     fn update_context(&mut self, event: &ClientEvent) {
         if let ClientEvent::Notification(notif) = event {
             use protocol::notification::*;
@@ -109,7 +109,7 @@ impl ConnectionContext {
 
 pub struct Connection {
     client: Client,
-    context_lock: Arc<RwLock<ConnectionContext>>,
+    state_lock: Arc<RwLock<ConnectionState>>,
     requests: channel::Sender<Request>,
     next_request_id: i32,
     pub pending: HashMap<Id, Request>,
@@ -120,21 +120,21 @@ impl Connection {
         let (client, requests) = Client::new(session)?;
         Ok(Connection {
             client,
-            context_lock: Arc::new(RwLock::new(ConnectionContext::default())),
+            state_lock: Arc::new(RwLock::new(ConnectionState::default())),
             requests,
             next_request_id: 0,
             pending: HashMap::new(),
         })
     }
 
-    pub fn context(&self) -> ConnectionContext {
-        self.context_lock.read().unwrap().clone()
+    pub fn state(&self) -> ConnectionState {
+        self.state_lock.read().unwrap().clone()
     }
 
     pub fn connect(&self) -> channel::Receiver<ClientEvent> {
         let events = self.client.run();
         let (tx, rx) = channel::unbounded();
-        let ctx_lock = self.context_lock.clone();
+        let ctx_lock = self.state_lock.clone();
         std::thread::spawn(move || {
             for ev in events {
                 match ev {
