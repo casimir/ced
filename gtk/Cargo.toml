@@ -1,0 +1,13 @@
+[package]
+name = "ced-gtk"
+version = "0.1.0"
+authors = ["Martin Chaine <martin@casimir.me>"]
+
+[dependencies]
+ced-remote = { path = "../remote" }
+env_logger = "0.6"
+log = "0.4"
+
+[dependencies.gtk]
+version = "0.5"
+features = ["v3_10"]
