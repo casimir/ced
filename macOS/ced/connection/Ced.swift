@@ -22,16 +22,7 @@ extension FileHandle : TextOutputStream {
 class CedContext {
     
     var session: String!
-    var currentBuffer: String!
-    var bufferList: [String: [String: String]] = [:]
-    
-    func buffer() -> [String: String] {
-        if let buffer = self.bufferList[self.currentBuffer] {
-            return buffer
-        } else {
-            return ["content": ""]
-        }
-    }
+    var view: [Any] = []
     
 }
 
@@ -72,7 +63,7 @@ class Ced {
                     continue
                 }
                 
-                let line = self.bufIn.subdata(in: Range(cursor ..< i + 1))
+                let line = self.bufIn.subdata(in: cursor ..< i + 1)
                 self.handler.handle(line: line, context: self.context)
                 cursor = i + 1
             }

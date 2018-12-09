@@ -16,6 +16,9 @@
 		DA130D0A20D81EBD00FACAAD /* ConnectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA130D0920D81EBD00FACAAD /* ConnectionController.swift */; };
 		DA130D0E20D86B8C00FACAAD /* JSONRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA130D0D20D86B8C00FACAAD /* JSONRPC.swift */; };
 		DA62DBF920E56A03006B9C69 /* SessionListMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA62DBF820E56A03006B9C69 /* SessionListMenu.swift */; };
+		DA9FD6252180DD1A00B0A041 /* ViewItemsAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9FD6242180DD1900B0A041 /* ViewItemsAdapter.swift */; };
+		DA9FD6272185E81600B0A041 /* ViewItemHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9FD6262185E81600B0A041 /* ViewItemHeaderView.swift */; };
+		DA9FD62921860E4700B0A041 /* ViewItemLinesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9FD62821860E4700B0A041 /* ViewItemLinesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +34,9 @@
 		DA130D0920D81EBD00FACAAD /* ConnectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionController.swift; sourceTree = "<group>"; };
 		DA130D0D20D86B8C00FACAAD /* JSONRPC.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = JSONRPC.swift; sourceTree = "<group>"; };
 		DA62DBF820E56A03006B9C69 /* SessionListMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMenu.swift; sourceTree = "<group>"; };
+		DA9FD6242180DD1900B0A041 /* ViewItemsAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewItemsAdapter.swift; sourceTree = "<group>"; };
+		DA9FD6262185E81600B0A041 /* ViewItemHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewItemHeaderView.swift; sourceTree = "<group>"; };
+		DA9FD62821860E4700B0A041 /* ViewItemLinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewItemLinesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +55,8 @@
 			children = (
 				DA62DBF820E56A03006B9C69 /* SessionListMenu.swift */,
 				DA08434620E7D93B00921B5A /* BufferListMenu.swift */,
+				DA9FD6262185E81600B0A041 /* ViewItemHeaderView.swift */,
+				DA9FD62821860E4700B0A041 /* ViewItemLinesView.swift */,
 			);
 			path = ui;
 			sourceTree = "<group>";
@@ -80,6 +88,7 @@
 				DA130D0620D81B8300FACAAD /* connection */,
 				DA130CFC20D8170E00FACAAD /* Main.storyboard */,
 				DA08434820E7DC8600921B5A /* ui */,
+				DA9FD6242180DD1900B0A041 /* ViewItemsAdapter.swift */,
 			);
 			path = ced;
 			sourceTree = "<group>";
@@ -126,6 +135,7 @@
 				TargetAttributes = {
 					DA130CF220D8170C00FACAAD = {
 						CreatedOnToolsVersion = 9.4.1;
+						LastSwiftMigration = 1000;
 						SystemCapabilities = {
 							com.apple.Sandbox = {
 								enabled = 0;
@@ -169,6 +179,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DA9FD6272185E81600B0A041 /* ViewItemHeaderView.swift in Sources */,
 				DA08434720E7D93B00921B5A /* BufferListMenu.swift in Sources */,
 				DA130D0E20D86B8C00FACAAD /* JSONRPC.swift in Sources */,
 				DA130CF920D8170C00FACAAD /* ViewController.swift in Sources */,
@@ -176,6 +187,8 @@
 				DA130CF720D8170C00FACAAD /* AppDelegate.swift in Sources */,
 				DA130D0A20D81EBD00FACAAD /* ConnectionController.swift in Sources */,
 				DA62DBF920E56A03006B9C69 /* SessionListMenu.swift in Sources */,
+				DA9FD62921860E4700B0A041 /* ViewItemLinesView.swift in Sources */,
+				DA9FD6252180DD1A00B0A041 /* ViewItemsAdapter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,7 +333,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "casimir-lab.ced";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ENFORCE_EXCLUSIVE_ACCESS = "compile-time";
-				SWIFT_VERSION = 4.0;
+				SWIFT_VERSION = 4.2;
 			};
 			name = Debug;
 		};
@@ -338,7 +351,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "casimir-lab.ced";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ENFORCE_EXCLUSIVE_ACCESS = "compile-time";
-				SWIFT_VERSION = 4.0;
+				SWIFT_VERSION = 4.2;
 			};
 			name = Release;
 		};

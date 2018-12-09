@@ -26,9 +26,9 @@ class BufferListMenu: NSMenu, NSMenuDelegate {
     func populate() {
         self.removeAllItems()
         let context = self.appDelegate.focusedController().ced.context
-        for buffer in context.bufferList.keys.sorted() {
-            self.addItem(self.newItem(title: buffer))
-        }
+//        for buffer in context.bufferList.keys.sorted() {
+//            self.addItem(self.newItem(title: buffer))
+//        }
     }
     
     func menuWillOpen(_ menu: NSMenu) {

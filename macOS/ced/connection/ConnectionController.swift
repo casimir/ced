@@ -13,32 +13,46 @@ class ConnectionController {
     var runningRequests: [RpcId: RpcRequest] = [:]
     
     var window: NSWindow!
-    var buffer: NSTextView
+    var viewItems: ViewItemsAdapter
     
-    init(buffer: NSTextView) {
-        self.buffer = buffer
+    init(viewItems: ViewItemsAdapter) {
+        self.viewItems = viewItems
     }
     
     func setWindowTitle(_ context: CedContext) {
-        self.window?.title = "\(context.currentBuffer!) - \(context.session!)"
+        self.window?.title = "[\(context.session!)]"
     }
     
-    func refresh_buffer(_ context: CedContext, setTitle: Bool = true) {
-        self.buffer.string = context.buffer()["content"]!
-        if setTitle {
-            self.setWindowTitle(context)
+    func setView(_ context: CedContext) {
+//        var colourFlag = true;
+//        self.view.translatesAutoresizingMaskIntoConstraints = false
+//        let column = self.viewItems.tableColumns[0]
+        for item in context.view {
+//            let text = NSTextField(string: String(describing: item))
+//            text.isEditable = false
+//            text.isBordered = false
+//            text.backgroundColor = colourFlag ? NSColor.red : NSColor.blue
+//            colourFlag = !colourFlag
+//            self.viewItems.addArrangedSubview(text)
+            
+            
+//            text.leadingAnchor.constraint(equalTo: self.view.leadingAnchor).isActive = true
+//            text.trailingAnchor.constraint(equalTo: self.view.trailingAnchor).isActive = true
+//            text.setContentHuggingPriority(.fittingSizeCompression, for: .vertical)
+//            text.addConstraint(text.heightAnchor.constraint(equalToConstant: 100))
         }
     }
     
     func handle(line: Data, context: CedContext) {
           DispatchQueue.main.sync {
             if let message = try? RpcRequest(with: line) {
-                if message.method == "init" {
-                    handle_init(params: message.params, context: context)
-                } else if message.method == "buffer-changed" {
-                    handle_buffer_changed(params: message.params, context: context)
-                } else {
-                    print("method: \(message.method)\nparams: \(String(describing: message.params))")
+                switch message.method {
+                case "info":
+                    handle_info(params: message.params, context: context)
+                case "view":
+                    handle_view(params: message.params, context: context)
+                case let method:
+                    print("unknown notification method: \(method)")
                 }
             } else if let message = try? RpcResponse(with: line) {
                 if !message.isError() {
@@ -46,7 +60,7 @@ class ConnectionController {
                         self.handle_rpc_response(request: request, response: message, context: context)
                         self.runningRequests.removeValue(forKey: message.id)
                     } else {
-                        print("unsolicited response: \(message)")
+                        print("unexpected response: \(message)")
                     }
                 } else {
                     print("error: \(message.error!)")
@@ -57,48 +71,25 @@ class ConnectionController {
         }
     }
     
-    func handle_init(params: Any?, context: CedContext) {
+    func handle_info(params: Any?, context: CedContext) {
         let params = params as! [String: Any]
-        let bufferListParams = params["buffer_list"] as! [[String: String]]
         
-        context.session = params["session"] as! String
-        context.currentBuffer = params["buffer_current"] as! String
-        context.bufferList = [:]
-        for buffer in bufferListParams {
-            context.bufferList[buffer["name"]!] = buffer
-        }
-        
-        self.refresh_buffer(context)
+        context.session = params["session"] as? String
+        self.setWindowTitle(context)
     }
     
-    func handle_buffer_changed(params: Any?, context: CedContext) {
-        let buffer = params as! [String: String]
-        let buffer_name = buffer["name"]!
-        context.bufferList[buffer_name] = buffer
-        
-        if context.currentBuffer == buffer_name {
-            self.refresh_buffer(context, setTitle: false)
-        }
+    func handle_view(params: Any?, context: CedContext) {
+        context.view = params as! [Any]
+        self.viewItems.items = context.view as! [[String: Any]]
     }
     
     func handle_rpc_response(request: RpcRequest, response: RpcResponse, context: CedContext) {
-        if request.method == "edit" {
-            self.handle_edit(request: request, response: response, context: context)
-        } else if request.method == "buffer-select" {
-            self.handle_buffer_select(request: request, response: response, context: context)
-        } else {
-            print("method: \(request.method)\nparams: \(String(describing: request.params))\nresult: \(String(describing: response.result))")
+        switch request.method {
+        case "edit", "menu-select":
+            break
+        case let method:
+            print("unknown response method: \(method)")
         }
-    }
-    
-    func handle_edit(request: RpcRequest, response: RpcResponse, context: CedContext) {
-        context.currentBuffer = response.result as! String
-        self.refresh_buffer(context)
-    }
-    
-    func handle_buffer_select(request: RpcRequest, response: RpcResponse, context: CedContext) {
-        context.currentBuffer = response.result as! String
-        self.refresh_buffer(context)
     }
     
 }

@@ -10,15 +10,18 @@ import Cocoa
 
 class ViewController: NSViewController {
 
-    @IBOutlet var buffer: NSTextView!
+    @IBOutlet var viewItems: NSTableView!
     
     var ced: Ced!
     var session: String!
+    var viewItemsAdapter: ViewItemsAdapter!
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        let handler = ConnectionController(buffer: self.buffer)
+        
+        self.viewItemsAdapter = ViewItemsAdapter(tableView: self.viewItems)
+        
+        let handler = ConnectionController(viewItems: self.viewItemsAdapter)
         self.ced = Ced(handler: handler)
         
         self.ced.connect(session: self.session)

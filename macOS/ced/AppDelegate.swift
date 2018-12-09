@@ -26,8 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func newWindow(session: String? = nil) {
-        let storyboard = NSStoryboard(name: NSStoryboard.Name(rawValue: "Main"), bundle: nil)
-        let identifier = NSStoryboard.SceneIdentifier(rawValue: "bufferController")
+        let storyboard = NSStoryboard(name: "Main", bundle: nil)
+        let identifier = "bufferController"
         let controller = storyboard.instantiateController(withIdentifier: identifier) as! ViewController
         controller.session = session
         self.controllers.append(controller)
