@@ -163,7 +163,8 @@ impl Error {
             -32600,
             "The JSON sent is not a valid Request object.".to_string(),
             source,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub fn method_not_found(method: &str) -> Error {
@@ -171,7 +172,8 @@ impl Error {
             -32601,
             "The method does not exist / is not available.".to_string(),
             method,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub fn invalid_params(reason: &str) -> Error {

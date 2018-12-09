@@ -121,7 +121,8 @@ impl Server {
             BROADCAST,
             Ready::readable(),
             PollOpt::edge(),
-        ).unwrap();
+        )
+        .unwrap();
         // notify readiness to a potentially awaiting client
         println!("");
         loop {
@@ -144,7 +145,8 @@ impl Server {
                             Token(next_client_id),
                             Ready::readable(),
                             PollOpt::edge(),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         info!("client {} connected", next_client_id);
                         let conn = Connection::new(stream);
@@ -161,7 +163,8 @@ impl Server {
                                 .filter(|(client_id, _)| !bm.skiplist.contains(&client_id))
                                 .map(|(client_id, c)| {
                                     self.write_message(*client_id, c, &bm.message)
-                                }).filter_map(Result::err)
+                                })
+                                .filter_map(Result::err)
                                 .map(Error::from)
                                 .collect();
                             for e in &errors {

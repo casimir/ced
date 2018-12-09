@@ -14,7 +14,7 @@ use ced::server::Server;
 use ced::standalone::start_standalone;
 
 #[cfg(all(feature = "term", unix))]
-arg_enum!{
+arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
     pub enum Mode {
@@ -26,7 +26,7 @@ arg_enum!{
     }
 }
 #[cfg(not(all(feature = "term", unix)))]
-arg_enum!{
+arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
     pub enum Mode {
@@ -60,24 +60,28 @@ fn main() -> Result<(), Error> {
                 .short("l")
                 .long("list")
                 .help("Lists running sessions"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("SESSION")
                 .short("s")
                 .long("session")
                 .takes_value(true)
                 .help("Sets session name"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("MODE")
                 .short("m")
                 .long("mode")
                 .possible_values(&Mode::variants())
                 .default_value(Mode::default_value())
                 .help("Mode to use"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("FILE")
                 .multiple(true)
                 .help("A list of files to open"),
-        ).get_matches();
+        )
+        .get_matches();
     let bin_path = std::env::args().next().unwrap();
 
     if matches.is_present("list") {

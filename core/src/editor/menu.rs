@@ -367,9 +367,11 @@ impl Menu {
                         } else {
                             Face::Default
                         },
-                    }).collect(),
+                    })
+                    .collect(),
                 description: c.object.description.clone(),
-            }).collect();
+            })
+            .collect();
         NotificationParams {
             command,
             title,

@@ -45,11 +45,13 @@ impl Ord for Focus {
         match (self, other) {
             (Focus::Whole, _) => Ordering::Greater,
             (_, Focus::Whole) => Ordering::Less,
-            (Focus::Range(a), Focus::Range(b)) => if a.start != b.start {
-                a.start.cmp(&b.start)
-            } else {
-                a.end.cmp(&b.end)
-            },
+            (Focus::Range(a), Focus::Range(b)) => {
+                if a.start != b.start {
+                    a.start.cmp(&b.start)
+                } else {
+                    a.end.cmp(&b.end)
+                }
+            }
         }
     }
 }
@@ -158,7 +160,8 @@ impl View {
                         first_line_num: lens.focus.start() + 1,
                     })
                 }
-            }).collect()
+            })
+            .collect()
     }
 }
 

@@ -120,7 +120,8 @@ impl Editor {
                         editor.command_edit(client_id, &params)?;
                         Ok(())
                     },
-                }).collect()
+                })
+                .collect()
         }));
 
         editor
@@ -242,7 +243,8 @@ impl Editor {
                 self.append_debug(&dm);
                 Ok(Response::method_not_found(message.id, method))
             }
-        }.map_err(Error::from)
+        }
+        .map_err(Error::from)
     }
 
     fn command_command_list(
@@ -366,7 +368,8 @@ impl Editor {
             .ok_or({
                 let reason = &format!("unknown command: {}", &params.command);
                 JError::invalid_params(reason)
-            })?.clone();
+            })?
+            .clone();
         match menu.get(&params.choice) {
             Some(entry) => {
                 let res = (entry.action)(&params.choice, self, client_id);
