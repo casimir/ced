@@ -1,8 +1,3 @@
-extern crate ced;
-extern crate crossbeam_channel as channel;
-extern crate failure;
-extern crate itertools;
-
 use std::thread::sleep;
 use std::time::Duration;
 

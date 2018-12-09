@@ -14,7 +14,6 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use remote::jsonrpc::ClientEvent;
 use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
 use remote::protocol::Face;
 use remote::{Connection, Session};
@@ -80,7 +79,7 @@ impl Term {
         while !self.exit_pending {
             select! {
                 recv(messages) -> msg => match msg {
-                    Ok(m) => self.handle_client_event(m),
+                    Ok(_) => self.draw(),
                     Err(_) => break,
                 },
                 recv(events_rx) -> event => match event {
@@ -238,23 +237,6 @@ impl Term {
         if self.last_size != current {
             self.last_size = current;
             self.draw();
-        }
-    }
-
-    fn handle_client_event(&mut self, message: ClientEvent) {
-        use self::ClientEvent::*;
-        match message {
-            Notification(notif) => match notif.method.as_str() {
-                "info" | "menu" | "view" => self.draw(),
-                method => error!("unknown notification method: {}", method),
-            },
-            Response(resp) => match self.connection.pending.remove(&resp.id) {
-                Some(req) => match req.method.as_str() {
-                    "edit" | "menu" | "menu-select" => {}
-                    method => error!("unknown response method: {}", method),
-                },
-                None => error!("unexpected response: {}", resp),
-            },
         }
     }
 

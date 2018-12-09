@@ -32,7 +32,7 @@ use std::process::{Command, Stdio};
 use failure::Error;
 
 pub use self::client::{Client, Events, StdioClient};
-pub use self::connection::{Connection, ConnectionState};
+pub use self::connection::{Connection, ConnectionState, ConnectionEvent};
 pub use self::jsonrpc::{ClientEvent, Id, Request};
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
