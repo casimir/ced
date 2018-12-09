@@ -2,6 +2,7 @@
 name = "ced-remote"
 version = "0.1.0"
 authors = ["Martin Chaine <martin@casimir.me>"]
+edition = "2018"
 
 [dependencies]
 crossbeam-channel = "0.3"

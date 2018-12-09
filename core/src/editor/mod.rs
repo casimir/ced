@@ -14,11 +14,11 @@ pub use self::buffer::{Buffer, BufferSource};
 use self::menu::{Menu, MenuEntry};
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
+use crate::server::BroadcastMessage;
+use crate::stackmap::StackMap;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use remote::protocol;
 use remote::response;
-use server::BroadcastMessage;
-use stackmap::StackMap;
 
 lazy_static! {
     static ref HELP: BTreeMap<&'static str, &'static str> = {

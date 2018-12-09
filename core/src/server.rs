@@ -11,7 +11,7 @@ use crossbeam_channel as channel;
 use failure::Error;
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 
-use editor::Editor;
+use crate::editor::Editor;
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 
@@ -178,8 +178,8 @@ impl Server {
                         {
                             {
                                 let mut conns = connections.borrow_mut();
-                                let mut conn = conns.get_mut(&client_id).unwrap();
-                                let mut stream = conn.handle.as_mut();
+                                let conn = conns.get_mut(&client_id).unwrap();
+                                let stream = conn.handle.as_mut();
                                 let mut reader = BufReader::new(stream);
                                 if let Err(e) = reader.read_line(&mut line) {
                                     if e.kind() == WouldBlock {
@@ -193,7 +193,7 @@ impl Server {
                                 match editor.handle(client_id, &line) {
                                     Ok(message) => {
                                         let mut conns = connections.borrow_mut();
-                                        let mut conn = conns.get_mut(&client_id).unwrap();
+                                        let conn = conns.get_mut(&client_id).unwrap();
                                         self.write_message(client_id, conn, &message)
                                             .expect("send response to client");
                                     }

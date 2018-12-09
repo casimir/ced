@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::ops::{Deref, Range};
 
-use editor::Buffer;
+use crate::editor::Buffer;
 use remote::protocol::notification::view::{
     Params as NotificationParams, ParamsHeader, ParamsItem, ParamsLines,
 };
@@ -135,24 +135,21 @@ impl View {
         self.as_vec()
             .iter()
             .map(|item| match item {
-                ViewItem::Header((buffer, focus)) => {
-                    use editor::view::Focus;
-                    match focus {
-                        Focus::Range(range) => ParamsItem::Header(ParamsHeader {
+                ViewItem::Header((buffer, focus)) => match focus {
+                    Focus::Range(range) => ParamsItem::Header(ParamsHeader {
+                        buffer: buffer.to_string(),
+                        start: range.start + 1,
+                        end: range.end,
+                    }),
+                    Focus::Whole => {
+                        let b = &buffers[&buffer.to_string()];
+                        ParamsItem::Header(ParamsHeader {
                             buffer: buffer.to_string(),
-                            start: range.start + 1,
-                            end: range.end,
-                        }),
-                        Focus::Whole => {
-                            let b = &buffers[&buffer.to_string()];
-                            ParamsItem::Header(ParamsHeader {
-                                buffer: buffer.to_string(),
-                                start: 1,
-                                end: b.line_count(),
-                            })
-                        }
+                            start: 1,
+                            end: b.line_count(),
+                        })
                     }
-                }
+                },
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
                     ParamsItem::Lines(ParamsLines {

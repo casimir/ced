@@ -3,9 +3,9 @@ use std::net::TcpStream;
 
 use failure::Error;
 
-use transport::socket::SocketStream;
-use transport::Stream;
-use ConnectionMode;
+use crate::transport::socket::SocketStream;
+use crate::transport::Stream;
+use crate::ConnectionMode;
 
 pub enum ServerStream {
     Socket(SocketStream),

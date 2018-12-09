@@ -3,9 +3,9 @@ use std::thread;
 
 use failure::Error;
 
-use editor::Editor;
+use crate::editor::Editor;
+use crate::server::Broadcaster;
 use remote::protocol::request::edit::Params as EditParams;
-use server::Broadcaster;
 
 const CLIENT_ID: usize = 1;
 

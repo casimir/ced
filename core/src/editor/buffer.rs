@@ -5,7 +5,7 @@ use std::ops::Index;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use editor::view::Focus;
+use crate::editor::view::Focus;
 
 fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
     let head = path.parent().unwrap();

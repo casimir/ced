@@ -4,10 +4,9 @@ use failure::Error;
 use mio::net::TcpListener;
 use mio::Evented;
 
-use transport::EventedStream;
-use {ConnectionMode, Session};
-
-use transport::socket::SocketListener;
+use crate::transport::socket::SocketListener;
+use crate::transport::EventedStream;
+use crate::{ConnectionMode, Session};
 
 pub enum ServerListener {
     Socket(SocketListener),

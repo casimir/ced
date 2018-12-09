@@ -1,12 +1,12 @@
-use std::io::{self, BufRead, BufReader, Lines, Write};
+use std::io::{self, BufRead, BufReader, Lines};
 use std::thread;
 
 use crossbeam_channel as channel;
 use failure::Error;
 
-use jsonrpc::{ClientEvent, Request};
-use session::Session;
-use transport::{ServerStream, Stream};
+use crate::jsonrpc::{ClientEvent, Request};
+use crate::session::Session;
+use crate::transport::{ServerStream, Stream};
 
 pub struct Events {
     lines: Lines<BufReader<Box<Stream>>>,

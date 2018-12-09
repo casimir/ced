@@ -13,7 +13,7 @@ pub struct TextFragment {
 pub mod notification {
     /// Sent to to the client when connection is complete.
     pub mod info {
-        use jsonrpc::Notification;
+        use crate::jsonrpc::Notification;
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -29,8 +29,8 @@ pub mod notification {
     }
 
     pub mod menu {
-        use jsonrpc::Notification;
-        use protocol::TextFragment;
+        use crate::jsonrpc::Notification;
+        use crate::protocol::TextFragment;
 
         #[derive(Clone, Debug, Serialize, Deserialize)]
         pub struct Entry {
@@ -56,7 +56,7 @@ pub mod notification {
     }
 
     pub mod view {
-        use jsonrpc::Notification;
+        use crate::jsonrpc::Notification;
 
         #[derive(Clone, Debug, Serialize, Deserialize)]
         pub struct ParamsHeader {
@@ -93,7 +93,7 @@ pub mod request {
     pub mod command_list {
         use std::collections::BTreeMap;
 
-        use jsonrpc::{Id, Request};
+        use crate::jsonrpc::{Id, Request};
 
         pub type Params = ();
 
@@ -105,7 +105,7 @@ pub mod request {
     }
 
     pub mod quit {
-        use jsonrpc::{Id, Request};
+        use crate::jsonrpc::{Id, Request};
 
         pub type Params = ();
 
@@ -117,7 +117,7 @@ pub mod request {
     }
 
     pub mod edit {
-        use jsonrpc::{Id, Request};
+        use crate::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -146,7 +146,7 @@ pub mod request {
     }
 
     pub mod menu {
-        use jsonrpc::{Id, Request};
+        use crate::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
@@ -166,7 +166,7 @@ pub mod request {
     }
 
     pub mod menu_select {
-        use jsonrpc::{Id, Request};
+        use crate::jsonrpc::{Id, Request};
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {

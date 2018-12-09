@@ -2,6 +2,7 @@
 name = "ced"
 version = "0.1.0"
 authors = ["Martin Chaine <martin@casimir.me>"]
+edition = "2018"
 
 [lib]
 name = "ced"

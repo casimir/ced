@@ -4,11 +4,11 @@ use std::sync::{Arc, RwLock};
 use crossbeam_channel as channel;
 use failure::Error;
 
-use client::Client;
-use jsonrpc::{ClientEvent, Id, Request};
-use protocol;
-use protocol::notification::menu::Entry as MenuEntry;
-use session::Session;
+use crate::client::Client;
+use crate::jsonrpc::{ClientEvent, Id, Request};
+use crate::protocol;
+use crate::protocol::notification::menu::Entry as MenuEntry;
+use crate::session::Session;
 
 #[derive(Clone, Debug, Default)]
 pub struct Menu {
@@ -47,7 +47,7 @@ pub struct ConnectionState {
 impl ConnectionState {
     fn event_update(&mut self, event: &ClientEvent) {
         if let ClientEvent::Notification(notif) = event {
-            use protocol::notification::*;
+            use crate::protocol::notification::*;
             match notif.method.as_str() {
                 "info" => {
                     if let Ok(Some(params)) = notif.params::<info::Params>() {

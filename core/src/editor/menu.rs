@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use regex::{CaptureLocations, Regex};
 
-use editor::Editor;
+use crate::editor::Editor;
 use remote::protocol::notification::menu::{Entry, Params as NotificationParams};
 use remote::protocol::{Face, TextFragment};
 
