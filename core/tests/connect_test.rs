@@ -42,7 +42,8 @@ fn starting_notifications() {
         .filter_map(|item| match item {
             ViewItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
         vec!["*debug*".to_string(), "*scratch*".to_string()]
@@ -91,8 +92,8 @@ fn start_client_and_server(session: &Session) -> SyncClient {
     test_exe.pop();
     test_exe.pop();
     test_exe.push("ced");
-    start_daemon(test_exe.to_str().unwrap(), &session).expect("start a daemon");
-    SyncClient::start(&session).unwrap()
+    start_daemon(test_exe.to_str().unwrap(), &session).expect("start the daemon");
+    SyncClient::start(&session).expect("start the client")
 }
 
 // reactivate when a windows CI with 1803+ is available
@@ -109,7 +110,8 @@ fn connect_socket() {
         .filter_map(|item| match item {
             ViewItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
         vec!["*debug*".to_string(), "*scratch*".to_string()]
@@ -128,7 +130,8 @@ fn connect_tcp() {
         .filter_map(|item| match item {
             ViewItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
         vec!["*debug*".to_string(), "*scratch*".to_string()]

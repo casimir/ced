@@ -1,10 +1,10 @@
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Face {
     Default,
     Match,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TextFragment {
     pub text: String,
     pub face: Face,
@@ -32,7 +32,7 @@ pub mod notification {
         use jsonrpc::Notification;
         use protocol::TextFragment;
 
-        #[derive(Serialize, Deserialize)]
+        #[derive(Clone, Debug, Serialize, Deserialize)]
         pub struct Entry {
             pub value: String,
             pub fragments: Vec<TextFragment>,
@@ -93,9 +93,15 @@ pub mod request {
     pub mod command_list {
         use std::collections::BTreeMap;
 
+        use jsonrpc::{Id, Request};
+
         pub type Params = ();
 
         pub type Result = BTreeMap<String, String>;
+
+        pub fn new(id: Id) -> Request {
+            Request::new(id, "command_list".to_string(), ()).expect("new command_list request")
+        }
     }
 
     pub mod quit {
@@ -107,23 +113,6 @@ pub mod request {
 
         pub fn new(id: Id) -> Request {
             Request::new(id, "quit".to_string(), ()).expect("new quit request")
-        }
-    }
-
-    pub mod buffer_select {
-        use jsonrpc::{Id, Request};
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub buffer: String,
-        }
-
-        pub fn new(id: Id, buffer: &str) -> Request {
-            let params = Params {
-                buffer: buffer.to_string(),
-            };
-            Request::new(id, "buffer-select".to_string(), params)
-                .expect("new 'buffer-select' request")
         }
     }
 

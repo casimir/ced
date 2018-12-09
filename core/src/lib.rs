@@ -1,5 +1,4 @@
-#![allow(unknown_lints)]
-#![warn(clippy)]
+#![warn(clippy::all)]
 
 #[macro_use]
 extern crate crossbeam_channel;
