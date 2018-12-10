@@ -16,7 +16,7 @@ use termion::screen::AlternateScreen;
 
 use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
 use remote::protocol::Face;
-use remote::{Connection, Session};
+use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
     Input(Key),
@@ -79,7 +79,10 @@ impl Term {
         while !self.exit_pending {
             select! {
                 recv(messages) -> msg => match msg {
-                    Ok(_) => self.draw(),
+                    Ok(ev) => match ev {
+                        ConnectionEvent::Info(_)|ConnectionEvent::View(_) => self.draw_view(),
+                        ConnectionEvent::Menu(menu) => self.draw_menu(&menu),
+                    }
                     Err(_) => break,
                 },
                 recv(events_rx) -> event => match event {
@@ -105,7 +108,7 @@ impl Term {
         self.flush();
     }
 
-    fn draw_buffer(&mut self) {
+    fn draw_view(&mut self) {
         let (width, height) = self.last_size;
         write!(self.screen, "{}", termion::clear::All,).unwrap();
 
@@ -153,10 +156,10 @@ impl Term {
             termion::style::Reset
         )
         .unwrap();
+        self.flush();
     }
 
-    fn draw_menu(&mut self) {
-        let menu = self.connection.state().menu.unwrap();
+    fn draw_menu(&mut self, menu: &Menu) {
         let (width, height) = self.last_size;
         write!(self.screen, "{}", termion::clear::All).unwrap();
 
@@ -221,14 +224,6 @@ impl Term {
                 }
             }
         }
-    }
-
-    fn draw(&mut self) {
-        if self.connection.state().menu.is_some() {
-            self.draw_menu();
-        } else {
-            self.draw_buffer();
-        }
         self.flush();
     }
 
@@ -236,7 +231,10 @@ impl Term {
         let current = (w, h);
         if self.last_size != current {
             self.last_size = current;
-            self.draw();
+            match self.connection.state().menu {
+                Some(menu) => self.draw_menu(&menu),
+                None => self.draw_view(),
+            }
         }
     }
 
@@ -253,19 +251,21 @@ impl Term {
             match key {
                 Key::Esc => {
                     self.connection.action_menu_cancel();
-                    self.draw();
-                }
-                Key::Up => {
-                    self.connection.action_menu_select_previous();
-                    self.draw();
-                }
-                Key::Down => {
-                    self.connection.action_menu_select_next();
-                    self.draw();
+                    self.draw_view();
                 }
                 Key::Char('\n') => {
                     self.connection.menu_select();
-                    self.draw();
+                    self.draw_view();
+                }
+                Key::Up => {
+                    self.connection.action_menu_select_previous();
+                    let new_menu = self.connection.state().menu.unwrap();
+                    self.draw_menu(&new_menu);
+                }
+                Key::Down => {
+                    self.connection.action_menu_select_next();
+                    let new_menu = self.connection.state().menu.unwrap();
+                    self.draw_menu(&new_menu);
                 }
                 Key::Char(c) => {
                     let mut search = menu.search;
@@ -277,7 +277,7 @@ impl Term {
                     search.pop();
                     self.do_menu(&menu.command, &search)
                 }
-                _ => self.draw(),
+                _ => {}
             }
         } else {
             match key {
