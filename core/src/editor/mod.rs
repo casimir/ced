@@ -95,7 +95,7 @@ impl Editor {
                 label: "Quit".to_string(),
                 description: Some("Quit the current client".to_string()),
                 action: |_key, editor, client_id| {
-                    editor.command_quit(client_id, &())?;
+                    editor.command_quit(client_id)?;
                     Ok(())
                 },
             });
@@ -230,10 +230,9 @@ impl Editor {
         };
         trace!("<- ({}) {}", client_id, message);
         match message.method.as_str() {
-            "command-list" => response!(message, |params| self
-                .command_command_list(client_id, params)),
+            "command-list" => Response::new(message.id.clone(), self.command_command_list()),
             "edit" => response!(message, |params| self.command_edit(client_id, params)),
-            "quit" => response!(message, |params| self.command_quit(client_id, params)),
+            "quit" => Response::new(message.id.clone(), self.command_quit(client_id)),
             "view" => response!(message, |params| self.command_view(client_id, params)),
             "menu" => response!(message, |params| self.command_menu(client_id, params)),
             "menu-select" => response!(message, |params| self
@@ -247,11 +246,7 @@ impl Editor {
         .map_err(Error::from)
     }
 
-    fn command_command_list(
-        &mut self,
-        _client_id: usize,
-        _params: &protocol::request::command_list::Params,
-    ) -> Result<protocol::request::command_list::Result, JError> {
+    fn command_command_list(&mut self) -> Result<protocol::request::command_list::Result, JError> {
         Ok(HELP
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -307,7 +302,6 @@ impl Editor {
     pub fn command_quit(
         &mut self,
         client_id: usize,
-        _params: &protocol::request::quit::Params,
     ) -> Result<protocol::request::quit::Result, JError> {
         self.remove_client(client_id);
         self.stopped_clients.insert(client_id);
