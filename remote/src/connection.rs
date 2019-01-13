@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crossbeam_channel as channel;
@@ -38,6 +37,7 @@ impl Menu {
     }
 }
 
+#[derive(Debug)]
 pub enum ConnectionEvent {
     Info(String),
     Menu(Menu),
