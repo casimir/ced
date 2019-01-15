@@ -1,23 +1,19 @@
-image: Visual Studio 2017
 environment:
   matrix:
-    - TARGET: x86_64-pc-windows-msvc
-      CHANNEL: stable
-    - TARGET: i686-pc-windows-msvc
-      CHANNEL: stable
     - TARGET: x86_64-pc-windows-gnu
       CHANNEL: stable
-    - TARGET: x86_64-pc-windows-msvc
-      CHANNEL: beta
     - TARGET: x86_64-pc-windows-gnu
       CHANNEL: beta
   RUST_BACKTRACE: full
+
 install:
   - curl -sSf -o rustup-init.exe https://win.rustup.rs/
   - rustup-init.exe -y --default-host %TARGET% --default-toolchain %CHANNEL%
-  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  - SET PATH=C:\Users\appveyor\.cargo\bin;C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%
   - rustc -vV
   - cargo -vV
+  - pacman --noconfirm -S mingw-w64-x86_64-gtk3
+
 build: false
 test_script:
   - cargo build --verbose --all
