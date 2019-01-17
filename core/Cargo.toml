@@ -21,6 +21,7 @@ term = ["termion"]
 ced-remote = { path = "../remote" }
 clap = "2.32"
 crossbeam-channel = "0.3"
+dirs = "1.0"
 env_logger = "0.6"
 failure = "0.1"
 failure_derive = "0.1"

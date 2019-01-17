@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use regex::{CaptureLocations, Regex};
 
-use crate::editor::Editor;
+use crate::editor::{Editor, EditorInfo};
 use remote::protocol::notification::menu::{Entry, Params as NotificationParams};
 use remote::protocol::{Face, TextFragment};
 
@@ -313,7 +313,7 @@ impl Searchable for MenuEntry {
     }
 }
 
-pub type EntryProvider = fn() -> Vec<MenuEntry>;
+pub type EntryProvider = fn(&EditorInfo) -> Vec<MenuEntry>;
 
 #[derive(Clone)]
 pub struct Menu {
@@ -324,19 +324,19 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(command: &str, title: &str, provider: EntryProvider) -> Menu {
+    pub fn new(command: &str, title: &str, provider: EntryProvider, info: &EditorInfo) -> Menu {
         let mut menu = Menu {
             command: command.to_string(),
             title: title.to_string(),
             provider,
             entries: Vec::new(),
         };
-        menu.populate();
+        menu.populate(info);
         menu
     }
 
-    pub fn populate(&mut self) {
-        self.entries = (self.provider)();
+    pub fn populate(&mut self, info: &EditorInfo) {
+        self.entries = (self.provider)(info);
     }
 
     pub fn get(&self, key: &str) -> Option<&MenuEntry> {

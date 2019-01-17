@@ -34,6 +34,11 @@ lazy_static! {
     };
 }
 
+pub struct EditorInfo<'a> {
+    pub session: &'a str,
+    pub cwd: &'a PathBuf,
+}
+
 #[derive(Clone, Debug)]
 pub struct ClientContext {
     view: View,
@@ -42,6 +47,7 @@ pub struct ClientContext {
 
 pub struct Editor {
     session_name: String,
+    cwd: PathBuf,
     clients: StackMap<usize, ClientContext>,
     broadcaster: channel::Sender<BroadcastMessage>,
     buffers: HashMap<String, Buffer>,
@@ -54,6 +60,7 @@ impl Editor {
     pub fn new(session: &str, broadcaster: channel::Sender<BroadcastMessage>) -> Editor {
         let mut editor = Editor {
             session_name: session.into(),
+            cwd: env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
             clients: StackMap::new(),
             broadcaster,
             buffers: HashMap::new(),
@@ -64,6 +71,7 @@ impl Editor {
 
         let mut view = View::default();
         editor.open_scratch("*debug*");
+        editor.append_debug(&format!("cwd: {}", editor.cwd.display()));
         view.add_lens(Lens {
             buffer: String::from("*debug*"),
             focus: Focus::Whole,
@@ -75,54 +83,74 @@ impl Editor {
         });
         editor.views.insert(view.key(), view);
 
-        editor.register_command(Menu::new("", "command", || {
-            let mut entries = Vec::new();
-            entries.push(MenuEntry {
-                key: "open".to_string(),
-                label: "Open file".to_string(),
-                description: Some("Open and read a new file.".to_string()),
-                action: |_key, editor, client_id| {
-                    let menu = &editor.command_map["open"];
-                    editor.notify(
-                        client_id,
-                        protocol::notification::menu::new(menu.to_notification_params("")),
-                    );
-                    Ok(())
-                },
-            });
-            entries.push(MenuEntry {
-                key: "quit".to_string(),
-                label: "Quit".to_string(),
-                description: Some("Quit the current client".to_string()),
-                action: |_key, editor, client_id| {
-                    editor.command_quit(client_id)?;
-                    Ok(())
-                },
-            });
-            entries
-        }));
-        editor.register_command(Menu::new("open", "file", || {
-            Walk::new("./")
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
-                .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
-                .map(|fpath| MenuEntry {
-                    key: fpath.to_string(),
-                    label: fpath.to_string(),
-                    description: None,
-                    action: |key, editor, client_id| {
-                        let mut path = std::env::current_dir().unwrap();
-                        path.push(key);
-                        let params = protocol::request::edit::Params {
-                            file: key.to_owned(),
-                            path: Some(path.into_os_string().into_string().unwrap()),
-                        };
-                        editor.command_edit(client_id, &params)?;
+        let info = EditorInfo {
+            session: &editor.session_name.clone(),
+            cwd: &editor.cwd.clone(),
+        };
+        editor.register_command(Menu::new(
+            "",
+            "command",
+            |_| {
+                let mut entries = Vec::new();
+                entries.push(MenuEntry {
+                    key: "open".to_string(),
+                    label: "Open file".to_string(),
+                    description: Some("Open and read a new file.".to_string()),
+                    action: |_key, editor, client_id| {
+                        let menu = &editor.command_map["open"];
+                        editor.notify(
+                            client_id,
+                            protocol::notification::menu::new(menu.to_notification_params("")),
+                        );
                         Ok(())
                     },
-                })
-                .collect()
-        }));
+                });
+                entries.push(MenuEntry {
+                    key: "quit".to_string(),
+                    label: "Quit".to_string(),
+                    description: Some("Quit the current client".to_string()),
+                    action: |_key, editor, client_id| {
+                        editor.command_quit(client_id)?;
+                        Ok(())
+                    },
+                });
+                entries
+            },
+            &info,
+        ));
+        editor.register_command(Menu::new(
+            "open",
+            "file",
+            |info| {
+                Walk::new(&info.cwd)
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
+                    .filter_map(|e| {
+                        e.path()
+                            .strip_prefix(&info.cwd)
+                            .unwrap_or_else(|_| e.path())
+                            .to_str()
+                            .map(String::from)
+                    })
+                    .map(|fpath| MenuEntry {
+                        key: fpath.to_string(),
+                        label: fpath.to_string(),
+                        description: None,
+                        action: |key, editor, client_id| {
+                            let mut path = std::env::current_dir().unwrap();
+                            path.push(key);
+                            let params = protocol::request::edit::Params {
+                                file: key.to_owned(),
+                                path: Some(path.into_os_string().into_string().unwrap()),
+                            };
+                            editor.command_edit(client_id, &params)?;
+                            Ok(())
+                        },
+                    })
+                    .collect()
+            },
+            &info,
+        ));
 
         editor
     }
@@ -173,7 +201,14 @@ impl Editor {
         };
         self.clients.insert(id, context.clone());
         self.append_debug(&format!("new client: {}", id));
-        self.notify(id, protocol::notification::info::new(&self.session_name));
+        self.notify(
+            id,
+            protocol::notification::info::new(
+                id,
+                &self.session_name,
+                &self.cwd.display().to_string(),
+            ),
+        );
         if !context.view.contains_buffer("*debug*") {
             self.notify_view_update(id);
         }
@@ -340,7 +375,11 @@ impl Editor {
                 JError::invalid_params(reason)
             })?;
             if params.search.is_empty() {
-                menu.populate();
+                let info = EditorInfo {
+                    session: &self.session_name,
+                    cwd: &self.cwd,
+                };
+                menu.populate(&info);
             }
         }
         let menu = self.command_map[&params.command].clone();

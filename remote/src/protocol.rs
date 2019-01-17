@@ -18,11 +18,13 @@ pub mod notification {
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub session: String,
+            pub cwd: String,
         }
 
-        pub fn new(session: &str) -> Notification {
+        pub fn new(session: &str, cwd: &str) -> Notification {
             let params = Params {
                 session: session.to_string(),
+                cwd: cwd.to_string(),
             };
             Notification::new("info".to_string(), params).expect("new 'info' notification")
         }
