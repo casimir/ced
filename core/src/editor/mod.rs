@@ -137,7 +137,7 @@ impl Editor {
                         label: fpath.to_string(),
                         description: None,
                         action: |key, editor, client_id| {
-                            let mut path = std::env::current_dir().unwrap();
+                            let mut path = editor.cwd.clone();
                             path.push(key);
                             let params = protocol::request::edit::Params {
                                 file: key.to_owned(),
