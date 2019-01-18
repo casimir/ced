@@ -80,7 +80,7 @@ impl Term {
             select! {
                 recv(messages) -> msg => match msg {
                     Ok(ev) => match ev {
-                        ConnectionEvent::Info(_)|ConnectionEvent::View(_) => self.draw_view(),
+                        ConnectionEvent::Info(_, _)|ConnectionEvent::View(_) => self.draw_view(),
                         ConnectionEvent::Menu(menu) => self.draw_menu(&menu),
                     }
                     Err(_) => break,
@@ -145,14 +145,15 @@ impl Term {
             write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
         }
 
-        let padding = " ".repeat(width as usize - 2 - state.session.len());
+        let client_label = format!("[{}@{}]", state.client, state.session);
+        let padding = " ".repeat(width as usize - client_label.len());
         write!(
             self.screen,
-            "{}{}{}[{}]{}",
+            "{}{}{}{}{}",
             Goto(1, height),
             termion::style::Invert,
             padding,
-            state.session,
+            client_label,
             termion::style::Reset
         )
         .unwrap();

@@ -24,8 +24,8 @@ fn main() {
                     info!("message (window {})", window_id);
                     debug!("{:?}", ev);
                     match ev {
-                        ConnectionEvent::Info(session) => {
-                            let title = format!("Window {} [{}]", window_id, session);
+                        ConnectionEvent::Info(client, session) => {
+                            let title = format!("Window {} [{}@{}]", window_id, client, session);
                             state.window.set_title(&title);
                         }
                         ConnectionEvent::Menu(menu) => {

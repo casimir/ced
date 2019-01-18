@@ -39,13 +39,14 @@ impl Menu {
 
 #[derive(Debug)]
 pub enum ConnectionEvent {
-    Info(String),
+    Info(String, String),
     Menu(Menu),
     View(View),
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionState {
+    pub client: String,
     pub session: String,
     pub view: View,
     pub menu: Option<Menu>,
@@ -58,8 +59,9 @@ impl ConnectionState {
             match notif.method.as_str() {
                 "info" => {
                     if let Ok(Some(params)) = notif.params::<info::Params>() {
+                        self.client = params.client;
                         self.session = params.session;
-                        Some(ConnectionEvent::Info(self.session.clone()))
+                        Some(ConnectionEvent::Info(self.client.clone(), self.session.clone()))
                     } else {
                         None
                     }

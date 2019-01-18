@@ -17,12 +17,14 @@ pub mod notification {
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
+            pub client: String,
             pub session: String,
             pub cwd: String,
         }
 
-        pub fn new(session: &str, cwd: &str) -> Notification {
+        pub fn new(client_id: usize, session: &str, cwd: &str) -> Notification {
             let params = Params {
+                client: client_id.to_string(),
                 session: session.to_string(),
                 cwd: cwd.to_string(),
             };
