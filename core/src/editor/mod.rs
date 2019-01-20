@@ -24,6 +24,8 @@ use remote::response;
 pub struct EditorInfo<'a> {
     pub session: &'a str,
     pub cwd: &'a PathBuf,
+    pub buffers: &'a [&'a String],
+    pub views: &'a [&'a String],
 }
 
 #[derive(Clone, Debug)]
@@ -221,11 +223,7 @@ impl Editor {
 
         {
             let context = self.clients.get_mut(&client_id).unwrap();
-            let mut view = View::default();
-            view.add_lens(Lens {
-                buffer: params.file.clone(),
-                focus: Focus::Whole,
-            });
+            let view = View::for_buffer(&params.file);
             context.view = view.clone();
             self.views.insert(view.key(), view);
         }
@@ -268,8 +266,18 @@ impl Editor {
                 Ok(())
             }
             None => {
-                let reason = format!("view does not exist: {}", params.view_id);
-                Err(JError::invalid_request(&reason))
+                if self.buffers.contains_key(&params.view_id) {
+                    {
+                        let context = self.clients.get_mut(&client_id).unwrap();
+                        let view = View::for_buffer(&params.view_id);
+                        context.view = self.views.entry(view.key()).or_insert(view).clone();
+                    }
+                    self.notify_view_update(client_id);
+                    Ok(())
+                } else {
+                    let reason = format!("view does not exist: {}", params.view_id);
+                    Err(JError::invalid_request(&reason))
+                }
             }
         }
     }
@@ -288,6 +296,8 @@ impl Editor {
                 let info = EditorInfo {
                     session: &self.session_name,
                     cwd: &self.cwd,
+                    buffers: &self.buffers.keys().collect::<Vec<&String>>(),
+                    views: &self.views.keys().collect::<Vec<&String>>(),
                 };
                 menu.populate(&info);
             }

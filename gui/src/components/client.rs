@@ -30,6 +30,7 @@ pub fn show_new_client(application: &gtk::Application, session_name: &str) {
     let view_menu = gio::Menu::new();
     view_menu.append("Command palette", "app.palette");
     view_menu.append("Open file", "app.open");
+    view_menu.append("Select view", "app.view_select");
     menubar.append_submenu("_View", &view_menu);
 
     let palette_action = gio::SimpleAction::new("palette", None);
@@ -42,10 +43,16 @@ pub fn show_new_client(application: &gtk::Application, session_name: &str) {
         State::with(window_id, |state, _| state.start_menu("open"));
     });
     application.add_action(&open_action);
+    let view_action = gio::SimpleAction::new("view_select", None);
+    view_action.connect_activate(move |_, _| {
+        State::with(window_id, |state, _| state.start_menu("view_select"));
+    });
+    application.add_action(&view_action);
 
     application.set_menubar(&menubar);
     application.set_accels_for_action("app.palette", &["<Primary>P"]);
     application.set_accels_for_action("app.open", &["<Primary>O"]);
+    application.set_accels_for_action("app.view_select", &["<Primary>V"]);
 
     let main_view = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let scrolled_main_view = gtk::ScrolledWindow::new(None, None);
@@ -58,7 +65,6 @@ pub fn show_new_client(application: &gtk::Application, session_name: &str) {
             info!("delete window and client '{}'", window_id);
             state.close_connection();
             if count <= 1 {
-                println!("cnt {}", count);
                 // FIXME the closed session still appears here
                 // FIXME not triggered on second window?!
                 wk_app.upgrade().map(|app| {

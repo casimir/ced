@@ -97,6 +97,15 @@ pub enum ViewItem {
 pub struct View(BTreeMap<String, LensGroup>);
 
 impl View {
+    pub fn for_buffer(buffer: &str) -> View {
+        let mut view = View::default();
+        view.add_lens(Lens {
+            buffer: buffer.to_string(),
+            focus: Focus::Whole,
+        });
+        view
+    }
+
     pub fn key(&self) -> String {
         let mut parts = Vec::new();
         for (buffer, group) in &self.0 {
