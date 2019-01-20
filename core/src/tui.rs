@@ -283,12 +283,9 @@ impl Term {
         } else {
             match key {
                 Key::Esc => self.exit_pending = true,
-                Key::Char('f') => {
-                    self.do_menu("open", "");
-                }
-                Key::Char('p') => {
-                    self.do_menu("", "");
-                }
+                Key::Char('f') => self.do_menu("open", ""),
+                Key::Char('p') => self.do_menu("", ""),
+                Key::Char('v') => self.do_menu("view_select", ""),
                 Key::Char('x') => panic!("panic mode activated!"),
                 _ => {}
             }
