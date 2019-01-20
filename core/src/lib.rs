@@ -8,8 +8,6 @@ extern crate failure_derive;
 pub extern crate ced_remote as remote;
 extern crate ignore;
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate log;
 extern crate mio;
 extern crate regex;

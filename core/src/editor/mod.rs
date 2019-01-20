@@ -3,7 +3,7 @@ mod command;
 pub mod menu;
 pub mod view;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
 
@@ -20,20 +20,6 @@ use crate::stackmap::StackMap;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use remote::protocol;
 use remote::response;
-
-lazy_static! {
-    static ref HELP: BTreeMap<&'static str, &'static str> = {
-        let mut h = BTreeMap::new();
-        h.insert("command-list", "list available commands");
-        h.insert("buffer-list", "list open buffers (with content)");
-        h.insert(
-            "edit <path>",
-            "edit a file, reload it from the disk if needed",
-        );
-        h.insert("view <view_id>", "select an existing view");
-        h
-    };
-}
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
@@ -193,7 +179,6 @@ impl Editor {
         };
         trace!("<- ({}) {}", client_id, message);
         match message.method.as_str() {
-            "command-list" => Response::new(message.id.clone(), self.command_command_list()),
             "edit" => response!(message, |params| self.command_edit(client_id, params)),
             "quit" => Response::new(message.id.clone(), self.command_quit(client_id)),
             "view" => response!(message, |params| self.command_view(client_id, params)),
@@ -207,13 +192,6 @@ impl Editor {
             }
         }
         .map_err(Error::from)
-    }
-
-    fn command_command_list(&mut self) -> Result<protocol::request::command_list::Result, JError> {
-        Ok(HELP
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect())
     }
 
     pub fn command_edit(
