@@ -61,7 +61,10 @@ impl ConnectionState {
                     if let Ok(Some(params)) = notif.params::<info::Params>() {
                         self.client = params.client;
                         self.session = params.session;
-                        Some(ConnectionEvent::Info(self.client.clone(), self.session.clone()))
+                        Some(ConnectionEvent::Info(
+                            self.client.clone(),
+                            self.session.clone(),
+                        ))
                     } else {
                         None
                     }
@@ -157,9 +160,9 @@ impl Connection {
         self.request(protocol::request::quit::new(id));
     }
 
-    pub fn edit(&mut self, file: &str) {
+    pub fn edit(&mut self, file: &str, scratch: bool) {
         let id = self.request_id();
-        self.request(protocol::request::edit::new(id, file));
+        self.request(protocol::request::edit::new(id, file, scratch));
     }
 
     pub fn menu(&mut self, command: &str, search: &str) {
@@ -169,11 +172,17 @@ impl Connection {
 
     pub fn menu_select(&mut self) {
         if let Some(menu) = self.state().menu {
+            let selected = menu.selected_item();
             let id = self.request_id();
+            let choice = if selected.is_empty() {
+                &menu.search
+            } else {
+                selected
+            };
             self.request(protocol::request::menu_select::new(
                 id,
                 &menu.command,
-                menu.selected_item(),
+                choice,
             ));
             self.action_menu_cancel();
         } else {

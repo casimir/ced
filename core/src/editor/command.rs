@@ -48,6 +48,12 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 },
             });
             entries.push(MenuEntry {
+                key: "scratch".to_string(),
+                label: "New scratch".to_string(),
+                description: Some("Create a new scratch buffer.".to_string()),
+                action: submenu_action,
+            });
+            entries.push(MenuEntry {
                 key: "view_select".to_string(),
                 label: "Change view".to_string(),
                 description: Some("Select an existing view or create a new one.".to_string()),
@@ -80,12 +86,33 @@ pub fn default_commands() -> HashMap<String, Menu> {
                         let params = protocol::request::edit::Params {
                             file: key.to_owned(),
                             path: Some(path.into_os_string().into_string().unwrap()),
+                            scratch: false,
                         };
                         editor.command_edit(client_id, &params)?;
                         Ok(())
                     },
                 })
                 .collect()
+        }),
+    );
+
+    commands.insert(
+        String::from("scratch"),
+        Menu::new("scratch", "scratch", |_| {
+            vec![MenuEntry {
+                key: String::new(),
+                label: String::from("New scratch buffer name."),
+                description: None,
+                action: |key, editor, client_id| {
+                    let params = protocol::request::edit::Params {
+                        file: key.to_owned(),
+                        path: None,
+                        scratch: true,
+                    };
+                    editor.command_edit(client_id, &params)?;
+                    Ok(())
+                },
+            }]
         }),
     );
 

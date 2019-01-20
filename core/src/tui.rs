@@ -39,8 +39,8 @@ impl Term {
             last_size: termion::terminal_size()?,
         };
         term.cursor_visible(false);
-        for filename in filenames {
-            term.do_edit(filename);
+        for fname in filenames {
+            term.connection.edit(fname, true);
         }
         Ok(term)
     }
@@ -237,10 +237,6 @@ impl Term {
                 None => self.draw_view(),
             }
         }
-    }
-
-    fn do_edit(&mut self, fname: &str) {
-        self.connection.edit(fname);
     }
 
     fn do_menu(&mut self, command: &str, search: &str) {

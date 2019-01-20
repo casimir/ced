@@ -204,18 +204,24 @@ impl Editor {
         client_id: usize,
         params: &protocol::request::edit::Params,
     ) -> Result<protocol::request::edit::Result, JError> {
-        let path = match params.path.as_ref() {
-            Some(path) => PathBuf::from(path),
-            None => {
-                let mut absolute = env::current_dir().unwrap();
-                absolute.push(&params.file);
-                absolute
+        let exists = self.buffers.contains_key(&params.file);
+        let notify_change = if params.scratch {
+            if !exists {
+                self.open_scratch(&params.file);
             }
-        };
-        let notify_change = if self.buffers.contains_key(&params.file) {
+            false
+        } else if exists {
             let buffer = self.buffers.get_mut(&params.file).unwrap();
             buffer.load_from_disk(false)
         } else {
+            let path = match params.path.as_ref() {
+                Some(path) => PathBuf::from(path),
+                None => {
+                    let mut absolute = self.cwd.clone();
+                    absolute.push(&params.file);
+                    absolute
+                }
+            };
             self.open_file(&params.file, &path);
             true
         };
@@ -227,7 +233,7 @@ impl Editor {
             self.views.insert(view.key(), view);
         }
 
-        self.append_debug(&format!("edit: {}", path.display()));
+        self.append_debug(&format!("edit: {}", params.file));
         if notify_change {
             for (id, ctx) in self.clients.iter() {
                 if ctx.view.contains_buffer(&params.file) {
@@ -319,21 +325,22 @@ impl Editor {
                 JError::invalid_params(&format!("unknown command: {}", &params.command))
             })?
             .clone();
-        match menu.get(&params.choice) {
-            Some(entry) => {
-                let res = (entry.action)(&params.choice, self, client_id);
-                if let Some(error) = res.err() {
-                    match error.downcast::<JError>() {
-                        Ok(err) => return Err(err),
-                        Err(err) => return Err(JError::internal_error(&err.to_string())),
-                    }
-                }
-            }
-            None => {
-                return Err(JError::invalid_params(&format!(
-                    "unknown choice: {}",
-                    params.choice
-                )));
+        let mut entry = menu.get(&params.choice);
+        if entry.is_none() && menu.has_fake_matches() {
+            entry = menu.get("");
+        }
+        if entry.is_none() {
+            return Err(JError::invalid_params(&format!(
+                "unknown choice: {}",
+                params.choice
+            )));
+        }
+        let action = entry.unwrap().action;
+        let res = (action)(&params.choice, self, client_id);
+        if let Some(error) = res.err() {
+            match error.downcast::<JError>() {
+                Ok(err) => return Err(err),
+                Err(err) => return Err(JError::internal_error(&err.to_string())),
             }
         }
         Ok(())

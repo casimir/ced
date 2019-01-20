@@ -18,6 +18,7 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
         let params = EditParams {
             file: fname.to_string(),
             path: None,
+            scratch: false,
         };
         let _ = editor
             .command_edit(CLIENT_ID, &params)

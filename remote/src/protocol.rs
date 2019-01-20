@@ -127,12 +127,14 @@ pub mod request {
         pub struct Params {
             pub file: String,
             pub path: Option<String>,
+            pub scratch: bool,
         }
 
-        pub fn new(id: Id, file: &str) -> Request {
+        pub fn new(id: Id, file: &str, scratch: bool) -> Request {
             let params = Params {
                 file: file.to_string(),
                 path: None,
+                scratch,
             };
             Request::new(id, "edit".to_string(), params).unwrap()
         }
