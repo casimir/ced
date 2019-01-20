@@ -16,11 +16,16 @@ pub struct Token {
 
 pub trait Searchable {
     fn field(&self) -> &str;
+    fn fake_match(&self) -> bool;
 }
 
 impl Searchable for String {
     fn field(&self) -> &str {
         &self
+    }
+
+    fn fake_match(&self) -> bool {
+        false
     }
 }
 
@@ -43,14 +48,25 @@ pub struct Candidate<T: Searchable> {
 
 impl<T: Searchable> Candidate<T> {
     fn new(re: &Regex, object: T) -> Candidate<T> {
-        let mut locations = re.capture_locations();
-        let score = re
-            .captures_read(&mut locations, object.field())
-            .map(|_| compute_candidate_score(&locations));
-        Candidate {
-            object,
-            score,
-            locations,
+        if object.fake_match() {
+            let re = Regex::new(".*").unwrap();
+            let mut locations = re.capture_locations();
+            re.captures_read(&mut locations, object.field());
+            Candidate {
+                object,
+                score: Some(1.0),
+                locations,
+            }
+        } else {
+            let mut locations = re.capture_locations();
+            let score = re
+                .captures_read(&mut locations, object.field())
+                .map(|_| compute_candidate_score(&locations));
+            Candidate {
+                object,
+                score,
+                locations,
+            }
         }
     }
 
@@ -311,6 +327,10 @@ impl Searchable for MenuEntry {
     fn field(&self) -> &str {
         &self.label
     }
+
+    fn fake_match(&self) -> bool {
+        self.key.is_empty()
+    }
 }
 
 pub type EntryProvider = fn(&EditorInfo) -> Vec<MenuEntry>;
@@ -335,6 +355,10 @@ impl Menu {
 
     pub fn populate(&mut self, info: &EditorInfo) {
         self.entries = (self.provider)(info);
+    }
+
+    pub fn has_fake_matches(&self) -> bool {
+        self.entries.iter().any(|e| e.fake_match())
     }
 
     pub fn get(&self, key: &str) -> Option<&MenuEntry> {
