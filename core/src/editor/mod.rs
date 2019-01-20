@@ -1,4 +1,5 @@
 mod buffer;
+mod command;
 pub mod menu;
 pub mod view;
 
@@ -8,10 +9,10 @@ use std::path::PathBuf;
 
 use crossbeam_channel as channel;
 use failure::Error;
-use ignore::Walk;
 
 pub use self::buffer::{Buffer, BufferSource};
-use self::menu::{Menu, MenuEntry};
+use self::command::default_commands;
+use self::menu::Menu;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
@@ -65,7 +66,7 @@ impl Editor {
             broadcaster,
             buffers: HashMap::new(),
             views: StackMap::new(),
-            command_map: HashMap::new(),
+            command_map: default_commands(),
             stopped_clients: HashSet::new(),
         };
 
@@ -83,80 +84,7 @@ impl Editor {
         });
         editor.views.insert(view.key(), view);
 
-        let info = EditorInfo {
-            session: &editor.session_name.clone(),
-            cwd: &editor.cwd.clone(),
-        };
-        editor.register_command(Menu::new(
-            "",
-            "command",
-            |_| {
-                let mut entries = Vec::new();
-                entries.push(MenuEntry {
-                    key: "open".to_string(),
-                    label: "Open file".to_string(),
-                    description: Some("Open and read a new file.".to_string()),
-                    action: |_key, editor, client_id| {
-                        let menu = &editor.command_map["open"];
-                        editor.notify(
-                            client_id,
-                            protocol::notification::menu::new(menu.to_notification_params("")),
-                        );
-                        Ok(())
-                    },
-                });
-                entries.push(MenuEntry {
-                    key: "quit".to_string(),
-                    label: "Quit".to_string(),
-                    description: Some("Quit the current client".to_string()),
-                    action: |_key, editor, client_id| {
-                        editor.command_quit(client_id)?;
-                        Ok(())
-                    },
-                });
-                entries
-            },
-            &info,
-        ));
-        editor.register_command(Menu::new(
-            "open",
-            "file",
-            |info| {
-                Walk::new(&info.cwd)
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
-                    .filter_map(|e| {
-                        e.path()
-                            .strip_prefix(&info.cwd)
-                            .unwrap_or_else(|_| e.path())
-                            .to_str()
-                            .map(String::from)
-                    })
-                    .map(|fpath| MenuEntry {
-                        key: fpath.to_string(),
-                        label: fpath.to_string(),
-                        description: None,
-                        action: |key, editor, client_id| {
-                            let mut path = editor.cwd.clone();
-                            path.push(key);
-                            let params = protocol::request::edit::Params {
-                                file: key.to_owned(),
-                                path: Some(path.into_os_string().into_string().unwrap()),
-                            };
-                            editor.command_edit(client_id, &params)?;
-                            Ok(())
-                        },
-                    })
-                    .collect()
-            },
-            &info,
-        ));
-
         editor
-    }
-
-    fn register_command(&mut self, menu: Menu) {
-        self.command_map.insert(menu.command.to_string(), menu);
     }
 
     fn broadcast<F>(&self, message: Notification, filter: F)

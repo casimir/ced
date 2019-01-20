@@ -324,15 +324,13 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(command: &str, title: &str, provider: EntryProvider, info: &EditorInfo) -> Menu {
-        let mut menu = Menu {
+    pub fn new(command: &str, title: &str, provider: EntryProvider) -> Menu {
+        Menu {
             command: command.to_string(),
             title: title.to_string(),
             provider,
             entries: Vec::new(),
-        };
-        menu.populate(info);
-        menu
+        }
     }
 
     pub fn populate(&mut self, info: &EditorInfo) {
