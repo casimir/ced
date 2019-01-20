@@ -192,8 +192,7 @@ impl Editor {
             "menu-select" => response!(message, |params| self
                 .command_menu_select(client_id, params)),
             method => {
-                let dm = format!("unknown command: {}\n", message);
-                self.append_debug(&dm);
+                self.append_debug(&format!("unknown command: {}\n", message));
                 Ok(Response::method_not_found(message.id, method))
             }
         }
@@ -228,8 +227,7 @@ impl Editor {
             self.views.insert(view.key(), view);
         }
 
-        let dm = format!("edit: {:?}", path);
-        self.append_debug(&dm);
+        self.append_debug(&format!("edit: {}", path.display()));
         if notify_change {
             for (id, ctx) in self.clients.iter() {
                 if ctx.view.contains_buffer(&params.file) {
@@ -289,8 +287,7 @@ impl Editor {
     ) -> Result<protocol::request::menu::Result, JError> {
         {
             let menu = self.command_map.get_mut(&params.command).ok_or({
-                let reason = &format!("unknown command: {}", &params.command);
-                JError::invalid_params(reason)
+                JError::invalid_params(&format!("unknown command: {}", &params.command))
             })?;
             if params.search.is_empty() {
                 let info = EditorInfo {
@@ -318,9 +315,8 @@ impl Editor {
         let menu = self
             .command_map
             .get(&params.command)
-            .ok_or({
-                let reason = &format!("unknown command: {}", &params.command);
-                JError::invalid_params(reason)
+            .ok_or_else(|| {
+                JError::invalid_params(&format!("unknown command: {}", &params.command))
             })?
             .clone();
         match menu.get(&params.choice) {
@@ -334,8 +330,10 @@ impl Editor {
                 }
             }
             None => {
-                let reason = &format!("unknown choice: {}", params.choice);
-                return Err(JError::invalid_params(reason));
+                return Err(JError::invalid_params(&format!(
+                    "unknown choice: {}",
+                    params.choice
+                )));
             }
         }
         Ok(())
