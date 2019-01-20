@@ -58,6 +58,10 @@ impl Editor {
 
         let mut view = View::default();
         editor.open_scratch("*debug*");
+        editor.append_debug(&format!(
+            "command: {}",
+            env::args().collect::<Vec<_>>().join(" ")
+        ));
         editor.append_debug(&format!("cwd: {}", editor.cwd.display()));
         view.add_lens(Lens {
             buffer: String::from("*debug*"),
