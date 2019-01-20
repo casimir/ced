@@ -109,6 +109,7 @@ impl CommandPalette {
     }
 
     pub fn update(&self, menu: &Menu) {
+        self.entry.set_placeholder_text(menu.title.as_str());
         self.entry.get_buffer().set_text(menu.search.as_str());
         self.entry.set_position(-1);
 
