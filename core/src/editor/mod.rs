@@ -326,7 +326,7 @@ impl Editor {
             })?
             .clone();
         let mut entry = menu.get(&params.choice);
-        if entry.is_none() && menu.has_fake_matches() {
+        if entry.is_none() && menu.is_prompt() {
             entry = menu.get("");
         }
         if entry.is_none() {

@@ -2,6 +2,7 @@
 pub enum Face {
     Default,
     Match,
+    Prompt,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -16,16 +16,11 @@ pub struct Token {
 
 pub trait Searchable {
     fn field(&self) -> &str;
-    fn fake_match(&self) -> bool;
 }
 
 impl Searchable for String {
     fn field(&self) -> &str {
         &self
-    }
-
-    fn fake_match(&self) -> bool {
-        false
     }
 }
 
@@ -48,25 +43,14 @@ pub struct Candidate<T: Searchable> {
 
 impl<T: Searchable> Candidate<T> {
     fn new(re: &Regex, object: T) -> Candidate<T> {
-        if object.fake_match() {
-            let re = Regex::new(".*").unwrap();
-            let mut locations = re.capture_locations();
-            re.captures_read(&mut locations, object.field());
-            Candidate {
-                object,
-                score: Some(1.0),
-                locations,
-            }
-        } else {
-            let mut locations = re.capture_locations();
-            let score = re
-                .captures_read(&mut locations, object.field())
-                .map(|_| compute_candidate_score(&locations));
-            Candidate {
-                object,
-                score,
-                locations,
-            }
+        let mut locations = re.capture_locations();
+        let score = re
+            .captures_read(&mut locations, object.field())
+            .map(|_| compute_candidate_score(&locations));
+        Candidate {
+            object,
+            score,
+            locations,
         }
     }
 
@@ -327,19 +311,21 @@ impl Searchable for MenuEntry {
     fn field(&self) -> &str {
         &self.label
     }
-
-    fn fake_match(&self) -> bool {
-        self.key.is_empty()
-    }
 }
 
 pub type EntryProvider = fn(&EditorInfo) -> Vec<MenuEntry>;
 
 #[derive(Clone)]
+enum Source {
+    Prompt(String, MenuAction),
+    Provider(EntryProvider),
+}
+
+#[derive(Clone)]
 pub struct Menu {
     pub command: String,
     pub title: String,
-    provider: EntryProvider,
+    source: Source,
     entries: Vec<MenuEntry>,
 }
 
@@ -348,24 +334,46 @@ impl Menu {
         Menu {
             command: command.to_string(),
             title: title.to_string(),
-            provider,
+            source: Source::Provider(provider),
             entries: Vec::new(),
         }
     }
 
-    pub fn populate(&mut self, info: &EditorInfo) {
-        self.entries = (self.provider)(info);
+    pub fn prompt(command: &str, title: &str, message: &str, action: MenuAction) -> Menu {
+        Menu {
+            command: command.to_string(),
+            title: title.to_string(),
+            source: Source::Prompt(message.to_string(), action),
+            entries: Vec::new(),
+        }
     }
 
-    pub fn has_fake_matches(&self) -> bool {
-        self.entries.iter().any(|e| e.fake_match())
+    pub fn is_prompt(&self) -> bool {
+        use Source::*;
+        match self.source {
+            Prompt(_, _) => true,
+            Provider(_) => false,
+        }
+    }
+
+    pub fn populate(&mut self, info: &EditorInfo) {
+        use Source::*;
+        self.entries = match &self.source {
+            Prompt(message, action) => vec![MenuEntry {
+                key: String::new(),
+                label: message.clone(),
+                description: None,
+                action: *action,
+            }],
+            Provider(provider) => (provider)(info),
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<&MenuEntry> {
         self.entries.iter().find(|e| e.key == key)
     }
 
-    pub fn filter(&self, search: &str) -> Candidates<MenuEntry> {
+    fn filter(&self, search: &str) -> Candidates<MenuEntry> {
         let filter = MenuFilter::new(search);
         filter.filter(&self.entries)
     }
@@ -373,27 +381,40 @@ impl Menu {
     pub fn to_notification_params(&self, search: &str) -> NotificationParams {
         let command = self.command.to_string();
         let title = self.title.to_string();
-        let entries = self
-            .filter(search)
-            .iter()
-            .filter(|c| c.is_match())
-            .map(|c| Entry {
-                value: c.object.key.clone(),
-                fragments: c
-                    .tokenize()
-                    .iter()
-                    .map(|t| TextFragment {
-                        text: t.text.clone(),
-                        face: if t.is_match {
-                            Face::Match
-                        } else {
-                            Face::Default
-                        },
-                    })
-                    .collect(),
-                description: c.object.description.clone(),
-            })
-            .collect();
+        let entries = if self.is_prompt() {
+            self.entries
+                .iter()
+                .map(|e| Entry {
+                    value: e.key.clone(),
+                    fragments: vec![TextFragment {
+                        text: e.label.clone(),
+                        face: Face::Prompt,
+                    }],
+                    description: e.description.clone(),
+                })
+                .collect()
+        } else {
+            self.filter(search)
+                .iter()
+                .filter(|c| c.is_match())
+                .map(|c| Entry {
+                    value: c.object.key.clone(),
+                    fragments: c
+                        .tokenize()
+                        .iter()
+                        .map(|t| TextFragment {
+                            text: t.text.clone(),
+                            face: if t.is_match {
+                                Face::Match
+                            } else {
+                                Face::Default
+                            },
+                        })
+                        .collect(),
+                    description: c.object.description.clone(),
+                })
+                .collect()
+        };
         NotificationParams {
             command,
             title,

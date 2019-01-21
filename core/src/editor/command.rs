@@ -98,22 +98,20 @@ pub fn default_commands() -> HashMap<String, Menu> {
 
     commands.insert(
         String::from("scratch"),
-        Menu::new("scratch", "scratch", |_| {
-            vec![MenuEntry {
-                key: String::new(),
-                label: String::from("New scratch buffer name."),
-                description: None,
-                action: |key, editor, client_id| {
-                    let params = protocol::request::edit::Params {
-                        file: key.to_owned(),
-                        path: None,
-                        scratch: true,
-                    };
-                    editor.command_edit(client_id, &params)?;
-                    Ok(())
-                },
-            }]
-        }),
+        Menu::prompt(
+            "scratch",
+            "scratch",
+            "New scratch buffer name.",
+            |key, editor, client_id| {
+                let params = protocol::request::edit::Params {
+                    file: key.to_owned(),
+                    path: None,
+                    scratch: true,
+                };
+                editor.command_edit(client_id, &params)?;
+                Ok(())
+            },
+        ),
     );
 
     commands.insert(
