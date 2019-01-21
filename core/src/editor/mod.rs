@@ -188,6 +188,7 @@ impl Editor {
             "edit" => response!(message, |params| self.command_edit(client_id, params)),
             "quit" => Response::new(message.id.clone(), self.command_quit(client_id)),
             "view" => response!(message, |params| self.command_view(client_id, params)),
+            "view-add" => response!(message, |params| self.command_view_add(client_id, params)),
             "menu" => response!(message, |params| self.command_menu(client_id, params)),
             "menu-select" => response!(message, |params| self
                 .command_menu_select(client_id, params)),
@@ -279,10 +280,50 @@ impl Editor {
                     self.notify_view_update(client_id);
                     Ok(())
                 } else {
-                    let reason = format!("view does not exist: {}", params.view_id);
-                    Err(JError::invalid_request(&reason))
+                    Err(JError::invalid_request(&format!(
+                        "view does not exist: {}",
+                        &params.view_id
+                    )))
                 }
             }
+        }
+    }
+
+    pub fn command_view_add(
+        &mut self,
+        client_id: usize,
+        params: &protocol::request::view_add::Params,
+    ) -> Result<protocol::request::view_add::Result, JError> {
+        if self.buffers.contains_key(&params.buffer) {
+            let old_view = self
+                .clients
+                .get(&client_id)
+                .map(|context| &context.view)
+                .unwrap();
+            let old_key = old_view.key();
+            let mut new_view = old_view.clone();
+            new_view.add_lens(Lens {
+                buffer: params.buffer.clone(),
+                focus: Focus::Whole,
+            });
+            self.views.insert(new_view.key(), new_view.clone());
+            let mut to_update = Vec::new();
+            for (id, context) in self.clients.iter_mut() {
+                if context.view.key() == old_key {
+                    context.view = new_view.clone();
+                    to_update.push(*id);
+                }
+            }
+            for id in to_update {
+                self.notify_view_update(id);
+            }
+            self.views.remove(&old_key);
+            Ok(())
+        } else {
+            Err(JError::invalid_request(&format!(
+                "buffer does not exist: {}",
+                &params.buffer
+            )))
         }
     }
 

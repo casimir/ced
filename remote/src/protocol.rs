@@ -152,6 +152,15 @@ pub mod request {
         pub type Result = ();
     }
 
+    pub mod view_add {
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub buffer: String,
+        }
+
+        pub type Result = ();
+    }
+
     pub mod menu {
         use crate::jsonrpc::{Id, Request};
 

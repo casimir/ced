@@ -59,6 +59,12 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 description: Some("Select an existing view or create a new one.".to_string()),
                 action: submenu_action,
             });
+            entries.push(MenuEntry {
+                key: "view_add".to_string(),
+                label: "Add to view".to_string(),
+                description: Some("Add another buffer to the current view.".to_string()),
+                action: submenu_action,
+            });
             entries
         }),
     );
@@ -134,6 +140,27 @@ pub fn default_commands() -> HashMap<String, Menu> {
                             view_id: key.to_owned(),
                         };
                         editor.command_view(client_id, &params)?;
+                        Ok(())
+                    },
+                })
+                .collect()
+        }),
+    );
+
+    commands.insert(
+        String::from("view_add"),
+        Menu::new("view_add", "buffer", |info| {
+            info.buffers
+                .iter()
+                .map(|buffer| MenuEntry {
+                    key: buffer.to_string(),
+                    label: buffer.to_string(),
+                    description: None,
+                    action: |key, editor, client_id| {
+                        let params = protocol::request::view_add::Params {
+                            buffer: key.to_owned(),
+                        };
+                        editor.command_view_add(client_id, &params)?;
                         Ok(())
                     },
                 })
