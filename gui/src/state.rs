@@ -68,6 +68,10 @@ impl State {
         })
     }
 
+    pub fn session(&self) -> String {
+        self.connection.state().session
+    }
+
     pub fn close_connection(&mut self) {
         self.connection.quit();
     }
