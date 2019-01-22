@@ -60,9 +60,24 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 action: submenu_action,
             });
             entries.push(MenuEntry {
+                key: "view_delete".to_string(),
+                label: "Delete view".to_string(),
+                description: Some("Delete the current view.".to_string()),
+                action: |_key, editor, client_id| {
+                    editor.command_view_delete(client_id)?;
+                    Ok(())
+                },
+            });
+            entries.push(MenuEntry {
                 key: "view_add".to_string(),
                 label: "Add to view".to_string(),
                 description: Some("Add another buffer to the current view.".to_string()),
+                action: submenu_action,
+            });
+            entries.push(MenuEntry {
+                key: "view_remove".to_string(),
+                label: "Remove from the view.".to_string(),
+                description: Some("Remove a buffer from the current view.".to_string()),
                 action: submenu_action,
             });
             entries
@@ -152,7 +167,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
         Menu::new("view_add", "buffer", |info| {
             info.buffers
                 .iter()
-                .map(|buffer| MenuEntry {
+                .map(|&buffer| MenuEntry {
                     key: buffer.to_string(),
                     label: buffer.to_string(),
                     description: None,
@@ -161,6 +176,27 @@ pub fn default_commands() -> HashMap<String, Menu> {
                             buffer: key.to_owned(),
                         };
                         editor.command_view_add(client_id, &params)?;
+                        Ok(())
+                    },
+                })
+                .collect()
+        }),
+    );
+
+    commands.insert(
+        String::from("view_remove"),
+        Menu::new("view_remove", "buffer", |info| {
+            info.buffers
+                .iter()
+                .map(|&buffer| MenuEntry {
+                    key: buffer.to_string(),
+                    label: buffer.to_string(),
+                    description: None,
+                    action: |key, editor, client_id| {
+                        let params = protocol::request::view_remove::Params {
+                            buffer: key.to_owned(),
+                        };
+                        editor.command_view_remove(client_id, &params)?;
                         Ok(())
                     },
                 })

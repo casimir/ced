@@ -152,10 +152,41 @@ pub mod request {
         pub type Result = ();
     }
 
+    pub mod view_delete {
+        pub type Params = ();
+
+        pub type Result = ();
+    }
+
     pub mod view_add {
         #[derive(Serialize, Deserialize)]
         pub struct Params {
             pub buffer: String,
+        }
+
+        impl From<&str> for Params {
+            fn from(s: &str) -> Params {
+                Params {
+                    buffer: String::from(s),
+                }
+            }
+        }
+
+        pub type Result = ();
+    }
+
+    pub mod view_remove {
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub buffer: String,
+        }
+
+        impl From<&str> for Params {
+            fn from(s: &str) -> Params {
+                Params {
+                    buffer: String::from(s),
+                }
+            }
         }
 
         pub type Result = ();

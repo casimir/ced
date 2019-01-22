@@ -125,6 +125,14 @@ impl View {
             .add(lens);
     }
 
+    pub fn remove_lens_group(&mut self, buffer: &str) -> Option<LensGroup> {
+        self.0.remove(buffer)
+    }
+
+    pub fn buffers(&self) -> Vec<&String> {
+        self.0.keys().collect()
+    }
+
     pub fn as_vec(&self) -> Vec<ViewItem> {
         let mut list = Vec::new();
         for (buffer, group) in &self.0 {
@@ -138,6 +146,10 @@ impl View {
 
     pub fn contains_buffer(&self, buffer: &str) -> bool {
         self.0.contains_key(buffer)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
     }
 
     pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> NotificationParams {

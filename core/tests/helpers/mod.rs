@@ -1,11 +1,21 @@
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 
 use crossbeam_channel::Receiver;
 
 use ced::editor::Editor;
 use ced::remote::jsonrpc::Notification;
-use ced::remote::protocol::notification::view::Params as View;
+use ced::remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
 use ced::server::{BroadcastMessage, Broadcaster};
+
+pub fn root() -> PathBuf {
+    let mut root = std::env::current_exe().unwrap();
+    root.pop(); // bin
+    root.pop(); // deps/
+    root.pop(); // debug/
+    root.pop(); // target/
+    root
+}
 
 pub struct State {
     rx: Receiver<BroadcastMessage>,
@@ -75,4 +85,15 @@ impl DerefMut for SequentialEditor {
     fn deref_mut(&mut self) -> &mut Editor {
         &mut self.editor
     }
+}
+
+pub fn assert_buffers(view: &View, buffers: Vec<String>) {
+    let view_buffers: Vec<String> = view
+        .iter()
+        .filter_map(|item| match item {
+            ViewItem::Header(header) => Some(header.buffer.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(buffers, view_buffers);
 }

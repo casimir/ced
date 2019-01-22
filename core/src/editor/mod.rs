@@ -155,14 +155,6 @@ impl Editor {
         self.buffers.insert(buffer_name.to_string(), buffer);
     }
 
-    fn delete_buffer(&mut self, buffer_name: &str) {
-        self.buffers.remove(&buffer_name.to_owned());
-        // TODO update view
-        if self.buffers.is_empty() {
-            self.open_scratch("*scratch*");
-        }
-    }
-
     fn append_debug(&mut self, content: &str) {
         if let Some(debug_buffer) = self.buffers.get_mut("*debug*") {
             debug_buffer.append(content);
@@ -175,26 +167,91 @@ impl Editor {
         }
     }
 
+    fn delete_view(&mut self, view_id: &str) {
+        if let Some(view) = self.views.remove(&view_id.to_owned()) {
+            self.append_debug(&format!("delete view: {}", view_id));
+            for buffer in view.buffers() {
+                let mut has_ref = false;
+                for view in self.views.values() {
+                    if view.buffers().iter().any(|&b| b == buffer) {
+                        has_ref = true;
+                        break;
+                    }
+                }
+                if !has_ref {
+                    self.buffers.remove(&buffer.to_owned());
+                    self.append_debug(&format!("delete buffer: {}", buffer));
+                }
+            }
+            if self.views.is_empty() {
+                if self.buffers.is_empty() {
+                    self.open_scratch("*scratch*");
+                }
+                let view = View::for_buffer("*scratch*");
+                self.views.insert(view.key(), view);
+            }
+            let mut to_notify = Vec::new();
+            for (id, context) in self.clients.iter_mut() {
+                if context.view.key() == *view_id {
+                    context.view = self.views.latest_value().expect("get latest view").clone();
+                    to_notify.push(*id);
+                }
+            }
+            for id in to_notify {
+                self.notify_view_update(id);
+            }
+        }
+    }
+
+    fn modify_view<F>(&mut self, view_id: &str, f: F)
+    where
+        F: Fn(&mut View),
+    {
+        let mut new_view = self.views[view_id].clone();
+        let old_key = new_view.key();
+        f(&mut new_view);
+        let new_key = new_view.key();
+        if old_key != new_key {
+            if new_view.is_empty() {
+                self.delete_view(&old_key);
+            } else {
+                self.views.insert(new_key, new_view.clone());
+                let mut to_notify = Vec::new();
+                for (id, context) in self.clients.iter_mut() {
+                    if context.view.key() == old_key {
+                        context.view = new_view.clone();
+                        to_notify.push(*id);
+                    }
+                }
+                for id in to_notify {
+                    self.notify_view_update(id);
+                }
+            }
+            self.views.remove(&old_key);
+        }
+    }
+
     pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, Error> {
-        let message: Request = match line.parse() {
+        let msg: Request = match line.parse() {
             Ok(req) => req,
             Err(err) => {
                 error!("{}: {}", err, line);
                 return Ok(Response::invalid_request(Id::Null, line));
             }
         };
-        trace!("<- ({}) {}", client_id, message);
-        match message.method.as_str() {
-            "edit" => response!(message, |params| self.command_edit(client_id, params)),
-            "quit" => Response::new(message.id.clone(), self.command_quit(client_id)),
-            "view" => response!(message, |params| self.command_view(client_id, params)),
-            "view-add" => response!(message, |params| self.command_view_add(client_id, params)),
-            "menu" => response!(message, |params| self.command_menu(client_id, params)),
-            "menu-select" => response!(message, |params| self
-                .command_menu_select(client_id, params)),
+        trace!("<- ({}) {}", client_id, msg);
+        match msg.method.as_str() {
+            "edit" => response!(msg, |params| self.command_edit(client_id, params)),
+            "quit" => Response::new(msg.id.clone(), self.command_quit(client_id)),
+            "view" => response!(msg, |params| self.command_view(client_id, params)),
+            "view-delete" => Response::new(msg.id.clone(), self.command_view_delete(client_id)),
+            "view-add" => response!(msg, |params| self.command_view_add(client_id, params)),
+            "view-remove" => response!(msg, |params| self.command_view_remove(client_id, params)),
+            "menu" => response!(msg, |params| self.command_menu(client_id, params)),
+            "menu-select" => response!(msg, |params| self.command_menu_select(client_id, params)),
             method => {
-                self.append_debug(&format!("unknown command: {}\n", message));
-                Ok(Response::method_not_found(message.id, method))
+                self.append_debug(&format!("unknown command: {}\n", msg));
+                Ok(Response::method_not_found(msg.id, method))
             }
         }
         .map_err(Error::from)
@@ -289,35 +346,49 @@ impl Editor {
         }
     }
 
+    pub fn command_view_delete(
+        &mut self,
+        client_id: usize,
+    ) -> Result<protocol::request::view_delete::Result, JError> {
+        let view_id = self.clients[&client_id].view.key();
+        self.delete_view(&view_id);
+        Ok(())
+    }
+
     pub fn command_view_add(
         &mut self,
         client_id: usize,
         params: &protocol::request::view_add::Params,
     ) -> Result<protocol::request::view_add::Result, JError> {
         if self.buffers.contains_key(&params.buffer) {
-            let old_view = self
-                .clients
-                .get(&client_id)
-                .map(|context| &context.view)
-                .unwrap();
-            let old_key = old_view.key();
-            let mut new_view = old_view.clone();
-            new_view.add_lens(Lens {
-                buffer: params.buffer.clone(),
-                focus: Focus::Whole,
+            let view_id = self.clients[&client_id].view.key();
+            self.modify_view(&view_id, |view| {
+                view.add_lens(Lens {
+                    buffer: params.buffer.clone(),
+                    focus: Focus::Whole,
+                });
             });
-            self.views.insert(new_view.key(), new_view.clone());
-            let mut to_update = Vec::new();
-            for (id, context) in self.clients.iter_mut() {
-                if context.view.key() == old_key {
-                    context.view = new_view.clone();
-                    to_update.push(*id);
+            Ok(())
+        } else {
+            Err(JError::invalid_request(&format!(
+                "buffer does not exist: {}",
+                &params.buffer
+            )))
+        }
+    }
+
+    pub fn command_view_remove(
+        &mut self,
+        client_id: usize,
+        params: &protocol::request::view_remove::Params,
+    ) -> Result<protocol::request::view_remove::Result, JError> {
+        if self.buffers.contains_key(&params.buffer) {
+            let view_id = self.clients[&client_id].view.key();
+            self.modify_view(&view_id, |view| {
+                if view.contains_buffer(&params.buffer) {
+                    view.remove_lens_group(&params.buffer);
                 }
-            }
-            for id in to_update {
-                self.notify_view_update(id);
-            }
-            self.views.remove(&old_key);
+            });
             Ok(())
         } else {
             Err(JError::invalid_request(&format!(
