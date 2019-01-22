@@ -26,6 +26,7 @@ pub mod protocol;
 mod session;
 mod transport;
 
+use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
@@ -37,11 +38,32 @@ pub use self::jsonrpc::{ClientEvent, Id, Request};
 pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
 
-pub fn start_daemon(command: &str, session: &Session) -> Result<u32, Error> {
+pub fn find_bin() -> String {
+    env::var("CED_BIN").unwrap_or(
+        env::current_exe()
+            .map(|mut exe| {
+                exe.pop();
+                if cfg!(windows) {
+                    exe.push("ced.exe");
+                } else {
+                    exe.push("ced");
+                }
+                if exe.exists() {
+                    exe.display().to_string()
+                } else {
+                    String::from("ced")
+                }
+            })
+            .unwrap_or(String::from("ced")),
+    )
+}
+
+pub fn start_daemon(session: &Session) -> Result<u32, Error> {
+    let bin = find_bin();
     let session_arg = format!("--session={}", session.mode);
-    let args = vec![command, "--mode=server", &session_arg];
-    let prg = Command::new(&args[0])
-        .args(&args[1..])
+    let args = vec!["--mode=server", &session_arg];
+    let prg = Command::new(&bin)
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -66,14 +88,14 @@ pub fn start_daemon(command: &str, session: &Session) -> Result<u32, Error> {
         error!("could not capture stdout");
     }
 
-    info!("server command: {:?}", args);
+    info!("server command: {} {:?}", bin, args);
     Ok(pid)
 }
 
-pub fn ensure_session(command: &str, session: &Session) -> Result<(), Error> {
+pub fn ensure_session(session: &Session) -> Result<(), Error> {
     if let ConnectionMode::Socket(path) = &session.mode {
         if !path.exists() {
-            start_daemon(command, &session)?;
+            start_daemon(&session)?;
         }
     }
     Ok(())

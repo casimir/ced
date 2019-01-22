@@ -82,7 +82,6 @@ fn main() -> Result<(), Error> {
                 .help("A list of files to open"),
         )
         .get_matches();
-    let bin_path = std::env::args().next().unwrap();
 
     if matches.is_present("list") {
         for session_name in Session::list() {
@@ -100,10 +99,11 @@ fn main() -> Result<(), Error> {
         };
 
         match value_t!(matches.value_of("MODE"), Mode).unwrap() {
-            Mode::daemon => start_daemon(&bin_path, &session)
-                .map(|pid| eprintln!("server started with pid {}", pid)),
+            Mode::daemon => {
+                start_daemon(&session).map(|pid| eprintln!("server started with pid {}", pid))
+            }
             Mode::json => {
-                ensure_session(&bin_path, &session)?;
+                ensure_session(&session)?;
                 StdioClient::new(&session)?.run()
             }
             Mode::server => {
@@ -114,7 +114,7 @@ fn main() -> Result<(), Error> {
             #[cfg(all(feature = "term", unix))]
             Mode::term => {
                 use ced::tui::Term;
-                ensure_session(&bin_path, &session)?;
+                ensure_session(&session)?;
                 Term::new(&session, &filenames)?.start()
             }
         }

@@ -9,7 +9,7 @@ use crate::State;
 
 pub fn show_new_client(application: &gtk::Application, session_name: &str) {
     let session = Session::from_name(session_name);
-    ensure_session("ced", &session).expect("ensure session");
+    ensure_session(&session).expect("ensure session");
     info!("start new client for session '{}'", session);
     let connection = Connection::new(&session).expect("establish connection");
     let conn_events = connection.connect();

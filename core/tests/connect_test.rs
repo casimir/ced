@@ -1,3 +1,5 @@
+use std::env;
+
 mod helpers;
 
 use itertools::Itertools;
@@ -72,11 +74,14 @@ impl SyncClient {
 }
 
 fn start_client_and_server(session: &Session) -> SyncClient {
-    let mut test_exe = std::env::current_exe().unwrap();
-    test_exe.pop();
-    test_exe.pop();
-    test_exe.push("ced");
-    start_daemon(test_exe.to_str().unwrap(), &session).expect("start the daemon");
+    if env::var("CED_BIN").is_err() {
+        let mut test_exe = std::env::current_exe().unwrap();
+        test_exe.pop();
+        test_exe.pop();
+        test_exe.push("ced");
+        env::set_var("CED_BIN", test_exe.display().to_string());
+    }
+    start_daemon(&session).expect("start the daemon");
     SyncClient::start(&session).expect("start the client")
 }
 
