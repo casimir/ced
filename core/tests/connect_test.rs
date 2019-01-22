@@ -1,37 +1,21 @@
-use std::thread::sleep;
-use std::time::Duration;
+mod helpers;
 
 use itertools::Itertools;
 
-use ced::editor::Editor;
 use ced::remote::jsonrpc::ClientEvent;
 use ced::remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
 use ced::remote::{start_daemon, Client, Events, Session};
-use ced::server::Broadcaster;
 
 const CLIENT_ID: usize = 1;
 
-#[derive(Clone, Default)]
-struct State {
-    view: View,
-}
-
 #[test]
 fn starting_notifications() {
-    let broadcaster = Broadcaster::default();
-    let mut editor = Editor::new("", broadcaster.tx);
-    let mut state = State::default();
+    let mut editor = helpers::SequentialEditor::new();
     editor.add_client(CLIENT_ID);
-    sleep(Duration::from_millis(150));
-    while let Ok(bm) = broadcaster.rx.try_recv() {
-        match bm.message.method.as_str() {
-            "view" => state.view = bm.message.params().unwrap().unwrap(),
-            _ => {}
-        }
-    }
+    editor.step();
     editor.remove_client(CLIENT_ID);
 
-    let view = state.view;
+    let view = &editor.state().view;
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
@@ -43,6 +27,11 @@ fn starting_notifications() {
         buffers,
         vec!["*debug*".to_string(), "*scratch*".to_string()]
     );
+}
+
+#[derive(Clone, Default)]
+struct State {
+    view: View,
 }
 
 struct SyncClient {
