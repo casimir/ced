@@ -3,9 +3,11 @@ mod command;
 pub mod menu;
 pub mod view;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crossbeam_channel as channel;
 use failure::Error;
@@ -30,7 +32,7 @@ pub struct EditorInfo<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ClientContext {
-    view: View,
+    view: Rc<RefCell<View>>,
     buffer: String,
 }
 
@@ -40,7 +42,7 @@ pub struct Editor {
     clients: StackMap<usize, ClientContext>,
     broadcaster: channel::Sender<BroadcastMessage>,
     buffers: HashMap<String, Buffer>,
-    views: StackMap<String, View>,
+    views: StackMap<String, Rc<RefCell<View>>>,
     command_map: HashMap<String, Menu>,
     stopped_clients: HashSet<usize>,
 }
@@ -74,7 +76,7 @@ impl Editor {
             buffer: String::from("*scratch*"),
             focus: Focus::Whole,
         });
-        editor.views.insert(view.key(), view);
+        editor.views.insert(view.key(), Rc::new(RefCell::new(view)));
 
         editor
     }
@@ -106,7 +108,9 @@ impl Editor {
         let context = &self.clients[&client_id];
         self.notify(
             client_id,
-            protocol::notification::view::new(context.view.to_notification_params(&self.buffers)),
+            protocol::notification::view::new(
+                context.view.borrow().to_notification_params(&self.buffers),
+            ),
         );
     }
 
@@ -115,7 +119,7 @@ impl Editor {
             self.clients[c].clone()
         } else {
             ClientContext {
-                view: self.views.latest_value().unwrap().clone(),
+                view: Rc::clone(self.views.latest_value().unwrap()),
                 buffer: String::new(),
             }
         };
@@ -129,7 +133,7 @@ impl Editor {
                 &self.cwd.display().to_string(),
             ),
         );
-        if !context.view.contains_buffer("*debug*") {
+        if !context.view.borrow().contains_buffer("*debug*") {
             self.notify_view_update(id);
         }
     }
@@ -161,7 +165,7 @@ impl Editor {
         }
         info!("{}", content);
         for (client_id, context) in self.clients.iter() {
-            if context.view.contains_buffer("*debug*") {
+            if context.view.borrow().contains_buffer("*debug*") {
                 self.notify_view_update(*client_id);
             }
         }
@@ -170,10 +174,10 @@ impl Editor {
     fn delete_view(&mut self, view_id: &str) {
         if let Some(view) = self.views.remove(&view_id.to_owned()) {
             self.append_debug(&format!("delete view: {}", view_id));
-            for buffer in view.buffers() {
+            for buffer in view.borrow().buffers() {
                 let mut has_ref = false;
                 for view in self.views.values() {
-                    if view.buffers().iter().any(|&b| b == buffer) {
+                    if view.borrow().buffers().iter().any(|&b| b == buffer) {
                         has_ref = true;
                         break;
                     }
@@ -188,12 +192,12 @@ impl Editor {
                     self.open_scratch("*scratch*");
                 }
                 let view = View::for_buffer("*scratch*");
-                self.views.insert(view.key(), view);
+                self.views.insert(view.key(), Rc::new(RefCell::new(view)));
             }
             let mut to_notify = Vec::new();
             for (id, context) in self.clients.iter_mut() {
-                if context.view.key() == *view_id {
-                    context.view = self.views.latest_value().expect("get latest view").clone();
+                if context.view.borrow().key() == *view_id {
+                    context.view = Rc::clone(self.views.latest_value().expect("get latest view"));
                     to_notify.push(*id);
                 }
             }
@@ -207,7 +211,7 @@ impl Editor {
     where
         F: Fn(&mut View),
     {
-        let mut new_view = self.views[view_id].clone();
+        let mut new_view = self.views[view_id].borrow().clone();
         let old_key = new_view.key();
         f(&mut new_view);
         let new_key = new_view.key();
@@ -215,11 +219,12 @@ impl Editor {
             if new_view.is_empty() {
                 self.delete_view(&old_key);
             } else {
-                self.views.insert(new_key, new_view.clone());
+                let view = Rc::new(RefCell::new(new_view));
+                self.views.insert(new_key, Rc::clone(&view));
                 let mut to_notify = Vec::new();
                 for (id, context) in self.clients.iter_mut() {
-                    if context.view.key() == old_key {
-                        context.view = new_view.clone();
+                    if context.view.borrow().key() == old_key {
+                        context.view = Rc::clone(&view);
                         to_notify.push(*id);
                     }
                 }
@@ -285,16 +290,16 @@ impl Editor {
         };
 
         {
+            let view = Rc::new(RefCell::new(View::for_buffer(&params.file)));
+            self.views.insert(view.borrow().key(), Rc::clone(&view));
             let context = self.clients.get_mut(&client_id).unwrap();
-            let view = View::for_buffer(&params.file);
-            context.view = view.clone();
-            self.views.insert(view.key(), view);
+            context.view = view;
         }
 
         self.append_debug(&format!("edit: {}", params.file));
         if notify_change {
             for (id, ctx) in self.clients.iter() {
-                if ctx.view.contains_buffer(&params.file) {
+                if ctx.view.borrow().contains_buffer(&params.file) {
                     self.notify_view_update(*id);
                 }
             }
@@ -322,7 +327,7 @@ impl Editor {
             Some(view) => {
                 {
                     let context = self.clients.get_mut(&client_id).unwrap();
-                    context.view = view.clone();
+                    context.view = Rc::clone(view);
                 }
                 self.notify_view_update(client_id);
                 Ok(())
@@ -330,9 +335,11 @@ impl Editor {
             None => {
                 if self.buffers.contains_key(&params.view_id) {
                     {
+                        let view = Rc::new(RefCell::new(View::for_buffer(&params.view_id)));
+                        let key = view.borrow().key();
                         let context = self.clients.get_mut(&client_id).unwrap();
-                        let view = View::for_buffer(&params.view_id);
-                        context.view = self.views.entry(view.key()).or_insert(view).clone();
+                        context.view = Rc::clone(&view);
+                        self.views.entry(key).or_insert(view);
                     }
                     self.notify_view_update(client_id);
                     Ok(())
@@ -350,7 +357,7 @@ impl Editor {
         &mut self,
         client_id: usize,
     ) -> Result<protocol::request::view_delete::Result, JError> {
-        let view_id = self.clients[&client_id].view.key();
+        let view_id = self.clients[&client_id].view.borrow().key();
         self.delete_view(&view_id);
         Ok(())
     }
@@ -361,7 +368,7 @@ impl Editor {
         params: &protocol::request::view_add::Params,
     ) -> Result<protocol::request::view_add::Result, JError> {
         if self.buffers.contains_key(&params.buffer) {
-            let view_id = self.clients[&client_id].view.key();
+            let view_id = self.clients[&client_id].view.borrow().key();
             self.modify_view(&view_id, |view| {
                 view.add_lens(Lens {
                     buffer: params.buffer.clone(),
@@ -383,7 +390,7 @@ impl Editor {
         params: &protocol::request::view_remove::Params,
     ) -> Result<protocol::request::view_remove::Result, JError> {
         if self.buffers.contains_key(&params.buffer) {
-            let view_id = self.clients[&client_id].view.key();
+            let view_id = self.clients[&client_id].view.borrow().key();
             self.modify_view(&view_id, |view| {
                 if view.contains_buffer(&params.buffer) {
                     view.remove_lens_group(&params.buffer);
@@ -417,7 +424,7 @@ impl Editor {
                 menu.populate(&info);
             }
         }
-        let menu = self.command_map[&params.command].clone();
+        let menu = &self.command_map[&params.command];
         self.notify(
             client_id,
             protocol::notification::menu::new(menu.to_notification_params(&params.search)),
@@ -430,13 +437,9 @@ impl Editor {
         client_id: usize,
         params: &protocol::request::menu_select::Params,
     ) -> Result<protocol::request::menu_select::Result, JError> {
-        let menu = self
-            .command_map
-            .get(&params.command)
-            .ok_or_else(|| {
-                JError::invalid_params(&format!("unknown command: {}", &params.command))
-            })?
-            .clone();
+        let menu = self.command_map.get(&params.command).ok_or_else(|| {
+            JError::invalid_params(&format!("unknown command: {}", &params.command))
+        })?;
         let mut entry = menu.get(&params.choice);
         if entry.is_none() && menu.is_prompt() {
             entry = menu.get("");
