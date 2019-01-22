@@ -6,9 +6,8 @@ extern crate log;
 extern crate failure;
 extern crate mio;
 extern crate regex;
-extern crate serde;
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 #[cfg(windows)]
 extern crate mio_named_pipes;
 #[cfg(unix)]
