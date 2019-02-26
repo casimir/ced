@@ -35,4 +35,11 @@ regex = "1.1"
 termion = { version = "1.5", optional = true }
 
 [dev-dependencies]
+criterion = "0.2"
 itertools = "0.7"
+lazy_static = "1.2"
+rand = "0.6"
+
+[[bench]]
+name = "rbtree"
+harness = false

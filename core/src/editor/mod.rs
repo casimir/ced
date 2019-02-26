@@ -20,8 +20,7 @@ pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
 use crate::stackmap::StackMap;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
-use remote::protocol;
-use remote::response;
+use remote::{protocol, response};
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
@@ -30,10 +29,16 @@ pub struct EditorInfo<'a> {
     pub views: &'a [&'a String],
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Selection {
+    begin: (usize, usize),
+    end: (usize, usize),
+}
+
 #[derive(Clone, Debug)]
 pub struct ClientContext {
     view: Rc<RefCell<View>>,
-    buffer: String,
+    selections: HashMap<String, HashMap<String, Selection>>,
 }
 
 pub struct Editor {
@@ -118,9 +123,20 @@ impl Editor {
         let context = if let Some(c) = self.clients.latest() {
             self.clients[c].clone()
         } else {
+            let latest_view = self.views.latest_value().unwrap();
+            let mut selections = HashMap::new();
+            selections.insert(
+                latest_view.borrow().key(),
+                latest_view
+                    .borrow()
+                    .buffers()
+                    .iter()
+                    .map(|&b| (b.clone(), Selection::default()))
+                    .collect(),
+            );
             ClientContext {
-                view: Rc::clone(self.views.latest_value().unwrap()),
-                buffer: String::new(),
+                view: Rc::clone(latest_view),
+                selections,
             }
         };
         self.clients.insert(id, context.clone());

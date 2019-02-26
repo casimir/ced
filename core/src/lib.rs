@@ -13,6 +13,7 @@ extern crate mio;
 extern crate regex;
 
 pub mod editor;
+pub mod datastruct;
 #[macro_use]
 pub mod server;
 pub mod stackmap;
