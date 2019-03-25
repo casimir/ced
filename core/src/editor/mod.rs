@@ -17,8 +17,8 @@ use self::command::default_commands;
 use self::menu::Menu;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
+use crate::datastruct::StackMap;
 use crate::server::BroadcastMessage;
-use crate::stackmap::StackMap;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use remote::{protocol, response};
 

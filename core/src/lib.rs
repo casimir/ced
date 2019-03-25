@@ -16,7 +16,6 @@ pub mod editor;
 pub mod datastruct;
 #[macro_use]
 pub mod server;
-pub mod stackmap;
 pub mod standalone;
 
 #[cfg(all(feature = "term", unix))]

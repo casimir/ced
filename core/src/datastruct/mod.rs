@@ -1,4 +1,5 @@
-// TODO move stackmap here
 mod rbtree;
+mod stackmap;
 
 pub use rbtree::RBTree;
+pub use stackmap::StackMap;
