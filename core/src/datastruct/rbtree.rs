@@ -19,12 +19,12 @@ impl fmt::Display for Colour {
     }
 }
 
-struct NodeData<T: fmt::Debug + Ord> {
-    pub colour: Colour,
-    pub parent: Option<Node<T>>,
-    pub left: Option<Node<T>>,
-    pub right: Option<Node<T>>,
-    pub data: T,
+pub struct NodeData<T: fmt::Debug + Ord> {
+    colour: Colour,
+    parent: Option<Node<T>>,
+    left: Option<Node<T>>,
+    right: Option<Node<T>>,
+    data: T,
 }
 
 impl<T> NodeData<T>
@@ -42,7 +42,7 @@ where
     }
 }
 
-struct Node<T: fmt::Debug + Ord>(Rc<RefCell<NodeData<T>>>);
+pub struct Node<T: fmt::Debug + Ord>(Rc<RefCell<NodeData<T>>>);
 
 impl<T> Node<T>
 where
@@ -57,7 +57,7 @@ where
         Node(Rc::clone(&self.0))
     }
 
-    fn data(&self) -> T
+    pub fn data(&self) -> T
     where
         T: Clone,
     {
@@ -129,6 +129,12 @@ where
     fn set_colour(&mut self, colour: Colour) {
         self.borrow_mut().colour = colour;
     }
+
+    pub fn iter(&self) -> Iter<T> {
+        Iter {
+            cursor: Some(self.duplicate()),
+        }
+    }
 }
 
 impl<T> From<T> for Node<T>
@@ -190,13 +196,15 @@ where
         RBTree { root: None }
     }
 
-    fn insert_from(&mut self, mut root: Node<T>, data: T) -> Node<T> {
-        if data <= root.borrow().data {
+    fn insert_from(&mut self, mut root: Node<T>, data: T) -> Option<Node<T>> {
+        if data == root.borrow().data {
+            None
+        } else if data <= root.borrow().data {
             if root.left().is_none() {
                 let mut node = Node::from(data);
                 node.set_parent(root.duplicate());
                 root.set_left(node.duplicate());
-                node
+                Some(node)
             } else {
                 self.insert_from(root.left().as_ref().unwrap().duplicate(), data)
             }
@@ -204,7 +212,7 @@ where
             let mut node = Node::from(data);
             node.set_parent(root.duplicate());
             root.set_right(node.duplicate());
-            node
+            Some(node)
         } else {
             self.insert_from(root.right().as_ref().unwrap().duplicate(), data)
         }
@@ -305,15 +313,18 @@ where
         }
     }
 
-    pub fn insert(&mut self, data: T) {
+    pub fn insert(&mut self, data: T) -> Option<Node<T>> {
         trace!("insert {:?}", data);
         let node = if let Some(ref root) = self.root {
             self.insert_from(root.duplicate(), data)
         } else {
             self.root = Some(Node::from(data));
-            self.root.as_ref().unwrap().duplicate()
+            Some(self.root.as_ref().unwrap().duplicate())
         };
-        self.balance(node);
+        if let Some(ref n) = node {
+            self.balance(n.duplicate());
+        }
+        node
     }
 
     fn first(&self) -> Option<Node<T>> {
@@ -342,23 +353,19 @@ where
         }
     }
 
-    fn search(&self, data: &T) -> Vec<Node<T>> {
-        trace!("search {:?}", data);
-        let mut results = Vec::new();
-        let mut tmp = self.first();
-        while let Some(n) = tmp {
-            if n.borrow().data == *data {
-                results.push(n.duplicate());
-            } else if n.borrow().data > *data {
-                break;
+    pub fn get(&self, data: &T) -> Option<Node<T>> {
+        trace!("get {:?}", data);
+        let mut tmp = self.root.as_ref().map(Node::duplicate);
+        while let Some(ref n) = tmp {
+            if *data == n.borrow().data {
+                return Some(n.duplicate());
+            } else if *data < n.borrow().data {
+                tmp = n.left();
+            } else {
+                tmp = n.right();
             }
-            tmp = Self::successor(n);
         }
-        results
-    }
-
-    pub fn contains(&self, data: &T) -> bool {
-        !self.search(data).is_empty()
+        None
     }
 
     fn delete_fixup(&mut self, node: Node<T>) {
@@ -479,19 +486,27 @@ where
         }
     }
 
-    pub fn remove_data(&mut self, data: &T) {
-        for node in self.search(data) {
-            self.delete(node);
+    pub fn remove(&mut self, data: &T) -> bool {
+        match self.get(data) {
+            Some(node) => {
+                self.delete(node);
+                true
+            }
+            None => false,
         }
     }
 
-    pub fn iter(&self) -> Iter<T>
-    where
-        T: Clone,
-    {
+    pub fn iter(&self) -> Iter<T> {
         Iter {
             cursor: self.first(),
         }
+    }
+
+    pub fn values(&self) -> Values<T>
+    where
+        T: Clone,
+    {
+        Values { inner: self.iter() }
     }
 
     pub fn dump_as_dot(&self) -> String {
@@ -573,24 +588,41 @@ where
 
 pub struct Iter<T>
 where
-    T: Clone + fmt::Debug + Ord,
+    T: fmt::Debug + Ord,
 {
     cursor: Option<Node<T>>,
 }
 
 impl<T> Iterator for Iter<T>
 where
+    T: fmt::Debug + Ord,
+{
+    type Item = Node<T>;
+
+    fn next(&mut self) -> Option<Node<T>> {
+        let node = self.cursor.as_ref().map(Node::duplicate);
+        if let Some(ref n) = self.cursor {
+            self.cursor = RBTree::successor(n.duplicate());
+        }
+        node
+    }
+}
+
+pub struct Values<T>
+where
+    T: Clone + fmt::Debug + Ord,
+{
+    inner: Iter<T>,
+}
+
+impl<T> Iterator for Values<T>
+where
     T: Clone + fmt::Debug + Ord,
 {
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
-        let value = self.cursor.as_ref().map(Node::data);
-        if self.cursor.is_some() {
-            let current = self.cursor.as_ref().unwrap().duplicate();
-            self.cursor = RBTree::successor(current);
-        }
-        value
+        self.inner.next().as_ref().map(Node::data)
     }
 }
 
@@ -683,7 +715,7 @@ mod tests {
 
         print!("{}", tree.dump_as_dot());
         assert_eq!(
-            tree.iter().collect::<Vec<i32>>(),
+            tree.values().collect::<Vec<i32>>(),
             vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
         );
     }
@@ -699,20 +731,23 @@ mod tests {
         tree.insert(70);
         tree.insert(80);
 
-        tree.remove_data(&20);
+        tree.remove(&20);
         assert_eq!(
-            tree.iter().collect::<Vec<i32>>(),
+            tree.values().collect::<Vec<i32>>(),
             vec![30, 40, 50, 60, 70, 80]
         );
 
-        tree.remove_data(&30);
-        assert_eq!(tree.iter().collect::<Vec<i32>>(), vec![40, 50, 60, 70, 80]);
+        tree.remove(&30);
+        assert_eq!(
+            tree.values().collect::<Vec<i32>>(),
+            vec![40, 50, 60, 70, 80]
+        );
 
-        tree.remove_data(&80);
-        assert_eq!(tree.iter().collect::<Vec<i32>>(), vec![40, 50, 60, 70]);
+        tree.remove(&80);
+        assert_eq!(tree.values().collect::<Vec<i32>>(), vec![40, 50, 60, 70]);
 
-        tree.remove_data(&70);
-        assert_eq!(tree.iter().collect::<Vec<i32>>(), vec![40, 50, 60]);
+        tree.remove(&70);
+        assert_eq!(tree.values().collect::<Vec<i32>>(), vec![40, 50, 60]);
     }
 
     #[test]
@@ -732,27 +767,25 @@ mod tests {
             tree.insert(*i);
         }
         for i in remove {
-            tree.remove_data(&i);
+            tree.remove(&i);
         }
 
         print!("{}", tree.dump_as_dot());
-        assert_eq!(tree.iter().collect::<Vec<i32>>(), keep);
+        assert_eq!(tree.values().collect::<Vec<i32>>(), keep);
     }
 
     #[test]
     fn find() {
         let mut tree = RBTree::new();
-        tree.insert(2);
+        assert!(tree.insert(2).is_some());
         tree.insert(13);
-        tree.insert(2);
+        assert!(tree.insert(2).is_none());
         tree.insert(22);
-        tree.insert(2);
+        assert!(tree.insert(2).is_none());
 
         print!("{}", tree.dump_as_dot());
-        assert_eq!(
-            tree.search(&2).iter().map(Node::data).collect::<Vec<i32>>(),
-            vec![2, 2, 2]
-        );
+        assert_eq!(tree.get(&2).unwrap().data(), 2);
+        assert_eq!(tree.get(&99), None);
     }
 
     #[test]
@@ -768,11 +801,11 @@ mod tests {
         let tree_bis = tree.clone();
 
         assert_eq!(
-            tree.iter().collect::<Vec<i32>>(),
-            tree_bis.iter().collect::<Vec<i32>>()
+            tree.values().collect::<Vec<i32>>(),
+            tree_bis.values().collect::<Vec<i32>>()
         );
 
-        tree.remove_data(&60);
+        tree.remove(&60);
         assert_eq!(tree.iter().count(), tree_bis.iter().count() - 1);
     }
 
@@ -791,7 +824,7 @@ mod tests {
         tree.insert(22);
 
         assert_eq!(
-            tree.iter().collect::<Vec<i32>>(),
+            tree.values().collect::<Vec<i32>>(),
             vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
         );
     }

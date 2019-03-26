@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use criterion::{criterion_group, criterion_main, Criterion, ParameterizedBenchmark};
 use lazy_static::lazy_static;
@@ -47,6 +47,24 @@ fn sv_delete(sv: &mut Vec<i64>, values: &[i64]) {
     }
 }
 
+fn bts_insert(bts: &mut BTreeSet<i64>, data: &[i64]) {
+    for v in data {
+        bts.insert(*v);
+    }
+}
+
+fn bts_contains(bts: &BTreeSet<i64>, values: &[i64]) {
+    for value in values {
+        assert!(bts.contains(value));
+    }
+}
+
+fn bts_delete(bts: &mut BTreeSet<i64>, values: &[i64]) {
+    for value in values {
+        bts.remove(value);
+    }
+}
+
 fn rbt_insert(rbt: &mut RBTree<i64>, data: &[i64]) {
     for v in data {
         rbt.insert(*v);
@@ -55,13 +73,13 @@ fn rbt_insert(rbt: &mut RBTree<i64>, data: &[i64]) {
 
 fn rbt_contains(rbt: &RBTree<i64>, values: &[i64]) {
     for value in values {
-        assert!(rbt.contains(value));
+        assert!(rbt.get(value).is_some());
     }
 }
 
 fn rbt_delete(rbt: &mut RBTree<i64>, values: &[i64]) {
     for value in values {
-        rbt.remove_data(value);
+        rbt.remove(value);
     }
 }
 
@@ -76,6 +94,10 @@ fn loads_of_values(c: &mut Criterion) {
             },
             DATAS.keys().map(|k| *k).collect::<Vec<usize>>(),
         )
+        .with_function("btree set", |b, s| {
+            let mut bts = BTreeSet::new();
+            b.iter(|| bts_insert(&mut bts, &DATAS[s]));
+        })
         .with_function("rbtree", |b, s| {
             let mut rbt = RBTree::new();
             b.iter(|| rbt_insert(&mut rbt, &DATAS[s]));
@@ -92,6 +114,11 @@ fn loads_of_values(c: &mut Criterion) {
             },
             DATAS.keys().map(|k| *k).collect::<Vec<usize>>(),
         )
+        .with_function("btree set", |b, s| {
+            let mut bts = BTreeSet::new();
+            bts_insert(&mut bts, &DATAS[s]);
+            b.iter(|| bts_contains(&bts, &DATAS[s][..5]));
+        })
         .with_function("rbtree", |b, s| {
             let mut rbt = RBTree::new();
             rbt_insert(&mut rbt, &DATAS[s]);
@@ -109,6 +136,11 @@ fn loads_of_values(c: &mut Criterion) {
             },
             DATAS.keys().map(|k| *k).collect::<Vec<usize>>(),
         )
+        .with_function("btree set", |b, s| {
+            let mut bts = BTreeSet::new();
+            bts_insert(&mut bts, &DATAS[s]);
+            b.iter(|| bts.clone());
+        })
         .with_function("rbtree", |b, s| {
             let mut rbt = RBTree::new();
             rbt_insert(&mut rbt, &DATAS[s]);
@@ -126,6 +158,11 @@ fn loads_of_values(c: &mut Criterion) {
             },
             DATAS.keys().map(|k| *k).collect::<Vec<usize>>(),
         )
+        .with_function("btree set", |b, s| {
+            let mut bts = BTreeSet::new();
+            bts_insert(&mut bts, &DATAS[s]);
+            b.iter(|| bts_delete(&mut bts.clone(), &DATAS[s][5..10]));
+        })
         .with_function("rbtree", |b, s| {
             let mut rbt = RBTree::new();
             rbt_insert(&mut rbt, &DATAS[s]);
