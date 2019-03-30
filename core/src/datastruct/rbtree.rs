@@ -327,10 +327,18 @@ where
         node
     }
 
-    fn first(&self) -> Option<Node<T>> {
+    pub fn first(&self) -> Option<Node<T>> {
         let mut n = self.root.as_ref().map(Node::duplicate)?;
         while let Some(left) = n.left() {
             n = left;
+        }
+        Some(n)
+    }
+
+    pub fn last(&self) -> Option<Node<T>> {
+        let mut n = self.root.as_ref().map(Node::duplicate)?;
+        while let Some(right) = n.right() {
+            n = right;
         }
         Some(n)
     }
@@ -772,6 +780,28 @@ mod tests {
 
         print!("{}", tree.dump_as_dot());
         assert_eq!(tree.values().collect::<Vec<i32>>(), keep);
+    }
+
+    #[test]
+    fn first_and_last() {
+        let mut tree = RBTree::new();
+        assert!(tree.first().is_none());
+        assert!(tree.last().is_none());
+
+        tree.insert(50);
+        let mut tree = RBTree::new();
+        assert_eq!(tree.first(), tree.last());
+
+        tree.insert(20);
+        tree.insert(60);
+        tree.insert(30);
+        tree.insert(40);
+        tree.insert(70);
+        tree.insert(80);
+
+        print!("{}", tree.dump_as_dot());
+        assert_eq!(tree.first().unwrap().data(), 20);
+        assert_eq!(tree.last().unwrap().data(), 80);
     }
 
     #[test]
