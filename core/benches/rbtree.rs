@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use criterion::{criterion_group, criterion_main, Criterion, ParameterizedBenchmark};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, ParameterizedBenchmark};
 use lazy_static::lazy_static;
 use rand::Rng;
 
@@ -154,19 +154,31 @@ fn loads_of_values(c: &mut Criterion) {
             |b, s| {
                 let mut sv = Vec::new();
                 sv_insert(&mut sv, &DATAS[s]);
-                b.iter(|| sv_delete(&mut sv.clone(), &DATAS[s][5..10]));
+                b.iter_batched_ref(
+                    || sv.clone(),
+                    |sv| sv_delete(sv, &DATAS[s][5..10]),
+                    BatchSize::SmallInput,
+                );
             },
             DATAS.keys().map(|k| *k).collect::<Vec<usize>>(),
         )
         .with_function("btree set", |b, s| {
             let mut bts = BTreeSet::new();
             bts_insert(&mut bts, &DATAS[s]);
-            b.iter(|| bts_delete(&mut bts.clone(), &DATAS[s][5..10]));
+            b.iter_batched_ref(
+                || bts.clone(),
+                |bts| bts_delete(bts, &DATAS[s][5..10]),
+                BatchSize::SmallInput,
+            );
         })
         .with_function("rbtree", |b, s| {
             let mut rbt = RBTree::new();
             rbt_insert(&mut rbt, &DATAS[s]);
-            b.iter(|| rbt_delete(&mut rbt.clone(), &DATAS[s][5..10]));
+            b.iter_batched_ref(
+                || rbt.clone(),
+                |rbt| rbt_delete(rbt, &DATAS[s][5..10]),
+                BatchSize::SmallInput,
+            );
         }),
     );
 }
