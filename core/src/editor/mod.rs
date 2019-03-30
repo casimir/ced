@@ -1,6 +1,7 @@
 mod buffer;
 mod command;
 pub mod menu;
+mod piece_table;
 pub mod view;
 
 use std::cell::RefCell;
@@ -15,6 +16,7 @@ use failure::Error;
 pub use self::buffer::{Buffer, BufferSource};
 use self::command::default_commands;
 use self::menu::Menu;
+use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::datastruct::StackMap;
@@ -177,7 +179,7 @@ impl Editor {
 
     fn append_debug(&mut self, content: &str) {
         if let Some(debug_buffer) = self.buffers.get_mut("*debug*") {
-            debug_buffer.append(content);
+            debug_buffer.append(&format!("{}\n", content));
         }
         info!("{}", content);
         for (client_id, context) in self.clients.iter() {
@@ -291,7 +293,8 @@ impl Editor {
             false
         } else if exists {
             let buffer = self.buffers.get_mut(&params.file).unwrap();
-            buffer.load_from_disk(false)
+            // FIXME process diff
+            buffer.load_from_disk()
         } else {
             let path = match params.path.as_ref() {
                 Some(path) => PathBuf::from(path),

@@ -174,7 +174,7 @@ impl View {
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
                     ParamsItem::Lines(ParamsLines {
-                        lines: buffer.lines(lens.focus.clone()).to_vec(),
+                        lines: buffer.lines(lens.focus.clone()),
                         first_line_num: lens.focus.start() + 1,
                     })
                 }
