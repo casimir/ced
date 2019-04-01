@@ -294,7 +294,14 @@ where
                 new_node = node.right().as_ref().unwrap().duplicate();
             }
 
-            let mut new_gparent = parent.parent().as_ref().map(Node::duplicate).unwrap();
+            let mut new_gparent = new_node
+                .parent()
+                .as_ref()
+                .unwrap()
+                .parent()
+                .as_ref()
+                .map(Node::duplicate)
+                .unwrap();
 
             // swap parent and grand parent colours
             new_node
@@ -638,6 +645,60 @@ where
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
+    enum InvalidReason<T> {
+        RootIsRed,
+        RedHasRedChild(T),
+        InvalidDepth(T),
+    }
+
+    fn validate_subtree<T>(node: &Node<T>, black_depth: usize) -> Result<usize, InvalidReason<T>>
+    where
+        T: Clone + fmt::Debug + Ord,
+    {
+        if node.colour() == Colour::Red
+            && (node.left().as_ref().map(Node::colour) == Some(Colour::Red)
+                || node.right().as_ref().map(Node::colour) == Some(Colour::Red))
+        {
+            Err(InvalidReason::RedHasRedChild(node.data()))
+        } else {
+            let depth = if node.colour() == Colour::Red {
+                black_depth
+            } else {
+                black_depth + 1
+            };
+            let depth_left = if let Some(ref n) = node.left() {
+                Some(validate_subtree(n, depth)?)
+            } else {
+                None
+            };
+            let depth_right = if let Some(ref n) = node.right() {
+                Some(validate_subtree(n, depth)?)
+            } else {
+                None
+            };
+            if depth_left.is_some() && depth_right.is_some() && depth_left != depth_right {
+                return Err(InvalidReason::InvalidDepth(node.data()));
+            }
+            Ok(black_depth)
+        }
+    }
+
+    fn validate_tree<T>(tree: &RBTree<T>) -> Result<usize, InvalidReason<T>>
+    where
+        T: Clone + fmt::Debug + Ord,
+    {
+        if let Some(ref root) = tree.root {
+            if root.colour() == Colour::Red {
+                Err(InvalidReason::RootIsRed)
+            } else {
+                validate_subtree(root, 1)
+            }
+        } else {
+            Ok(0)
+        }
+    }
+
     macro_rules! assert_node {
         ($node:expr, NULL) => {
             assert!(node.is_none())
@@ -722,6 +783,7 @@ mod tests {
         tree.insert(22);
 
         print!("{}", tree.dump_as_dot());
+        validate_tree(&tree).expect("validate tree");
         assert_eq!(
             tree.values().collect::<Vec<i32>>(),
             vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
@@ -755,6 +817,8 @@ mod tests {
         assert_eq!(tree.values().collect::<Vec<i32>>(), vec![40, 50, 60, 70]);
 
         tree.remove(&70);
+        print!("{}", tree.dump_as_dot());
+        validate_tree(&tree).expect("validate tree");
         assert_eq!(tree.values().collect::<Vec<i32>>(), vec![40, 50, 60]);
     }
 
@@ -779,6 +843,7 @@ mod tests {
         }
 
         print!("{}", tree.dump_as_dot());
+        validate_tree(&tree).expect("validate tree");
         assert_eq!(tree.values().collect::<Vec<i32>>(), keep);
     }
 
@@ -800,6 +865,7 @@ mod tests {
         tree.insert(80);
 
         print!("{}", tree.dump_as_dot());
+        validate_tree(&tree).expect("validate tree");
         assert_eq!(tree.first().unwrap().data(), 20);
         assert_eq!(tree.last().unwrap().data(), 80);
     }
