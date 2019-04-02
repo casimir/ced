@@ -383,128 +383,126 @@ where
         None
     }
 
-    fn delete_fixup(&mut self, node: Node<T>) {
-        let mut n = Some(node.duplicate());
-        while n != self.root && n.as_ref().map(Node::colour) == Some(Colour::Black) {
-            if n.as_ref().unwrap().is_left_child() {
-                let mut sibling = n.as_ref().unwrap().sibling().unwrap();
-                if sibling.colour() == Colour::Red {
-                    let mut parent = n.as_ref().unwrap().parent().unwrap().duplicate();
-                    sibling.set_colour(Colour::Black);
-                    parent.set_colour(Colour::Red);
-                    self.rotate_left(parent.duplicate());
-                    sibling = parent.right().unwrap().duplicate();
-                }
-                if sibling.left().as_ref().map(Node::colour) == Some(Colour::Black)
-                    && sibling.right().as_ref().map(Node::colour) == Some(Colour::Black)
-                {
-                    sibling.set_colour(Colour::Red);
-                    n = n.as_ref().unwrap().parent().as_ref().map(Node::duplicate);
-                } else if sibling.right().as_ref().map(Node::colour) == Some(Colour::Black) {
-                    sibling.left().as_mut().unwrap().set_colour(Colour::Black);
-                    sibling.set_colour(Colour::Red);
-                    self.rotate_right(sibling.duplicate());
-                    sibling = n
-                        .as_ref()
-                        .unwrap()
-                        .parent()
-                        .unwrap()
-                        .right()
-                        .unwrap()
-                        .duplicate();
-                }
-                sibling.set_colour(n.as_ref().unwrap().parent().as_ref().unwrap().colour());
-                n.as_ref()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .set_colour(Colour::Black);
-                sibling.right().as_mut().unwrap().set_colour(Colour::Black);
-                self.rotate_left(n.as_ref().unwrap().parent().as_ref().unwrap().duplicate());
-                n = self.root.as_ref().map(Node::duplicate);
-            } else {
-                let mut sibling = n.as_ref().unwrap().sibling().unwrap();
-                if sibling.colour() == Colour::Red {
-                    let parent = n.as_ref().unwrap().parent().unwrap().duplicate();
-                    sibling.set_colour(Colour::Black);
-                    n.as_ref()
-                        .unwrap()
-                        .parent()
-                        .unwrap()
-                        .set_colour(Colour::Red);
-                    self.rotate_right(parent.duplicate());
-                    sibling = parent.left().unwrap().duplicate();
-                }
-                if sibling.right().as_ref().map(Node::colour) == Some(Colour::Black)
-                    && sibling.left().as_ref().map(Node::colour) == Some(Colour::Black)
-                {
-                    sibling.set_colour(Colour::Red);
-                    n = n.as_ref().unwrap().parent().as_ref().map(Node::duplicate);
-                } else if sibling.left().unwrap().colour() == Colour::Black {
-                    sibling.right().unwrap().set_colour(Colour::Black);
-                    sibling.set_colour(Colour::Red);
-                    self.rotate_left(sibling.duplicate());
-                    sibling = n
-                        .as_ref()
-                        .unwrap()
-                        .parent()
-                        .unwrap()
-                        .left()
-                        .unwrap()
-                        .duplicate();
-                }
-                sibling.set_colour(n.as_ref().unwrap().parent().unwrap().colour());
-                n.as_ref()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .set_colour(Colour::Black);
-                sibling.left().unwrap().set_colour(Colour::Black);
-                self.rotate_right(n.unwrap().parent().unwrap().duplicate());
-                n = self.root.as_ref().map(Node::duplicate);
-            }
+    fn double_black_fixup(&mut self, node: &Node<T>) {
+        if self.root.as_ref() == Some(node) {
+            return;
         }
-        if let Some(ref mut node) = n {
-            node.set_colour(Colour::Black);
+
+        let mut parent = node.parent().unwrap();
+        if let Some(ref mut sibling) = node.sibling() {
+            if sibling.colour() == Colour::Red {
+                parent.set_colour(Colour::Red);
+                sibling.set_colour(Colour::Black);
+                if sibling.is_left_child() {
+                    self.rotate_right(parent);
+                } else {
+                    self.rotate_left(parent);
+                }
+                self.double_black_fixup(node);
+            } else if sibling.left().as_ref().map(Node::colour) == Some(Colour::Red)
+                || sibling.right().as_ref().map(Node::colour) == Some(Colour::Red)
+            {
+                if sibling.left().as_ref().map(Node::colour) == Some(Colour::Red) {
+                    let mut left = sibling.left().unwrap();
+                    if sibling.is_left_child() {
+                        left.set_colour(sibling.colour());
+                        sibling.set_colour(parent.colour());
+                        self.rotate_right(parent.duplicate());
+                    } else {
+                        left.set_colour(parent.colour());
+                        self.rotate_right(sibling.duplicate());
+                        self.rotate_left(parent.duplicate());
+                    }
+                } else {
+                    let mut right = sibling.right().unwrap();
+                    if sibling.is_left_child() {
+                        right.set_colour(parent.colour());
+                        self.rotate_left(sibling.duplicate());
+                        self.rotate_right(parent.duplicate());
+                    } else {
+                        right.set_colour(sibling.colour());
+                        sibling.set_colour(parent.colour());
+                        self.rotate_left(parent.duplicate());
+                    }
+                }
+                parent.set_colour(Colour::Black);
+            } else {
+                sibling.set_colour(Colour::Red);
+                if parent.colour() == Colour::Black {
+                    self.double_black_fixup(&parent);
+                } else {
+                    parent.set_colour(Colour::Black);
+                }
+            }
+        } else {
+            self.double_black_fixup(&parent)
         }
     }
 
-    fn delete(&mut self, node: Node<T>) {
+    pub fn delete_node(&mut self, node: &mut Node<T>) {
         trace!("delete {:?}", node);
-        let mut n = if node.left().is_none() || node.right().is_none() {
-            node.duplicate()
+        let new_node = if node.left().is_some() && node.right().is_some() {
+            Self::successor(node.duplicate())
+        } else if node.left().is_some() {
+            node.left()
         } else {
-            Self::successor(node.duplicate()).unwrap()
+            node.right()
         };
-        let mut replacer = if n.left().is_some() {
-            n.left()
-        } else {
-            n.right()
-        };
-        if let Some(ref mut r) = replacer {
-            r.set_parent(n.parent());
-        }
-        if let Some(ref mut parent) = n.parent() {
-            if n.is_left_child() {
-                parent.set_left(replacer.as_ref().map(Node::duplicate));
+        let double_black = node.colour() == Colour::Black
+            && new_node.as_ref().map(Node::colour) != Some(Colour::Red);
+
+        if new_node.is_none() {
+            if self.root.as_ref() == Some(node) {
+                self.root = None;
             } else {
-                parent.set_right(replacer.as_ref().map(Node::duplicate));
+                if double_black {
+                    self.double_black_fixup(&node)
+                } else if let Some(ref mut sibling) = node.sibling() {
+                    sibling.set_colour(Colour::Red);
+                }
+
+                if let Some(ref mut parent) = node.parent() {
+                    if node.is_left_child() {
+                        parent.set_left(None);
+                    } else {
+                        parent.set_right(None);
+                    }
+                }
             }
-        } else {
-            self.root = replacer.as_ref().map(Node::duplicate);
+            return;
         }
-        if n != node {
-            n.swap_data(&mut node.duplicate())
+
+        let mut substitute = new_node.unwrap();
+
+        if node.left().is_none() || node.right().is_none() {
+            if self.root.as_ref() == Some(node) {
+                node.swap_data(&mut substitute);
+                node.set_left(None);
+                node.set_right(None);
+            } else if let Some(ref mut parent) = node.parent() {
+                if node.is_left_child() {
+                    parent.set_left(substitute.duplicate());
+                } else {
+                    parent.set_right(substitute.duplicate());
+                }
+                substitute.set_parent(node.parent());
+                if double_black {
+                    self.double_black_fixup(&substitute);
+                } else {
+                    substitute.set_colour(Colour::Black)
+                }
+            }
+            return;
         }
-        if n.colour() == Colour::Black && replacer.is_some() {
-            self.delete_fixup(replacer.as_ref().map(Node::duplicate).unwrap());
-        }
+
+        substitute.swap_data(node);
+        self.delete_node(&mut substitute);
     }
 
     pub fn remove(&mut self, data: &T) -> bool {
         match self.get(data) {
-            Some(node) => {
-                self.delete(node);
+            Some(ref mut node) => {
+                self.delete_node(node);
                 true
             }
             None => false,
@@ -649,10 +647,13 @@ mod tests {
     enum InvalidReason<T> {
         RootIsRed,
         RedHasRedChild(T),
-        InvalidDepth(T),
+        InvalidDepth(T, i64),
     }
 
-    fn validate_subtree<T>(node: &Node<T>, black_depth: usize) -> Result<usize, InvalidReason<T>>
+    fn validate_subtree<T>(
+        node: &Node<T>,
+        leaves: &mut Vec<Node<T>>,
+    ) -> Result<(), InvalidReason<T>>
     where
         T: Clone + fmt::Debug + Ord,
     {
@@ -662,29 +663,20 @@ mod tests {
         {
             Err(InvalidReason::RedHasRedChild(node.data()))
         } else {
-            let depth = if node.colour() == Colour::Red {
-                black_depth
-            } else {
-                black_depth + 1
-            };
-            let depth_left = if let Some(ref n) = node.left() {
-                Some(validate_subtree(n, depth)?)
-            } else {
-                None
-            };
-            let depth_right = if let Some(ref n) = node.right() {
-                Some(validate_subtree(n, depth)?)
-            } else {
-                None
-            };
-            if depth_left.is_some() && depth_right.is_some() && depth_left != depth_right {
-                return Err(InvalidReason::InvalidDepth(node.data()));
+            if let Some(ref n) = node.left() {
+                validate_subtree(n, leaves)?;
             }
-            Ok(black_depth)
+            if let Some(ref n) = node.right() {
+                validate_subtree(n, leaves)?;
+            }
+            if node.left().is_none() || node.right().is_none() {
+                leaves.push(node.duplicate());
+            }
+            Ok(())
         }
     }
 
-    fn validate_tree<T>(tree: &RBTree<T>) -> Result<usize, InvalidReason<T>>
+    fn validate_tree<T>(tree: &RBTree<T>) -> Result<(), InvalidReason<T>>
     where
         T: Clone + fmt::Debug + Ord,
     {
@@ -692,10 +684,32 @@ mod tests {
             if root.colour() == Colour::Red {
                 Err(InvalidReason::RootIsRed)
             } else {
-                validate_subtree(root, 1)
+                let mut leaves = Vec::new();
+                validate_subtree(root, &mut leaves)?;
+
+                let mut black_height = 0;
+                for n in &leaves {
+                    let mut tmp = Some(n.duplicate());
+                    let mut leave_depth = 0;
+                    while let Some(ref n) = tmp {
+                        if n.colour() == Colour::Black {
+                            leave_depth += 1;
+                        }
+                        tmp = n.parent();
+                    }
+                    if black_height == 0 {
+                        black_height = leave_depth;
+                    } else if leave_depth != black_height {
+                        return Err(InvalidReason::InvalidDepth(
+                            n.data(),
+                            leave_depth - black_height,
+                        ));
+                    }
+                }
+                Ok(())
             }
         } else {
-            Ok(0)
+            Ok(())
         }
     }
 
@@ -833,13 +847,13 @@ mod tests {
 
         let mut tree = RBTree::new();
         for i in remove.iter().rev() {
-            tree.insert(*i);
+            tree.insert(*i).expect("insert node");
         }
         for i in &keep {
-            tree.insert(*i);
+            tree.insert(*i).expect("insert node");
         }
         for i in remove {
-            tree.remove(&i);
+            assert!(tree.remove(&i));
         }
 
         print!("{}", tree.dump_as_dot());
