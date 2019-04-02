@@ -135,6 +135,20 @@ where
             cursor: Some(self.duplicate()),
         }
     }
+
+    pub fn values(&self) -> Values<T>
+    where
+        T: Clone,
+    {
+        Values { inner: self.iter() }
+    }
+
+    pub fn apply<F>(&self, f: F)
+    where
+        F: Fn(&mut T),
+    {
+        f(&mut self.borrow_mut().data);
+    }
 }
 
 impl<T> From<T> for Node<T>
