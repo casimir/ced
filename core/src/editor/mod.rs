@@ -1,5 +1,6 @@
 mod buffer;
 mod command;
+mod diff;
 pub mod menu;
 mod piece_table;
 pub mod view;
@@ -292,9 +293,14 @@ impl Editor {
             }
             false
         } else if exists {
-            let buffer = self.buffers.get_mut(&params.file).unwrap();
-            // FIXME process diff
-            buffer.load_from_disk()
+            let reloaded = {
+                let buffer = self.buffers.get_mut(&params.file).unwrap();
+                buffer.load_from_disk()
+            };
+            if reloaded {
+                self.append_debug(&format!("reloaded from disk: {}", &params.file));
+            }
+            reloaded
         } else {
             let path = match params.path.as_ref() {
                 Some(path) => PathBuf::from(path),

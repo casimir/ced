@@ -84,8 +84,7 @@ impl Buffer {
 
         let mut file = File::open(&absolute_path).unwrap();
         let mut file_content = String::new();
-        file.read_to_string(&mut file_content)
-            .unwrap_or_else(|_| panic!("failed to read: {}", absolute_path.display()));
+        file.read_to_string(&mut file_content).expect("read file");
         let last_sync = Some(SystemTime::now());
 
         Buffer {
@@ -141,9 +140,8 @@ impl Buffer {
                 if !self.is_synced() {
                     let mut file = File::open(&path).unwrap();
                     let mut content = String::new();
-                    file.read_to_string(&mut content)
-                        .unwrap_or_else(|_| panic!("failed to read: {}", path.display()));
-                    // self.lines = content.lines().map(ToOwned::to_owned).collect();
+                    file.read_to_string(&mut content).expect("read file");
+                    self.content.apply_diff(&content);
                     self.last_sync = Some(SystemTime::now());
                     true
                 } else {

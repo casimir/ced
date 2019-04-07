@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::datastruct::{RBNode, RBTree};
+use crate::editor::diff::{diff, Diff};
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct Piece {
@@ -218,12 +219,12 @@ impl PieceTable {
         }
     }
 
-    pub fn insert(&mut self, start: usize, text: &str) {
-        if let Some(ref mut node) = self.pieces.get(&Piece::offset(start)) {
+    pub fn insert(&mut self, offset: usize, text: &str) {
+        if let Some(ref mut node) = self.pieces.get(&Piece::offset(offset)) {
             let added_start = self.added.len();
             self.added.push_str(text);
             let new = Piece {
-                offset: start,
+                offset,
                 start: added_start,
                 length: text.len(),
                 original: false,
@@ -271,6 +272,28 @@ impl PieceTable {
     pub fn replace(&mut self, start: usize, length: usize, text: &str) {
         self.delete(start, length);
         self.insert(start, text);
+    }
+
+    pub fn apply_diff(&mut self, text: &str) {
+        let original = self.text();
+        // TODO trailing newline optimization
+        let diffs = diff(&original, text);
+        let mut loffset = 0;
+        let mut roffset = 0;
+        for diff in diffs {
+            match diff {
+                Diff::Left(len) => self.delete(loffset, len),
+                Diff::Right(len) => {
+                    self.insert(loffset, &text[roffset..roffset + len]);
+                    loffset += len;
+                    roffset += len;
+                }
+                Diff::Both(len) => {
+                    loffset += len;
+                    roffset += len;
+                }
+            }
+        }
     }
 }
 
@@ -333,5 +356,22 @@ mod tests {
             pieces.text(),
             "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick"
         );
+    }
+
+    #[test]
+    fn apply_diff() {
+        let mut pieces = PieceTable::new_empty();
+        pieces.insert(0, "the fox jumps over the dog");
+        pieces.insert(4, "quick brown ");
+        pieces.insert(35, "lazy ");
+        pieces.append(" 🐶");
+        pieces.insert(0, "🦊 ");
+        pieces.insert(56, ", so quick");
+
+        let new_text = "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick";
+        pieces.apply_diff(new_text);
+
+        print!("{}", pieces.pieces.dump_as_dot());
+        assert_eq!(pieces.text(), new_text);
     }
 }
