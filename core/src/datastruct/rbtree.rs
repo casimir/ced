@@ -200,6 +200,7 @@ where
 #[derive(Default)]
 pub struct RBTree<T: fmt::Debug + Ord> {
     root: Option<Node<T>>,
+    length: usize,
 }
 
 impl<T> RBTree<T>
@@ -207,7 +208,18 @@ where
     T: fmt::Debug + Ord,
 {
     pub fn new() -> RBTree<T> {
-        RBTree { root: None }
+        RBTree {
+            root: None,
+            length: 0,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
     }
 
     fn insert_from(&mut self, mut root: Node<T>, data: T) -> Option<Node<T>> {
@@ -344,6 +356,7 @@ where
         };
         if let Some(ref n) = node {
             self.balance(n.duplicate());
+            self.length += 1;
         }
         node
     }
@@ -483,6 +496,7 @@ where
                     }
                 }
             }
+            self.length -= 1;
             return;
         }
 
@@ -506,6 +520,7 @@ where
                     substitute.set_colour(Colour::Black)
                 }
             }
+            self.length -= 1;
             return;
         }
 
@@ -602,6 +617,15 @@ where
     }
 }
 
+impl<T> fmt::Debug for RBTree<T>
+where
+    T: Clone + fmt::Debug + Ord,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "RBTree {{ length: {} }}", self.length)
+    }
+}
+
 impl<T> Clone for RBTree<T>
 where
     T: Clone + fmt::Debug + Ord,
@@ -609,6 +633,7 @@ where
     fn clone(&self) -> Self {
         RBTree {
             root: Self::clone_subtree(self.root.as_ref().map(Node::duplicate)),
+            ..*self
         }
     }
 }
@@ -797,6 +822,27 @@ mod tests {
     }
 
     #[test]
+    fn iterator() {
+        let mut tree = RBTree::new();
+        assert!(tree.is_empty());
+        tree.insert(2);
+        tree.insert(11);
+        tree.insert(6);
+        tree.insert(10);
+        tree.insert(26);
+        tree.insert(7);
+        tree.insert(18);
+        tree.insert(8);
+        tree.insert(13);
+        tree.insert(22);
+
+        assert_eq!(
+            tree.values().collect::<Vec<i32>>(),
+            vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
+        );
+    }
+
+    #[test]
     fn insert() {
         let mut tree = RBTree::new();
         tree.insert(2);
@@ -816,6 +862,7 @@ mod tests {
             tree.values().collect::<Vec<i32>>(),
             vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
         );
+        assert_eq!(tree.len(), 10);
     }
 
     #[test]
@@ -848,6 +895,7 @@ mod tests {
         print!("{}", tree.dump_as_dot());
         validate_tree(&tree).expect("validate tree");
         assert_eq!(tree.values().collect::<Vec<i32>>(), vec![40, 50, 60]);
+        assert_eq!(tree.len(), 3);
     }
 
     #[test]
@@ -873,6 +921,7 @@ mod tests {
         print!("{}", tree.dump_as_dot());
         validate_tree(&tree).expect("validate tree");
         assert_eq!(tree.values().collect::<Vec<i32>>(), keep);
+        assert_eq!(tree.len(), keep.len());
     }
 
     #[test]
@@ -908,6 +957,7 @@ mod tests {
         assert!(tree.insert(2).is_none());
 
         print!("{}", tree.dump_as_dot());
+        assert_eq!(tree.len(), 3);
         assert_eq!(tree.get(&2).unwrap().data(), 2);
         assert_eq!(tree.get(&99), None);
     }
@@ -930,7 +980,7 @@ mod tests {
         );
 
         tree.remove(&60);
-        assert_eq!(tree.iter().count(), tree_bis.iter().count() - 1);
+        assert_eq!(tree.len(), tree_bis.len() - 1);
     }
 
     #[test]
