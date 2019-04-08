@@ -6,6 +6,9 @@ rust:
 os:
   - linux
   - osx
+env:
+  global:
+    - RUST_BACKTRACE=1
 
 addons:
   apt:
