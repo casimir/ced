@@ -197,6 +197,11 @@ where
     }
 }
 
+pub trait Consecutive {
+    fn consecutive(&self, other: &Self) -> bool;
+    fn merged(&self, other: &Self) -> Self;
+}
+
 #[derive(Default)]
 pub struct RBTree<T: fmt::Debug + Ord> {
     root: Option<Node<T>>,
@@ -551,6 +556,40 @@ where
         Values { inner: self.iter() }
     }
 
+    pub fn repack(&mut self)
+    where
+        T: Clone + Consecutive,
+    {
+        if self.is_empty() {
+            return;
+        }
+        let mut nodes = self.iter();
+        let mut prev = nodes.next().unwrap();
+        while let Some(curr) = nodes.next() {
+            let mut acc = vec![prev.data()];
+            let mut cursor = curr;
+            while prev.borrow().data.consecutive(&cursor.borrow().data) {
+                acc.push(cursor.data());
+                prev = cursor.duplicate();
+                if let Some(n) = nodes.next() {
+                    cursor = n;
+                } else {
+                    break;
+                }
+            }
+            if acc.len() > 1 {
+                let new_data = acc.iter().skip(1).fold(acc[0].clone(), |a, b| a.merged(&b));
+                for data in &acc[0..acc.len() - 1] {
+                    self.remove(data);
+                }
+                let last = &acc[acc.len() - 1];
+                let last_node = self.get(last).expect("get node");
+                last_node.borrow_mut().data = new_data;
+            }
+            prev = cursor;
+        }
+    }
+
     pub fn dump_as_dot(&self) -> String {
         let mut lines = Vec::new();
         lines.push(String::from("graph Tree {"));
@@ -681,6 +720,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
+    use std::ops::Range;
 
     #[derive(Debug)]
     enum InvalidReason<T> {
@@ -983,23 +1024,61 @@ mod tests {
         assert_eq!(tree.len(), tree_bis.len() - 1);
     }
 
-    #[test]
-    fn iterator() {
-        let mut tree = RBTree::new();
-        tree.insert(2);
-        tree.insert(11);
-        tree.insert(6);
-        tree.insert(10);
-        tree.insert(26);
-        tree.insert(7);
-        tree.insert(18);
-        tree.insert(8);
-        tree.insert(13);
-        tree.insert(22);
+    #[derive(Debug, Clone, Eq)]
+    struct Seq(Range<usize>);
 
+    impl Ord for Seq {
+        fn cmp(&self, other: &Seq) -> Ordering {
+            self.0.start.cmp(&other.0.start)
+        }
+    }
+
+    impl PartialOrd for Seq {
+        fn partial_cmp(&self, other: &Seq) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl PartialEq for Seq {
+        fn eq(&self, other: &Seq) -> bool {
+            other.0.start <= self.0.start && self.0.start < other.0.end
+        }
+    }
+
+    impl Consecutive for Seq {
+        fn consecutive(&self, other: &Seq) -> bool {
+            self.0.end == other.0.start
+        }
+
+        fn merged(&self, other: &Seq) -> Seq {
+            Seq(self.0.start..other.0.end)
+        }
+    }
+
+    #[test]
+    fn repack() {
+        let mut tree = RBTree::new();
+        tree.insert(Seq(1..3));
+        tree.insert(Seq(5..8));
+        tree.insert(Seq(8..13));
+        tree.insert(Seq(13..16));
+        tree.insert(Seq(23..26));
+
+        validate_tree(&tree).expect("validate tree");
         assert_eq!(
-            tree.values().collect::<Vec<i32>>(),
-            vec![2, 6, 7, 8, 10, 11, 13, 18, 22, 26]
+            tree.values().collect::<Vec<Seq>>(),
+            vec![Seq(1..3), Seq(5..8), Seq(8..13), Seq(13..16), Seq(23..26)]
         );
+        assert_eq!(tree.len(), 5);
+
+        tree.repack();
+
+        print!("{}", tree.dump_as_dot());
+        validate_tree(&tree).expect("validate tree");
+        assert_eq!(
+            tree.values().collect::<Vec<Seq>>(),
+            vec![Seq(1..3), Seq(5..16), Seq(23..26)]
+        );
+        assert_eq!(tree.len(), 3);
     }
 }
