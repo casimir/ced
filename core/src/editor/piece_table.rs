@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::datastruct::{RBNode, RBTree};
+use crate::datastruct::{Consecutive, RBNode, RBTree};
 use crate::editor::diff::{diff, Diff};
 
 #[derive(Clone, Copy, Debug, Eq)]
@@ -121,6 +121,21 @@ impl PartialEq for Piece {
     }
 }
 
+impl Consecutive for Piece {
+    fn consecutive(&self, other: &Piece) -> bool {
+        self.offset + self.length == other.offset
+            && self.original == other.original
+            && self.end() == other.start
+    }
+
+    fn merged(&self, other: &Piece) -> Piece {
+        Piece {
+            length: self.length + other.length,
+            ..*self
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Action {
     Bulk,
@@ -168,6 +183,7 @@ impl PieceTable {
     }
 
     fn commit(&mut self) {
+        self.pieces.repack();
         self.undos.push(self.pieces.clone());
         self.redos.clear();
         self.last_action = None;
@@ -443,6 +459,26 @@ mod tests {
 
         print!("{}", pieces.pieces.dump_as_dot());
         assert_eq!(pieces.text(), new_text);
+    }
+
+    #[test]
+    fn consecutive() {
+        let mut pieces = PieceTable::new_empty();
+        pieces.append("Where is");
+        pieces.append(" ");
+        pieces.append("my mind");
+        pieces.append("?");
+        assert_eq!(pieces.text(), "Where is my mind?");
+        assert_eq!(pieces.pieces.len(), 4);
+
+        pieces.pieces.repack();
+        assert_eq!(pieces.text(), "Where is my mind?");
+        assert_eq!(pieces.pieces.len(), 1);
+
+        pieces.insert(0, "Hey. ");
+        pieces.pieces.repack();
+        assert_eq!(pieces.text(), "Hey. Where is my mind?");
+        assert_eq!(pieces.pieces.len(), 2);
     }
 
     #[test]
