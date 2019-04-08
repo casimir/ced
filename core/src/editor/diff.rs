@@ -80,12 +80,16 @@ fn find_lcs(left: &[u8], right: &[u8]) -> Vec<u8> {
 pub fn diff(left: &str, right: &str) -> Vec<Diff> {
     let bleft = left.as_bytes();
     let bright = right.as_bytes();
+    let mut diffs = Vec::new();
 
     let (start, maybe_end) = precompute(bleft, bright);
-    let mut diffs = vec![Diff::Both(start)];
+    if start > 0 {
+        diffs.push(Diff::Both(start));
+    }
     let end = match maybe_end {
         Some(len) => len,
-        None => return diffs,
+        None if start > 0 => return diffs,
+        None => 0,
     };
 
     let l = &bleft[start..bleft.len() - end];
@@ -162,8 +166,29 @@ mod tests {
         );
     }
 
+    fn assert_diff(left: &str, right: &str, diffs: Vec<Diff>) {
+        let mut rebuilt = String::from(left);
+        let mut loffset = 0;
+        let mut roffset = 0;
+        for diff in diffs {
+            match diff {
+                Diff::Left(len) => rebuilt.replace_range(loffset..loffset + len, ""),
+                Diff::Right(len) => {
+                    rebuilt.insert_str(loffset, &right[roffset..roffset + len]);
+                    loffset += len;
+                    roffset += len;
+                }
+                Diff::Both(len) => {
+                    loffset += len;
+                    roffset += len;
+                }
+            }
+        }
+        assert_eq!(rebuilt, right);
+    }
+
     #[test]
-    fn simple_diff() {
+    fn close_diff() {
         let left = "🦊 the quick brown fox jumps over the lazy dog 🐶, so quick";
         let right = "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick";
         let diffs = diff(left, right);
@@ -184,24 +209,14 @@ mod tests {
             .sum();
         assert_eq!(left_len, left.len());
         assert_eq!(right_len, right.len());
+        assert_diff(left, right, diffs);
+    }
 
-        let mut rebuilt = String::from(left);
-        let mut loffset = 0;
-        let mut roffset = 0;
-        for diff in diffs {
-            match diff {
-                Diff::Left(len) => rebuilt.replace_range(loffset..loffset + len, ""),
-                Diff::Right(len) => {
-                    rebuilt.insert_str(loffset, &right[roffset..roffset + len]);
-                    loffset += len;
-                    roffset += len;
-                }
-                Diff::Both(len) => {
-                    loffset += len;
-                    roffset += len;
-                }
-            }
-        }
-        assert_eq!(rebuilt, right);
+    #[test]
+    fn far_diff() {
+        let left = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
+        let right = "nothing to see here";
+        let diffs = diff(left, right);
+        assert_diff(left, right, diffs);
     }
 }
