@@ -121,10 +121,20 @@ impl PartialEq for Piece {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Action {
+    Bulk,
+    Delete,
+    Insert,
+}
+
 pub struct PieceTable {
     original: String,
     added: String,
     pieces: RBTree<Piece>,
+    last_action: Option<Action>,
+    undos: Vec<RBTree<Piece>>,
+    redos: Vec<RBTree<Piece>>,
 }
 
 impl PieceTable {
@@ -140,6 +150,9 @@ impl PieceTable {
             original: String::from(text),
             added: String::new(),
             pieces,
+            last_action: None,
+            undos: Vec::new(),
+            redos: Vec::new(),
         }
     }
 
@@ -148,6 +161,55 @@ impl PieceTable {
             original: String::new(),
             added: String::new(),
             pieces: RBTree::new(),
+            last_action: None,
+            undos: Vec::new(),
+            redos: Vec::new(),
+        }
+    }
+
+    fn commit(&mut self) {
+        self.undos.push(self.pieces.clone());
+        self.redos.clear();
+        self.last_action = None;
+    }
+
+    fn action(&mut self, action: Action) {
+        if self.last_action == Some(Action::Bulk) {
+            return;
+        }
+        if self.last_action != Some(action) {
+            self.commit();
+            self.last_action = Some(action);
+        }
+    }
+
+    fn start_bulk(&mut self) {
+        self.action(Action::Bulk);
+    }
+
+    fn end_bulk(&mut self) {
+        self.last_action = None;
+    }
+
+    fn undo(&mut self) -> bool {
+        if let Some(pieces) = self.undos.pop() {
+            self.redos.push(self.pieces.clone());
+            self.pieces = pieces;
+            self.last_action = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn redo(&mut self) -> bool {
+        if let Some(pieces) = self.redos.pop() {
+            self.undos.push(self.pieces.clone());
+            self.pieces = pieces;
+            self.last_action = None;
+            true
+        } else {
+            false
         }
     }
 
@@ -195,6 +257,7 @@ impl PieceTable {
     }
 
     pub fn append(&mut self, text: &str) {
+        self.action(Action::Insert);
         let offset = if let Some(last) = self.pieces.last() {
             let data = last.data();
             data.offset + data.length
@@ -220,6 +283,7 @@ impl PieceTable {
     }
 
     pub fn insert(&mut self, offset: usize, text: &str) {
+        self.action(Action::Insert);
         if let Some(ref mut node) = self.pieces.get(&Piece::offset(offset)) {
             let added_start = self.added.len();
             self.added.push_str(text);
@@ -243,6 +307,7 @@ impl PieceTable {
     }
 
     pub fn delete(&mut self, offset: usize, length: usize) {
+        self.action(Action::Delete);
         if let Some(start_node) = self.pieces.get(&Piece::offset(offset)) {
             let pieces = start_node
                 .values()
@@ -270,8 +335,10 @@ impl PieceTable {
     }
 
     pub fn replace(&mut self, start: usize, length: usize, text: &str) {
+        self.start_bulk();
         self.delete(start, length);
         self.insert(start, text);
+        self.end_bulk();
     }
 
     pub fn apply_diff(&mut self, text: &str) {
@@ -280,6 +347,8 @@ impl PieceTable {
         let diffs = diff(&original, text);
         let mut loffset = 0;
         let mut roffset = 0;
+
+        self.start_bulk();
         for diff in diffs {
             match diff {
                 Diff::Left(len) => self.delete(loffset, len),
@@ -294,6 +363,7 @@ impl PieceTable {
                 }
             }
         }
+        self.end_bulk();
     }
 }
 
@@ -372,6 +442,51 @@ mod tests {
         pieces.apply_diff(new_text);
 
         print!("{}", pieces.pieces.dump_as_dot());
+        assert_eq!(pieces.text(), new_text);
+    }
+
+    #[test]
+    fn undo_redo() {
+        let text = "🦊 the quick brown fox jumps over the lazy dog 🐶, so quick";
+        let mut pieces = PieceTable::new(text);
+
+        // empty undo stack
+        assert!(!pieces.undo());
+
+        // delete + undo/redo
+        pieces.delete(53, 10);
+        let deleted = "🦊 the quick brown fox jumps over the lazy dog 🐶";
+        assert_eq!(pieces.text(), deleted);
+        assert!(pieces.undo());
+        assert!(!pieces.undo());
+        assert_eq!(pieces.text(), text);
+        assert!(pieces.redo());
+        assert!(!pieces.redo());
+        assert_eq!(pieces.text(), deleted);
+
+        // insert + insert + delete + undo/redo
+        let inserted = "🦊 the really quick brown fox jumps over the lazy dog 🐶, so fast";
+        pieces.append(", so fast");
+        pieces.insert(9, "really ");
+        assert_eq!(pieces.text(), inserted);
+        let redeleted = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
+        pieces.delete(0, 5);
+        assert_eq!(pieces.text(), redeleted);
+        assert!(pieces.undo());
+        assert_eq!(pieces.text(), inserted);
+        assert!(pieces.undo());
+        assert_eq!(pieces.text(), deleted);
+        assert!(pieces.redo());
+        assert!(pieces.redo());
+        assert_eq!(pieces.text(), redeleted);
+
+        // bulk + undo/redo
+        let new_text = "nothing to see here";
+        pieces.apply_diff(new_text);
+        assert_eq!(pieces.text(), new_text);
+        assert!(pieces.undo());
+        assert_eq!(pieces.text(), redeleted);
+        assert!(pieces.redo());
         assert_eq!(pieces.text(), new_text);
     }
 }
