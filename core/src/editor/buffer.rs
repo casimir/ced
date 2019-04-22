@@ -67,7 +67,7 @@ impl Buffer {
     pub fn new_scratch(name: String) -> Buffer {
         Buffer {
             source: BufferSource::Scratch(name),
-            content: PieceTable::new_empty(),
+            content: PieceTable::new(),
             last_sync: None,
             modified: false,
         }
@@ -89,7 +89,7 @@ impl Buffer {
 
         Buffer {
             source: BufferSource::File(absolute_path),
-            content: PieceTable::new(&file_content),
+            content: PieceTable::with_text(&file_content),
             last_sync,
             modified: false,
         }

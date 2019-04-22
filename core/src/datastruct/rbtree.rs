@@ -721,7 +721,6 @@ where
 mod tests {
     use super::*;
     use std::cmp::Ordering;
-    use std::ops::Range;
 
     #[derive(Debug)]
     enum InvalidReason<T> {
@@ -1025,7 +1024,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone, Eq)]
-    struct Seq(Range<usize>);
+    struct Seq(std::ops::Range<usize>);
 
     impl Ord for Seq {
         fn cmp(&self, other: &Seq) -> Ordering {

@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use crate::datastruct::{Consecutive, RBNode, RBTree};
 use crate::editor::diff::{diff, Diff};
+use crate::editor::range::Range;
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct Piece {
@@ -76,25 +77,24 @@ impl Piece {
         (p1, p2)
     }
 
-    fn range(self, offset: usize, length: usize) -> Piece {
-        let end = offset + length;
-        if self.contains(offset) && self.contains(end) {
+    fn ranged(self, range: Range) -> Piece {
+        if self.contains(range.start()) && self.contains(range.end()) {
             Piece {
-                offset,
-                start: self.start + offset - self.offset,
-                length,
+                offset: range.start(),
+                start: self.start + range.start() - self.offset,
+                length: range.len(),
                 ..self
             }
-        } else if self.contains(offset) {
+        } else if self.contains(range.start()) {
             Piece {
-                offset,
-                start: self.start + offset - self.offset,
-                length: self.length - (offset - self.offset),
+                offset: range.start(),
+                start: self.start + range.start() - self.offset,
+                length: self.length - (range.start() - self.offset),
                 ..self
             }
-        } else if self.contains(end) {
+        } else if self.contains(range.end()) {
             Piece {
-                length: end - self.offset,
+                length: range.end() - self.offset,
                 ..self
             }
         } else {
@@ -153,7 +153,7 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
-    pub fn new(text: &str) -> PieceTable {
+    pub fn with_text(text: &str) -> PieceTable {
         let mut pieces = RBTree::new();
         pieces.insert(Piece {
             offset: 0,
@@ -171,7 +171,7 @@ impl PieceTable {
         }
     }
 
-    pub fn new_empty() -> PieceTable {
+    pub fn new() -> PieceTable {
         PieceTable {
             original: String::new(),
             added: String::new(),
@@ -248,24 +248,25 @@ impl PieceTable {
         self.join("")
     }
 
-    pub fn text_range(&self, offset: usize, length: usize) -> Option<String> {
-        let end = offset + length;
-        self.pieces.get(&Piece::offset(offset)).map(|start_piece| {
-            start_piece
-                .values()
-                .take_while(|p| p.offset < end)
-                .map(|p| {
-                    let buffer = if p.original {
-                        &self.original
-                    } else {
-                        &self.added
-                    };
-                    let ranged = p.range(offset, length);
-                    String::from(&buffer[ranged.start..ranged.end()])
-                })
-                .collect::<Vec<String>>()
-                .join("")
-        })
+    pub fn text_range(&self, range: Range) -> Option<String> {
+        self.pieces
+            .get(&Piece::offset(range.start()))
+            .map(|start_piece| {
+                start_piece
+                    .values()
+                    .take_while(|p| p.offset < range.end())
+                    .map(|p| {
+                        let buffer = if p.original {
+                            &self.original
+                        } else {
+                            &self.added
+                        };
+                        let ranged_piece = p.ranged(range);
+                        String::from(&buffer[ranged_piece.start..ranged_piece.end()])
+                    })
+                    .collect::<Vec<String>>()
+                    .join("")
+            })
     }
 
     pub fn lines(&self) -> Vec<String> {
@@ -322,15 +323,15 @@ impl PieceTable {
         }
     }
 
-    pub fn delete(&mut self, offset: usize, length: usize) {
+    pub fn delete(&mut self, range: Range) {
         self.action(Action::Delete);
-        if let Some(start_node) = self.pieces.get(&Piece::offset(offset)) {
+        if let Some(start_node) = self.pieces.get(&Piece::offset(range.start())) {
             let pieces = start_node
                 .values()
-                .take_while(|p| p.offset < offset + length)
+                .take_while(|p| p.offset < range.end())
                 .collect::<Vec<Piece>>();
-            let (head, _) = pieces[0].truncate(offset, length);
-            let (_, tail) = pieces[pieces.len() - 1].truncate(offset, length);
+            let (head, _) = pieces[0].truncate(range.start(), range.len());
+            let (_, tail) = pieces[pieces.len() - 1].truncate(range.start(), range.len());
             for piece in &pieces {
                 assert!(self.pieces.remove(piece));
             }
@@ -342,18 +343,18 @@ impl PieceTable {
                 last_node = self.pieces.insert(p);
             }
             if let Some(ln) = last_node {
-                self.shift_offset_after(&ln, -(length as i64));
+                self.shift_offset_after(&ln, -(range.len() as i64));
             } else {
-                start_node.apply(|n| n.offset -= length);
-                self.shift_offset_after(&start_node, -(length as i64));
+                start_node.apply(|n| n.offset -= range.len());
+                self.shift_offset_after(&start_node, -(range.len() as i64));
             }
         }
     }
 
-    pub fn replace(&mut self, start: usize, length: usize, text: &str) {
+    pub fn replace(&mut self, range: Range, text: &str) {
         self.start_bulk();
-        self.delete(start, length);
-        self.insert(start, text);
+        self.delete(range);
+        self.insert(range.start(), text);
         self.end_bulk();
     }
 
@@ -367,7 +368,7 @@ impl PieceTable {
         self.start_bulk();
         for diff in diffs {
             match diff {
-                Diff::Left(len) => self.delete(loffset, len),
+                Diff::Left(len) => self.delete(Range::new(loffset, len)),
                 Diff::Right(len) => {
                     self.insert(loffset, &text[roffset..roffset + len]);
                     loffset += len;
@@ -389,7 +390,7 @@ mod tests {
 
     #[test]
     fn insert() {
-        let mut pieces = PieceTable::new_empty();
+        let mut pieces = PieceTable::new();
         pieces.insert(0, "the fox jumps over the dog");
         pieces.insert(4, "quick brown ");
         pieces.insert(35, "lazy ");
@@ -406,7 +407,7 @@ mod tests {
 
     #[test]
     fn delete() {
-        let mut pieces = PieceTable::new_empty();
+        let mut pieces = PieceTable::new();
         pieces.insert(0, "the fox jumps over the dog");
         pieces.insert(3, " quick brown");
         pieces.insert(35, "lazy ");
@@ -414,8 +415,16 @@ mod tests {
         pieces.insert(0, "🦊 ");
         pieces.insert(56, ", so quick");
 
-        pieces.delete(9, 12); // "quick brown| "
-        pieces.delete(28, 5); // "|lazy |"
+        assert_eq!(
+            pieces.text_range(Range::new(9, 12)),
+            Some(String::from("quick brown "))
+        );
+        pieces.delete(Range::new(9, 12)); // "quick brown| "
+        assert_eq!(
+            pieces.text_range(Range::new(28, 5)),
+            Some(String::from("lazy "))
+        );
+        pieces.delete(Range::new(28, 5)); // "|lazy |"
 
         print!("{}", pieces.pieces.dump_as_dot());
         assert_eq!(
@@ -426,7 +435,7 @@ mod tests {
 
     #[test]
     fn replace() {
-        let mut pieces = PieceTable::new_empty();
+        let mut pieces = PieceTable::new();
         pieces.insert(0, "the fox jumps over the dog");
         pieces.insert(4, "quick brown ");
         pieces.insert(35, "lazy ");
@@ -434,8 +443,8 @@ mod tests {
         pieces.insert(0, "🦊 ");
         pieces.insert(56, ", so quick");
 
-        pieces.replace(9, 11, "sneaky"); // "quick brown| "
-        pieces.replace(35, 8, "mighty bear"); // "|lazy |dog|"
+        pieces.replace(Range::new(9, 11), "sneaky"); // "quick brown| "
+        pieces.replace(Range::new(35, 8), "mighty bear"); // "|lazy |dog|"
 
         print!("{}", pieces.pieces.dump_as_dot());
         assert_eq!(
@@ -446,7 +455,7 @@ mod tests {
 
     #[test]
     fn apply_diff() {
-        let mut pieces = PieceTable::new_empty();
+        let mut pieces = PieceTable::new();
         pieces.insert(0, "the fox jumps over the dog");
         pieces.insert(4, "quick brown ");
         pieces.insert(35, "lazy ");
@@ -463,7 +472,7 @@ mod tests {
 
     #[test]
     fn consecutive() {
-        let mut pieces = PieceTable::new_empty();
+        let mut pieces = PieceTable::new();
         pieces.append("Where is");
         pieces.append(" ");
         pieces.append("my mind");
@@ -484,13 +493,13 @@ mod tests {
     #[test]
     fn undo_redo() {
         let text = "🦊 the quick brown fox jumps over the lazy dog 🐶, so quick";
-        let mut pieces = PieceTable::new(text);
+        let mut pieces = PieceTable::with_text(text);
 
         // empty undo stack
         assert!(!pieces.undo());
 
         // delete + undo/redo
-        pieces.delete(53, 10);
+        pieces.delete(Range::new(53, 10));
         let deleted = "🦊 the quick brown fox jumps over the lazy dog 🐶";
         assert_eq!(pieces.text(), deleted);
         assert!(pieces.undo());
@@ -506,7 +515,7 @@ mod tests {
         pieces.insert(9, "really ");
         assert_eq!(pieces.text(), inserted);
         let redeleted = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
-        pieces.delete(0, 5);
+        pieces.delete(Range::new(0, 5));
         assert_eq!(pieces.text(), redeleted);
         assert!(pieces.undo());
         assert_eq!(pieces.text(), inserted);

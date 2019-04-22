@@ -3,6 +3,7 @@ mod command;
 mod diff;
 pub mod menu;
 mod piece_table;
+mod range;
 pub mod view;
 
 use std::cell::RefCell;
@@ -18,6 +19,7 @@ pub use self::buffer::{Buffer, BufferSource};
 use self::command::default_commands;
 use self::menu::Menu;
 use self::piece_table::PieceTable;
+use self::range::Range;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::datastruct::StackMap;
@@ -32,16 +34,10 @@ pub struct EditorInfo<'a> {
     pub views: &'a [&'a String],
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Selection {
-    begin: (usize, usize),
-    end: (usize, usize),
-}
-
 #[derive(Clone, Debug)]
 pub struct ClientContext {
     view: Rc<RefCell<View>>,
-    selections: HashMap<String, HashMap<String, Selection>>,
+    selections: HashMap<String, HashMap<String, Range>>,
 }
 
 pub struct Editor {
@@ -134,7 +130,7 @@ impl Editor {
                     .borrow()
                     .buffers()
                     .iter()
-                    .map(|&b| (b.clone(), Selection::default()))
+                    .map(|&b| (b.clone(), Range::new(0, 1)))
                     .collect(),
             );
             ClientContext {
