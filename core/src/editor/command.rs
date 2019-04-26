@@ -12,13 +12,13 @@ fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<()
         let info = EditorInfo {
             session: &editor.session_name,
             cwd: &editor.cwd,
-            buffers: &editor.buffers.keys().collect::<Vec<&String>>(),
-            views: &editor.views.keys().collect::<Vec<&String>>(),
+            buffers: &editor.core.buffers(),
+            views: &editor.core.views(),
         };
         menu.populate(&info);
     }
     let menu = &editor.command_map[key];
-    editor.notify(
+    editor.core.notify_client(
         client_id,
         protocol::notification::menu::new(menu.to_notification_params("")),
     );
@@ -143,7 +143,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 .chain(info.buffers.iter().filter(|b| {
                     info.views
                         .iter()
-                        .find(|&&x| *x == View::for_buffer(b).key())
+                        .find(|&x| *x == View::for_buffer(b).key())
                         .is_none()
                 }))
                 .map(|key| MenuEntry {
@@ -167,7 +167,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
         Menu::new("view_add", "buffer", |info| {
             info.buffers
                 .iter()
-                .map(|&buffer| MenuEntry {
+                .map(|buffer| MenuEntry {
                     key: buffer.to_string(),
                     label: buffer.to_string(),
                     description: None,
@@ -188,7 +188,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
         Menu::new("view_remove", "buffer", |info| {
             info.buffers
                 .iter()
-                .map(|&buffer| MenuEntry {
+                .map(|buffer| MenuEntry {
                     key: buffer.to_string(),
                     label: buffer.to_string(),
                     description: None,

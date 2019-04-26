@@ -279,10 +279,11 @@ impl Term {
         } else {
             match key {
                 Key::Esc => self.exit_pending = true,
-                Key::Char('f') => self.do_menu("open", ""),
-                Key::Char('p') => self.do_menu("", ""),
-                Key::Char('v') => self.do_menu("view_select", ""),
-                Key::Char('x') => panic!("panic mode activated!"),
+                Key::Ctrl('f') => self.do_menu("open", ""),
+                Key::Ctrl('p') => self.do_menu("", ""),
+                Key::Ctrl('v') => self.do_menu("view_select", ""),
+                Key::Ctrl('x') => panic!("panic mode activated!"),
+                Key::Char(c) => self.connection.keys(vec![c.to_string()]),
                 _ => {}
             }
         }

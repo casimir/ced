@@ -3,6 +3,7 @@ pub enum Face {
     Default,
     Match,
     Prompt,
+    Selection,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -227,6 +228,22 @@ pub mod request {
                 choice: choice.to_string(),
             };
             Request::new(id, "menu-select".to_string(), params).unwrap()
+        }
+
+        pub type Result = ();
+    }
+
+    pub mod keys {
+        use crate::jsonrpc::{Id, Request};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Params {
+            pub keys: Vec<String>,
+        }
+
+        pub fn new(id: Id, keys: Vec<String>) -> Request {
+            let params = Params { keys };
+            Request::new(id, "keys".to_string(), params).unwrap()
         }
 
         pub type Result = ();

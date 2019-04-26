@@ -205,4 +205,9 @@ impl Connection {
     pub fn action_menu_cancel(&mut self) {
         self.state_lock.write().unwrap().menu = None;
     }
+
+    pub fn keys(&mut self, keys: Vec<String>) {
+        let id = self.request_id();
+        self.request(protocol::request::keys::new(id, keys));
+    }
 }
