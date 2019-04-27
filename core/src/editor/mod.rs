@@ -26,7 +26,8 @@ use self::range::Range;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
-use remote::jsonrpc::{Error as JError, Id, Request, Response};
+use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
+use remote::protocol::notification::view::Params as NotificationParams;
 use remote::{protocol, response};
 
 pub struct EditorInfo<'a> {
@@ -42,6 +43,45 @@ pub struct ClientContext {
     selections: HashMap<String, HashMap<String, Range>>,
 }
 
+#[derive(Clone)]
+pub struct Notifier {
+    sender: channel::Sender<BroadcastMessage>,
+}
+
+impl Notifier {
+    pub fn broadcast<I>(&self, message: Notification, only_clients: I)
+    where
+        I: Into<Option<Vec<usize>>>,
+    {
+        let bm = match only_clients.into() {
+            Some(cs) => BroadcastMessage::for_clients(cs, message),
+            None => BroadcastMessage::new(message),
+        };
+        self.sender.send(bm).expect("broadcast message");
+    }
+
+    pub fn notify(&self, client_id: usize, message: Notification) {
+        self.broadcast(message, vec![client_id]);
+    }
+
+    pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
+        self.notify(
+            client_id,
+            protocol::notification::info::new(
+                client_id,
+                &info.session,
+                &info.cwd.display().to_string(),
+            ),
+        );
+    }
+
+    pub fn view_update(&self, params: Vec<(usize, NotificationParams)>) {
+        for (client_id, np) in params {
+            self.notify(client_id, protocol::notification::view::new(np));
+        }
+    }
+}
+
 pub struct Editor {
     session_name: String,
     cwd: PathBuf,
@@ -53,12 +93,15 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(session: &str, broadcaster: channel::Sender<BroadcastMessage>) -> Editor {
+        let notifier = Notifier {
+            sender: broadcaster,
+        };
         let mut editor = Editor {
             session_name: session.into(),
             cwd: env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
             command_map: default_commands(),
             stopped_clients: HashSet::new(),
-            core: Core::new(broadcaster),
+            core: Core::new(notifier),
             lua: rlua::Lua::new(),
         };
 
@@ -232,7 +275,7 @@ impl Editor {
             }
         }
         let menu = &self.command_map[&params.command];
-        self.core.notify_client(
+        self.core.get_notifier().notify(
             client_id,
             protocol::notification::menu::new(menu.to_notification_params(&params.search)),
         );

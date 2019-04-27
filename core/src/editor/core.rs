@@ -4,16 +4,12 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crossbeam_channel as channel;
 use failure::Error;
 
-use super::range::Range;
-use super::view::{Focus, Lens, View};
-use super::{Buffer, EditorInfo};
 use crate::datastruct::StackMap;
-use crate::server::BroadcastMessage;
-use remote::jsonrpc::Notification;
-use remote::protocol;
+use crate::editor::range::Range;
+use crate::editor::view::{Focus, Lens, View};
+use crate::editor::{Buffer, EditorInfo, Notifier};
 
 #[derive(Clone, Debug)]
 struct ClientContext {
@@ -43,20 +39,24 @@ pub enum ErrorKind {
 
 #[derive(Clone)]
 pub struct Core {
-    broadcaster: channel::Sender<BroadcastMessage>,
     state: Arc<Mutex<CoreState>>,
+    notifier: Notifier,
 }
 
 impl Core {
-    pub fn new(broadcaster: channel::Sender<BroadcastMessage>) -> Core {
+    pub fn new(notifier: Notifier) -> Core {
         Core {
-            broadcaster,
             state: Arc::new(Mutex::new(CoreState {
                 clients: StackMap::new(),
                 buffers: HashMap::new(),
                 views: StackMap::new(),
             })),
+            notifier,
         }
+    }
+
+    pub fn get_notifier(&self) -> &Notifier {
+        &self.notifier
     }
 
     fn buffer_exists(&self, name: &str) -> bool {
@@ -75,43 +75,39 @@ impl Core {
         lock!(self).views.keys().map(String::to_owned).collect()
     }
 
-    fn broadcast<F>(&self, state: &CoreState, message: Notification, filter: F)
-    where
-        F: Fn(&usize) -> bool,
-    {
-        let skiplist = state
+    fn clients_with_buffer(&self, name: &str) -> Vec<usize> {
+        if !self.buffer_exists(name) {
+            return Vec::new();
+        }
+
+        lock!(self)
             .clients
-            .keys()
-            .filter(|&k| !filter(k))
-            .cloned()
-            .collect();
-        let bm = BroadcastMessage::new_skip(message, skiplist);
-        self.broadcaster.send(bm).expect("broadcast message");
+            .iter()
+            .filter_map(|(&id, ctx)| {
+                if ctx.view.borrow().contains_buffer(name) {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    fn broadcast_all(&self, message: Notification) {
-        let bm = BroadcastMessage::new(message);
-        self.broadcaster.send(bm).expect("broadcast message");
-    }
-
-    fn notify(&self, state: &CoreState, client_id: usize, message: Notification) {
-        self.broadcast(state, message, |&k| k == client_id);
-    }
-
-    pub fn notify_client(&self, client_id: usize, message: Notification) {
+    fn notify_view_update(&self, clients: Vec<usize>) {
         let state = lock!(self);
-        self.notify(&state, client_id, message);
-    }
-
-    fn notify_view_update(&self, state: &CoreState, client_id: usize) {
-        let context = &state.clients[&client_id];
-        self.notify(
-            state,
-            client_id,
-            protocol::notification::view::new(
-                context.view.borrow().to_notification_params(&state.buffers),
-            ),
-        );
+        let params = clients
+            .iter()
+            .map(|id| {
+                (
+                    *id,
+                    state.clients[&id]
+                        .view
+                        .borrow()
+                        .to_notification_params(&state.buffers),
+                )
+            })
+            .collect();
+        self.notifier.view_update(params);
     }
 
     pub fn append_debug(&mut self, content: &str) {
@@ -119,21 +115,15 @@ impl Core {
         // if flag is true
         //    create buffer if absent
         //    append to buffer
-        let mut state = lock!(self);
-        if let Some(debug_buffer) = state.buffers.get_mut("*debug*") {
+        if let Some(debug_buffer) = lock!(self).buffers.get_mut("*debug*") {
             debug_buffer.append(&format!("{}\n", content));
         }
         log::info!("{}", content);
-        for (client_id, context) in state.clients.iter() {
-            if context.view.borrow().contains_buffer("*debug*") {
-                self.notify_view_update(&state, *client_id);
-            }
-        }
+        self.notify_view_update(self.clients_with_buffer("*debug*"));
     }
 
     pub fn add_client(&mut self, id: usize, info: &EditorInfo) {
-        // TODO get rid of EditorInfo?
-        let context = {
+        {
             let mut state = lock!(self);
             let context = if let Some(c) = state.clients.latest() {
                 state.clients[c].clone()
@@ -155,19 +145,9 @@ impl Core {
                 }
             };
             state.clients.insert(id, context.clone());
-            context
-        };
-        self.append_debug(&format!("new client: {}", id));
-
-        let state = lock!(self);
-        self.notify(
-            &state,
-            id,
-            protocol::notification::info::new(id, &info.session, &info.cwd.display().to_string()),
-        );
-        if !context.view.borrow().contains_buffer("*debug*") {
-            self.notify_view_update(&state, id);
         }
+        self.append_debug(&format!("new client: {}", id));
+        self.notifier.info_update(id, info);
     }
 
     pub fn remove_client(&mut self, id: usize) {
@@ -231,10 +211,7 @@ impl Core {
                 to_notify.push(*id);
             }
         }
-        let state = lock!(self);
-        for id in to_notify {
-            self.notify_view_update(&state, id);
-        }
+        self.notify_view_update(to_notify);
         Ok(())
     }
 
@@ -250,19 +227,16 @@ impl Core {
             if new_view.is_empty() {
                 self.delete_view(&old_key).unwrap();
             } else {
-                let mut state = self.state.lock().expect("acquire state mutex");
                 let view = Rc::new(RefCell::new(new_view));
-                state.views.insert(new_key, Rc::clone(&view));
+                lock!(self).views.insert(new_key, Rc::clone(&view));
                 let mut to_notify = Vec::new();
-                for (id, context) in state.clients.iter_mut() {
+                for (id, context) in lock!(self).clients.iter_mut() {
                     if context.view.borrow().key() == old_key {
                         context.view = Rc::clone(&view);
                         to_notify.push(*id);
                     }
                 }
-                for id in to_notify {
-                    self.notify_view_update(&state, id);
-                }
+                self.notify_view_update(to_notify);
             }
             lock!(self).views.remove(&old_key);
         }
@@ -295,15 +269,10 @@ impl Core {
         }
 
         self.append_debug(&format!("edit: {}", name));
-        let state = lock!(self);
         if notify_change {
-            for (id, ctx) in state.clients.iter() {
-                if ctx.view.borrow().contains_buffer(name) {
-                    self.notify_view_update(&state, *id);
-                }
-            }
+            self.notify_view_update(self.clients_with_buffer(name));
         } else {
-            self.notify_view_update(&state, client_id);
+            self.notify_view_update(vec![client_id]);
         }
     }
 
@@ -312,7 +281,7 @@ impl Core {
             let mut state = lock!(self);
             let view = Rc::clone(&state.views[view_id]);
             state.clients.get_mut(&client_id).unwrap().view = view;
-            self.notify_view_update(&state, client_id);
+            self.notify_view_update(vec![client_id]);
             Ok(())
         } else if self.buffer_exists(view_id) {
             let mut state = lock!(self);
@@ -321,7 +290,7 @@ impl Core {
             let context = state.clients.get_mut(&client_id).unwrap();
             context.view = Rc::clone(&view);
             state.views.entry(key).or_insert(view);
-            self.notify_view_update(&state, client_id);
+            self.notify_view_update(vec![client_id]);
             Ok(())
         } else {
             Err(ErrorKind::ViewNotFound {

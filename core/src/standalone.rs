@@ -27,7 +27,7 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
     let rx = broadcaster.rx.clone();
     thread::spawn(move || loop {
         let bm = rx.recv().expect("receive broadcast message");
-        if !bm.skiplist.contains(&CLIENT_ID) {
+        if bm.should_notify(CLIENT_ID) {
             println!("{}", &bm.message);
         }
     });

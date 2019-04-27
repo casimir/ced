@@ -18,7 +18,7 @@ fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<()
         menu.populate(&info);
     }
     let menu = &editor.command_map[key];
-    editor.core.notify_client(
+    editor.core.get_notifier().notify(
         client_id,
         protocol::notification::menu::new(menu.to_notification_params("")),
     );

@@ -18,16 +18,30 @@ use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 #[derive(Debug)]
 pub struct BroadcastMessage {
     pub message: Notification,
-    pub skiplist: Vec<usize>,
+    clients: Option<Vec<usize>>,
 }
 
 impl BroadcastMessage {
-    pub fn new_skip(message: Notification, skiplist: Vec<usize>) -> BroadcastMessage {
-        BroadcastMessage { message, skiplist }
+    pub fn new(message: Notification) -> BroadcastMessage {
+        BroadcastMessage {
+            message,
+            clients: None,
+        }
     }
 
-    pub fn new(message: Notification) -> BroadcastMessage {
-        Self::new_skip(message, Vec::new())
+    pub fn for_clients(clients: Vec<usize>, message: Notification) -> BroadcastMessage {
+        BroadcastMessage {
+            message,
+            clients: Some(clients),
+        }
+    }
+
+    #[inline]
+    pub fn should_notify(&self, client_id: usize) -> bool {
+        match &self.clients {
+            Some(cs) => cs.contains(&client_id),
+            None => true,
+        }
     }
 }
 
@@ -160,9 +174,9 @@ impl Server {
                             let mut conns = connections.borrow_mut();
                             let errors: Vec<Error> = conns
                                 .iter_mut()
-                                .filter(|(client_id, _)| !bm.skiplist.contains(&client_id))
-                                .map(|(client_id, c)| {
-                                    self.write_message(*client_id, c, &bm.message)
+                                .filter(|(&client_id, _)| bm.should_notify(client_id))
+                                .map(|(&client_id, c)| {
+                                    self.write_message(client_id, c, &bm.message)
                                 })
                                 .filter_map(Result::err)
                                 .map(Error::from)
