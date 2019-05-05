@@ -17,6 +17,7 @@ fn main() {
     let application = gtk::Application::new("net.casimir-lab.ced", gio::ApplicationFlags::empty())
         .expect("initialize GTK");
 
+    // replace with Glib::channel -> https://github.com/gtk-rs/examples/pull/222
     gtk::timeout_add(10, || {
         for window_id in State::ids() {
             State::with(window_id, |state, _| {

@@ -12,8 +12,8 @@ extern crate log;
 extern crate mio;
 extern crate regex;
 
-pub mod editor;
 pub mod datastruct;
+pub mod editor;
 #[macro_use]
 pub mod server;
 pub mod standalone;

@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::fmt;
-use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,7 +18,7 @@ impl fmt::Display for Colour {
     }
 }
 
-pub struct NodeData<T: fmt::Debug + Ord> {
+pub struct NodeData<T> {
     colour: Colour,
     parent: Option<Node<T>>,
     left: Option<Node<T>>,
@@ -27,10 +26,7 @@ pub struct NodeData<T: fmt::Debug + Ord> {
     data: T,
 }
 
-impl<T> NodeData<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T> NodeData<T> {
     fn new(data: T) -> NodeData<T> {
         NodeData {
             colour: Colour::Red,
@@ -42,12 +38,9 @@ where
     }
 }
 
-pub struct Node<T: fmt::Debug + Ord>(Rc<RefCell<NodeData<T>>>);
+pub struct Node<T>(Rc<RefCell<NodeData<T>>>);
 
-impl<T> Node<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T> Node<T> {
     fn id(&self) -> String {
         let address = format!("{:?}", self.0.as_ptr());
         address[2..].to_owned()
@@ -57,50 +50,63 @@ where
         Node(Rc::clone(&self.0))
     }
 
-    pub fn data(&self) -> T
-    where
-        T: Clone,
-    {
-        self.borrow().data.clone()
-    }
-
     fn swap_data(&mut self, other: &mut Node<T>) {
-        std::mem::swap(&mut self.borrow_mut().data, &mut other.borrow_mut().data)
+        std::mem::swap(
+            &mut self.0.borrow_mut().data,
+            &mut other.0.borrow_mut().data,
+        )
     }
 
     fn parent(&self) -> Option<Node<T>> {
-        self.borrow().parent.as_ref().map(Node::duplicate)
+        self.0.borrow().parent.as_ref().map(Node::duplicate)
     }
 
     fn set_parent<I>(&mut self, node: I)
     where
         I: Into<Option<Node<T>>>,
     {
-        self.borrow_mut().parent = node.into()
+        self.0.borrow_mut().parent = node.into()
     }
 
     fn left(&self) -> Option<Node<T>> {
-        self.borrow().left.as_ref().map(Node::duplicate)
+        self.0.borrow().left.as_ref().map(Node::duplicate)
     }
 
     fn set_left<I>(&mut self, node: I)
     where
         I: Into<Option<Node<T>>>,
     {
-        self.borrow_mut().left = node.into()
+        self.0.borrow_mut().left = node.into()
     }
 
     fn right(&self) -> Option<Node<T>> {
-        self.borrow().right.as_ref().map(Node::duplicate)
+        self.0.borrow().right.as_ref().map(Node::duplicate)
     }
 
     fn set_right<I>(&mut self, node: I)
     where
         I: Into<Option<Node<T>>>,
     {
-        self.borrow_mut().right = node.into()
+        self.0.borrow_mut().right = node.into()
     }
 
+    fn colour(&self) -> Colour {
+        self.0.borrow().colour
+    }
+
+    fn set_colour(&mut self, colour: Colour) {
+        self.0.borrow_mut().colour = colour;
+    }
+
+    pub fn apply<F>(&self, f: F)
+    where
+        F: Fn(&mut T),
+    {
+        f(&mut self.0.borrow_mut().data);
+    }
+}
+
+impl<T: Ord> Node<T> {
     fn is_left_child(&self) -> bool {
         self.parent()
             .as_ref()
@@ -122,59 +128,32 @@ where
         self.parent()?.sibling()
     }
 
-    fn colour(&self) -> Colour {
-        self.borrow().colour
-    }
-
-    fn set_colour(&mut self, colour: Colour) {
-        self.borrow_mut().colour = colour;
-    }
-
     pub fn iter(&self) -> Iter<T> {
         Iter {
             cursor: Some(self.duplicate()),
         }
     }
+}
 
-    pub fn values(&self) -> Values<T>
-    where
-        T: Clone,
-    {
-        Values { inner: self.iter() }
-    }
-
-    pub fn apply<F>(&self, f: F)
-    where
-        F: Fn(&mut T),
-    {
-        f(&mut self.borrow_mut().data);
+impl<T: Clone> Node<T> {
+    pub fn data(&self) -> T {
+        self.0.borrow().data.clone()
     }
 }
 
-impl<T> From<T> for Node<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T: Clone + Ord> Node<T> {
+    pub fn values(&self) -> Values<T> {
+        Values { inner: self.iter() }
+    }
+}
+
+impl<T> From<T> for Node<T> {
     fn from(data: T) -> Node<T> {
         Node(Rc::new(RefCell::new(NodeData::new(data))))
     }
 }
 
-impl<T> Deref for Node<T>
-where
-    T: fmt::Debug + Ord,
-{
-    type Target = Rc<RefCell<NodeData<T>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> fmt::Debug for Node<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T: fmt::Debug> fmt::Debug for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -183,35 +162,24 @@ where
             self.parent().as_ref().map(Node::id),
             self.left().as_ref().map(Node::id),
             self.right().as_ref().map(Node::id),
-            self.borrow().data,
+            self.0.borrow().data,
         )
     }
 }
 
-impl<T> PartialEq for Node<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T> PartialEq for Node<T> {
     fn eq(&self, other: &Node<T>) -> bool {
-        Rc::ptr_eq(self, other)
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
-pub trait Consecutive {
-    fn consecutive(&self, other: &Self) -> bool;
-    fn merged(&self, other: &Self) -> Self;
-}
-
 #[derive(Default)]
-pub struct RBTree<T: fmt::Debug + Ord> {
+pub struct RBTree<T> {
     root: Option<Node<T>>,
     length: usize,
 }
 
-impl<T> RBTree<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T: Ord> RBTree<T> {
     pub fn new() -> RBTree<T> {
         RBTree {
             root: None,
@@ -228,9 +196,9 @@ where
     }
 
     fn insert_from(&mut self, mut root: Node<T>, data: T) -> Option<Node<T>> {
-        if data == root.borrow().data {
+        if data == root.0.borrow().data {
             None
-        } else if data <= root.borrow().data {
+        } else if data <= root.0.borrow().data {
             if root.left().is_none() {
                 let mut node = Node::from(data);
                 node.set_parent(root.duplicate());
@@ -250,7 +218,6 @@ where
     }
 
     fn rotate_right(&mut self, mut node: Node<T>) {
-        trace!("rotate right: {:?}", node);
         let mut parent = node.left().expect("get parent node");
         node.set_left(parent.right());
         if let Some(ref mut right) = parent.right() {
@@ -271,7 +238,6 @@ where
     }
 
     fn rotate_left(&mut self, mut node: Node<T>) {
-        trace!("rotate left: {:?}", node);
         let mut parent = node.right().expect("get parent node");
         node.set_right(parent.left());
         if let Some(ref mut left) = parent.left() {
@@ -293,13 +259,10 @@ where
 
     fn balance(&mut self, mut node: Node<T>) {
         if node.parent().is_none() {
-            trace!("balance root: {:?}", node);
             node.set_colour(Colour::Black);
         } else if node.parent().as_ref().map(Node::colour) == Some(Colour::Black) {
-            trace!("balance black parent: {:?}", node);
-        // we're good here
+            // we're good here
         } else if node.uncle().as_ref().map(Node::colour) == Some(Colour::Red) {
-            trace!("balance red uncle: {:?}", node);
             // parent colour <- black
             node.parent().as_mut().unwrap().set_colour(Colour::Black);
             // uncle colour <- black
@@ -310,7 +273,6 @@ where
             // balance from grand parent
             self.balance(grand_parent.duplicate());
         } else {
-            trace!("balance black uncle: {:?}", node);
             let parent = node.parent().as_ref().map(Node::duplicate).unwrap();
             let mut new_node = node.duplicate();
 
@@ -352,7 +314,6 @@ where
     }
 
     pub fn insert(&mut self, data: T) -> Option<Node<T>> {
-        trace!("insert {:?}", data);
         let node = if let Some(ref root) = self.root {
             self.insert_from(root.duplicate(), data)
         } else {
@@ -401,12 +362,11 @@ where
     }
 
     pub fn get(&self, data: &T) -> Option<Node<T>> {
-        trace!("get {:?}", data);
         let mut tmp = self.root.as_ref().map(Node::duplicate);
         while let Some(ref n) = tmp {
-            if *data == n.borrow().data {
+            if *data == n.0.borrow().data {
                 return Some(n.duplicate());
-            } else if *data < n.borrow().data {
+            } else if *data < n.0.borrow().data {
                 tmp = n.left();
             } else {
                 tmp = n.right();
@@ -472,7 +432,6 @@ where
     }
 
     pub fn delete_node(&mut self, node: &mut Node<T>) {
-        trace!("delete {:?}", node);
         let new_node = if node.left().is_some() && node.right().is_some() {
             Self::successor(node.duplicate())
         } else if node.left().is_some() {
@@ -548,18 +507,21 @@ where
             cursor: self.first(),
         }
     }
+}
 
-    pub fn values(&self) -> Values<T>
-    where
-        T: Clone,
-    {
+impl<T: Clone + Ord> RBTree<T> {
+    pub fn values(&self) -> Values<T> {
         Values { inner: self.iter() }
     }
+}
 
-    pub fn repack(&mut self)
-    where
-        T: Clone + Consecutive,
-    {
+pub trait Consecutive {
+    fn consecutive(&self, other: &Self) -> bool;
+    fn merged(&self, other: &Self) -> Self;
+}
+
+impl<T: Clone + Ord + Consecutive> RBTree<T> {
+    pub fn repack(&mut self) {
         if self.is_empty() {
             return;
         }
@@ -568,7 +530,7 @@ where
         while let Some(curr) = nodes.next() {
             let mut acc = vec![prev.data()];
             let mut cursor = curr;
-            while prev.borrow().data.consecutive(&cursor.borrow().data) {
+            while prev.0.borrow().data.consecutive(&cursor.0.borrow().data) {
                 acc.push(cursor.data());
                 prev = cursor.duplicate();
                 if let Some(n) = nodes.next() {
@@ -584,12 +546,14 @@ where
                 }
                 let last = &acc[acc.len() - 1];
                 let last_node = self.get(last).expect("get node");
-                last_node.borrow_mut().data = new_data;
+                last_node.0.borrow_mut().data = new_data;
             }
             prev = cursor;
         }
     }
+}
 
+impl<T: Ord + fmt::Debug> RBTree<T> {
     pub fn dump_as_dot(&self) -> String {
         let mut lines = Vec::new();
         lines.push(String::from("graph Tree {"));
@@ -601,7 +565,7 @@ where
             definitions.push(format!(
                 "    Node{} [label=\"{:?}\", color={}]",
                 node.id(),
-                node.borrow().data,
+                node.0.borrow().data,
                 node.colour()
             ));
             if node.left().is_some() {
@@ -635,59 +599,44 @@ where
         lines.push(String::new());
         lines.join("\n")
     }
-
-    fn clone_subtree(node: Option<Node<T>>) -> Option<Node<T>>
-    where
-        T: Clone,
-    {
-        let sub = node?;
-
-        let mut cloned = Node::from(sub.data());
-        cloned.set_colour(sub.colour());
-        cloned.set_left(Self::clone_subtree(sub.left()));
-        cloned.set_right(Self::clone_subtree(sub.right()));
-        if let Some(ref mut left) = cloned.left() {
-            left.set_parent(cloned.duplicate());
-        }
-        if let Some(ref mut right) = cloned.right() {
-            right.set_parent(cloned.duplicate());
-        }
-        Some(cloned)
-    }
 }
 
-impl<T> fmt::Debug for RBTree<T>
-where
-    T: Clone + fmt::Debug + Ord,
-{
+impl<T> fmt::Debug for RBTree<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "RBTree {{ length: {} }}", self.length)
     }
 }
 
-impl<T> Clone for RBTree<T>
-where
-    T: Clone + fmt::Debug + Ord,
-{
+fn clone_subtree<T: Clone>(node: Option<Node<T>>) -> Option<Node<T>> {
+    let sub = node?;
+
+    let mut cloned = Node::from(sub.data());
+    cloned.set_colour(sub.colour());
+    cloned.set_left(clone_subtree(sub.left()));
+    cloned.set_right(clone_subtree(sub.right()));
+    if let Some(ref mut left) = cloned.left() {
+        left.set_parent(cloned.duplicate());
+    }
+    if let Some(ref mut right) = cloned.right() {
+        right.set_parent(cloned.duplicate());
+    }
+    Some(cloned)
+}
+
+impl<T: Clone> Clone for RBTree<T> {
     fn clone(&self) -> Self {
         RBTree {
-            root: Self::clone_subtree(self.root.as_ref().map(Node::duplicate)),
+            root: clone_subtree(self.root.as_ref().map(Node::duplicate)),
             ..*self
         }
     }
 }
 
-pub struct Iter<T>
-where
-    T: fmt::Debug + Ord,
-{
+pub struct Iter<T> {
     cursor: Option<Node<T>>,
 }
 
-impl<T> Iterator for Iter<T>
-where
-    T: fmt::Debug + Ord,
-{
+impl<T: Ord> Iterator for Iter<T> {
     type Item = Node<T>;
 
     fn next(&mut self) -> Option<Node<T>> {
@@ -699,17 +648,11 @@ where
     }
 }
 
-pub struct Values<T>
-where
-    T: Clone + fmt::Debug + Ord,
-{
+pub struct Values<T> {
     inner: Iter<T>,
 }
 
-impl<T> Iterator for Values<T>
-where
-    T: Clone + fmt::Debug + Ord,
-{
+impl<T: Clone + Ord> Iterator for Values<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
@@ -800,7 +743,7 @@ mod tests {
             assert_eq!($node.as_ref().unwrap().borrow().data, $data);
         };
         ($node:expr, $data:expr, $colour:expr) => {
-            assert_eq!($node.as_ref().unwrap().borrow().data, $data);
+            assert_eq!($node.as_ref().unwrap().0.borrow().data, $data);
             assert_eq!($node.as_ref().unwrap().colour(), $colour);
         };
     }
