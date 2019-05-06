@@ -278,18 +278,22 @@ impl Core {
 
     pub fn view(&mut self, client_id: usize, view_id: &str) -> Result<(), Error> {
         if self.view_exists(view_id) {
-            let mut state = lock!(self);
-            let view = Rc::clone(&state.views[view_id]);
-            state.clients.get_mut(&client_id).unwrap().view = view;
+            {
+                let mut state = lock!(self);
+                let view = Rc::clone(&state.views[view_id]);
+                state.clients.get_mut(&client_id).unwrap().view = view;
+            }
             self.notify_view_update(vec![client_id]);
             Ok(())
         } else if self.buffer_exists(view_id) {
-            let mut state = lock!(self);
-            let view = Rc::new(RefCell::new(View::for_buffer(view_id)));
-            let key = view.borrow().key();
-            let context = state.clients.get_mut(&client_id).unwrap();
-            context.view = Rc::clone(&view);
-            state.views.entry(key).or_insert(view);
+            {
+                let mut state = lock!(self);
+                let view = Rc::new(RefCell::new(View::for_buffer(view_id)));
+                let key = view.borrow().key();
+                let context = state.clients.get_mut(&client_id).unwrap();
+                context.view = Rc::clone(&view);
+                state.views.entry(key).or_insert(view);
+            }
             self.notify_view_update(vec![client_id]);
             Ok(())
         } else {
