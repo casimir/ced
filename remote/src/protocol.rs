@@ -235,13 +235,14 @@ pub mod request {
 
     pub mod keys {
         use crate::jsonrpc::{Id, Request};
+        use crate::keys::Key;
 
         #[derive(Serialize, Deserialize)]
         pub struct Params {
-            pub keys: Vec<String>,
+            pub keys: Vec<Key>,
         }
 
-        pub fn new(id: Id, keys: Vec<String>) -> Request {
+        pub fn new(id: Id, keys: Vec<Key>) -> Request {
             let params = Params { keys };
             Request::new(id, "keys".to_string(), params).unwrap()
         }

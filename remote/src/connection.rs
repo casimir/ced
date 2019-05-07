@@ -5,6 +5,7 @@ use failure::Error;
 
 use crate::client::Client;
 use crate::jsonrpc::{ClientEvent, Id, Request};
+use crate::keys::Key;
 use crate::protocol;
 use crate::protocol::notification::menu::Entry as MenuEntry;
 use crate::protocol::notification::view::Params as View;
@@ -206,7 +207,7 @@ impl Connection {
         self.state_lock.write().unwrap().menu = None;
     }
 
-    pub fn keys(&mut self, keys: Vec<String>) {
+    pub fn keys(&mut self, keys: Vec<Key>) {
         let id = self.request_id();
         self.request(protocol::request::keys::new(id, keys));
     }

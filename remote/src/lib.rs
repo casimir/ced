@@ -21,6 +21,7 @@ extern crate winapi;
 mod client;
 mod connection;
 pub mod jsonrpc;
+pub mod keys;
 pub mod protocol;
 mod session;
 mod transport;

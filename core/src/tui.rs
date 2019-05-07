@@ -283,7 +283,7 @@ impl Term {
                 Key::Ctrl('p') => self.do_menu("", ""),
                 Key::Ctrl('v') => self.do_menu("view_select", ""),
                 Key::Ctrl('x') => panic!("panic mode activated!"),
-                Key::Char(c) => self.connection.keys(vec![c.to_string()]),
+                Key::Char(c) => self.connection.keys(vec![c.into()]),
                 _ => {}
             }
         }
