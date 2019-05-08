@@ -5,10 +5,11 @@ use failure::Error;
 
 use crate::client::Client;
 use crate::jsonrpc::{ClientEvent, Id, Request};
-use crate::keys::Key;
-use crate::protocol;
-use crate::protocol::notification::menu::Entry as MenuEntry;
-use crate::protocol::notification::view::Params as View;
+use crate::protocol::{
+    notifications,
+    requests::{self, Request as _},
+    Key,
+};
 use crate::session::Session;
 
 #[derive(Clone, Debug, Default)]
@@ -16,7 +17,7 @@ pub struct Menu {
     pub command: String,
     pub title: String,
     pub search: String,
-    pub entries: Vec<MenuEntry>,
+    pub entries: Vec<notifications::MenuParamsEntry>,
     pub selected: usize,
 }
 
@@ -42,24 +43,23 @@ impl Menu {
 pub enum ConnectionEvent {
     Info(String, String),
     Menu(Menu),
-    View(View),
+    View(notifications::ViewParams),
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionState {
     pub client: String,
     pub session: String,
-    pub view: View,
+    pub view: notifications::ViewParams,
     pub menu: Option<Menu>,
 }
 
 impl ConnectionState {
     fn event_update(&mut self, event: &ClientEvent) -> Option<ConnectionEvent> {
         if let ClientEvent::Notification(notif) = event {
-            use crate::protocol::notification::*;
             match notif.method.as_str() {
                 "info" => {
-                    if let Ok(Some(params)) = notif.params::<info::Params>() {
+                    if let Ok(Some(params)) = notif.params::<notifications::InfoParams>() {
                         self.client = params.client;
                         self.session = params.session;
                         Some(ConnectionEvent::Info(
@@ -71,7 +71,7 @@ impl ConnectionState {
                     }
                 }
                 "menu" => {
-                    if let Ok(Some(params)) = notif.params::<menu::Params>() {
+                    if let Ok(Some(params)) = notif.params::<notifications::MenuParams>() {
                         self.menu = Some(Menu {
                             command: params.command,
                             title: params.title,
@@ -85,7 +85,7 @@ impl ConnectionState {
                     }
                 }
                 "view" => {
-                    if let Ok(Some(params)) = notif.params::<view::Params>() {
+                    if let Ok(Some(params)) = notif.params::<notifications::ViewParams>() {
                         self.view = params;
                         Some(ConnectionEvent::View(self.view.clone()))
                     } else {
@@ -151,24 +151,28 @@ impl Connection {
         self.requests.send(message).expect("send request");
     }
 
-    pub fn command_list(&mut self) {
-        let id = self.request_id();
-        self.request(protocol::request::command_list::new(id));
-    }
-
     pub fn quit(&mut self) {
         let id = self.request_id();
-        self.request(protocol::request::quit::new(id));
+        self.request(requests::Quit::new_noarg(id));
     }
 
     pub fn edit(&mut self, file: &str, scratch: bool) {
         let id = self.request_id();
-        self.request(protocol::request::edit::new(id, file, scratch));
+        let params = requests::EditParams {
+            file: file.to_owned(),
+            path: None,
+            scratch,
+        };
+        self.request(requests::Edit::new(id, params));
     }
 
     pub fn menu(&mut self, command: &str, search: &str) {
         let id = self.request_id();
-        self.request(protocol::request::menu::new(id, command, search));
+        let params = requests::MenuParams {
+            command: command.to_owned(),
+            search: search.to_owned(),
+        };
+        self.request(requests::Menu::new(id, params));
     }
 
     pub fn menu_select(&mut self) {
@@ -180,11 +184,11 @@ impl Connection {
             } else {
                 selected
             };
-            self.request(protocol::request::menu_select::new(
-                id,
-                &menu.command,
-                choice,
-            ));
+            let params = requests::MenuSelectParams {
+                command: menu.command.to_owned(),
+                choice: choice.to_owned(),
+            };
+            self.request(requests::MenuSelect::new(id, params));
             self.action_menu_cancel();
         } else {
             warn!("menu_select without active menu");
@@ -209,6 +213,6 @@ impl Connection {
 
     pub fn keys(&mut self, keys: Vec<Key>) {
         let id = self.request_id();
-        self.request(protocol::request::keys::new(id, keys));
+        self.request(requests::Keys::new(id, keys));
     }
 }

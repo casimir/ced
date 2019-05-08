@@ -23,9 +23,10 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new<T, P>(id: Id, method: String, params: P) -> serde_json::Result<Request>
+    pub fn new<T, M, P>(id: Id, method: M, params: P) -> serde_json::Result<Request>
     where
         T: Serialize,
+        M: Into<String>,
         P: Into<Option<T>>,
     {
         let serialized_params = match params.into() {
@@ -35,7 +36,7 @@ impl Request {
         Ok(Request {
             jsonrpc: "2.0".to_string(),
             id,
-            method,
+            method: method.into(),
             params: serialized_params,
         })
     }
@@ -75,9 +76,10 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn new<T, P>(method: String, params: P) -> serde_json::Result<Notification>
+    pub fn new<T, M, P>(method: M, params: P) -> serde_json::Result<Notification>
     where
         T: Serialize,
+        M: Into<String>,
         P: Into<Option<T>>,
     {
         let serialized_params = match params.into() {
@@ -86,7 +88,7 @@ impl Notification {
         };
         Ok(Notification {
             jsonrpc: "2.0".to_string(),
-            method,
+            method: method.into(),
             params: serialized_params,
         })
     }

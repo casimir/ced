@@ -7,11 +7,9 @@ mod piece_table;
 mod range;
 pub mod view;
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use crossbeam_channel as channel;
 use failure::Error;
@@ -22,25 +20,21 @@ use self::command::default_commands;
 use self::core::Core;
 use self::menu::Menu;
 use self::piece_table::PieceTable;
-use self::range::Range;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
-use remote::protocol::notification::view::Params as NotificationParams;
-use remote::{protocol, response};
+use remote::protocol::{
+    notifications::{self, Notification as _},
+    requests,
+};
+use remote::response;
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
     pub cwd: &'a PathBuf,
     pub buffers: &'a [String],
     pub views: &'a [String],
-}
-
-#[derive(Clone, Debug)]
-pub struct ClientContext {
-    view: Rc<RefCell<View>>,
-    selections: HashMap<String, HashMap<String, Range>>,
 }
 
 #[derive(Clone)]
@@ -65,19 +59,17 @@ impl Notifier {
     }
 
     pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
-        self.notify(
-            client_id,
-            protocol::notification::info::new(
-                client_id,
-                &info.session,
-                &info.cwd.display().to_string(),
-            ),
-        );
+        let params = notifications::InfoParams {
+            client: client_id.to_string(),
+            session: info.session.to_owned(),
+            cwd: info.cwd.display().to_string(),
+        };
+        self.notify(client_id, notifications::Info::new(params));
     }
 
-    pub fn view_update(&self, params: Vec<(usize, NotificationParams)>) {
+    pub fn view_update(&self, params: Vec<(usize, notifications::ViewParams)>) {
         for (client_id, np) in params {
-            self.notify(client_id, protocol::notification::view::new(np));
+            self.notify(client_id, notifications::View::new(np));
         }
     }
 }
@@ -188,8 +180,8 @@ impl Editor {
     pub fn command_edit(
         &mut self,
         client_id: usize,
-        params: &protocol::request::edit::Params,
-    ) -> Result<protocol::request::edit::Result, JError> {
+        params: &<requests::Edit as requests::Request>::Params,
+    ) -> Result<<requests::Edit as requests::Request>::Result, JError> {
         if params.scratch {
             self.core
                 .edit(client_id, &params.file, None, params.scratch);
@@ -211,7 +203,7 @@ impl Editor {
     pub fn command_quit(
         &mut self,
         client_id: usize,
-    ) -> Result<protocol::request::quit::Result, JError> {
+    ) -> Result<<requests::Quit as requests::Request>::Result, JError> {
         self.core.remove_client(client_id);
         self.stopped_clients.insert(client_id);
         Ok(())
@@ -220,17 +212,17 @@ impl Editor {
     pub fn command_view(
         &mut self,
         client_id: usize,
-        params: &protocol::request::view::Params,
-    ) -> Result<protocol::request::view::Result, JError> {
+        params: &<requests::View as requests::Request>::Params,
+    ) -> Result<<requests::View as requests::Request>::Result, JError> {
         self.core
-            .view(client_id, &params.view_id)
+            .view(client_id, &params)
             .map_err(|e| JError::invalid_request(&e.to_string()))
     }
 
     pub fn command_view_delete(
         &mut self,
         client_id: usize,
-    ) -> Result<protocol::request::view_delete::Result, JError> {
+    ) -> Result<<requests::ViewDelete as requests::Request>::Result, JError> {
         self.core.delete_current_view(client_id);
         Ok(())
     }
@@ -238,28 +230,28 @@ impl Editor {
     pub fn command_view_add(
         &mut self,
         client_id: usize,
-        params: &protocol::request::view_add::Params,
-    ) -> Result<protocol::request::view_add::Result, JError> {
+        params: &<requests::ViewAdd as requests::Request>::Params,
+    ) -> Result<<requests::ViewAdd as requests::Request>::Result, JError> {
         self.core
-            .add_to_current_view(client_id, &params.buffer)
+            .add_to_current_view(client_id, &params)
             .map_err(|e| JError::invalid_request(&e.to_string()))
     }
 
     pub fn command_view_remove(
         &mut self,
         client_id: usize,
-        params: &protocol::request::view_remove::Params,
-    ) -> Result<protocol::request::view_remove::Result, JError> {
+        params: &<requests::ViewRemove as requests::Request>::Params,
+    ) -> Result<<requests::ViewRemove as requests::Request>::Result, JError> {
         self.core
-            .remove_from_current_view(client_id, &params.buffer)
+            .remove_from_current_view(client_id, &params)
             .map_err(|e| JError::invalid_request(&e.to_string()))
     }
 
     pub fn command_menu(
         &mut self,
         client_id: usize,
-        params: &protocol::request::menu::Params,
-    ) -> Result<protocol::request::menu::Result, JError> {
+        params: &<requests::Menu as requests::Request>::Params,
+    ) -> Result<<requests::Menu as requests::Request>::Result, JError> {
         {
             let menu = self.command_map.get_mut(&params.command).ok_or({
                 JError::invalid_params(&format!("unknown command: {}", &params.command))
@@ -277,7 +269,7 @@ impl Editor {
         let menu = &self.command_map[&params.command];
         self.core.get_notifier().notify(
             client_id,
-            protocol::notification::menu::new(menu.to_notification_params(&params.search)),
+            notifications::Menu::new(menu.to_notification_params(&params.search)),
         );
         Ok(())
     }
@@ -285,8 +277,8 @@ impl Editor {
     pub fn command_menu_select(
         &mut self,
         client_id: usize,
-        params: &protocol::request::menu_select::Params,
-    ) -> Result<protocol::request::menu_select::Result, JError> {
+        params: &<requests::MenuSelect as requests::Request>::Params,
+    ) -> Result<<requests::MenuSelect as requests::Request>::Result, JError> {
         let menu = self.command_map.get(&params.command).ok_or_else(|| {
             JError::invalid_params(&format!("unknown command: {}", &params.command))
         })?;
@@ -314,14 +306,14 @@ impl Editor {
     pub fn command_keys(
         &mut self,
         client_id: usize,
-        params: &protocol::request::keys::Params,
-    ) -> Result<protocol::request::keys::Result, JError> {
+        params: &<requests::Keys as requests::Request>::Params,
+    ) -> Result<<requests::Keys as requests::Request>::Result, JError> {
         self.lua
             .context(|lua: rlua::Context| {
                 let globals = lua.globals();
                 let handler: rlua::Function = globals.get("key_handler")?;
-                for key in &params.keys {
                     handler.call((client_id, key.as_str()))?;
+                for key in params {
                 }
                 Ok(())
             })

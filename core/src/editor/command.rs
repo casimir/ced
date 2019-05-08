@@ -4,7 +4,10 @@ use ignore::Walk;
 
 use crate::editor::menu::{Menu, MenuEntry};
 use crate::editor::{Editor, EditorInfo, View};
-use remote::protocol;
+use remote::protocol::{
+    notifications::{self, Notification as _},
+    requests,
+};
 
 fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<(), failure::Error> {
     {
@@ -20,7 +23,7 @@ fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<()
     let menu = &editor.command_map[key];
     editor.core.get_notifier().notify(
         client_id,
-        protocol::notification::menu::new(menu.to_notification_params("")),
+        notifications::Menu::new(menu.to_notification_params("")),
     );
     Ok(())
 }
@@ -88,7 +91,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
         String::from("open"),
         Menu::new("open", "file", |info| {
             Walk::new(&info.cwd)
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
                 .filter_map(|e| {
                     e.path()
@@ -104,7 +107,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
                     action: |key, editor, client_id| {
                         let mut path = editor.cwd.clone();
                         path.push(key);
-                        let params = protocol::request::edit::Params {
+                        let params = requests::EditParams {
                             file: key.to_owned(),
                             path: Some(path.into_os_string().into_string().unwrap()),
                             scratch: false,
@@ -124,7 +127,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
             "scratch",
             "New scratch buffer name.",
             |key, editor, client_id| {
-                let params = protocol::request::edit::Params {
+                let params = requests::EditParams {
                     file: key.to_owned(),
                     path: None,
                     scratch: true,
@@ -151,10 +154,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
                     label: key.to_string(),
                     description: None,
                     action: |key, editor, client_id| {
-                        let params = protocol::request::view::Params {
-                            view_id: key.to_owned(),
-                        };
-                        editor.command_view(client_id, &params)?;
+                        editor.command_view(client_id, &key.to_owned())?;
                         Ok(())
                     },
                 })
@@ -172,10 +172,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
                     label: buffer.to_string(),
                     description: None,
                     action: |key, editor, client_id| {
-                        let params = protocol::request::view_add::Params {
-                            buffer: key.to_owned(),
-                        };
-                        editor.command_view_add(client_id, &params)?;
+                        editor.command_view_add(client_id, &key.to_owned())?;
                         Ok(())
                     },
                 })
@@ -193,10 +190,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
                     label: buffer.to_string(),
                     description: None,
                     action: |key, editor, client_id| {
-                        let params = protocol::request::view_remove::Params {
-                            buffer: key.to_owned(),
-                        };
-                        editor.command_view_remove(client_id, &params)?;
+                        editor.command_view_remove(client_id, &key.to_owned())?;
                         Ok(())
                     },
                 })

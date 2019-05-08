@@ -5,7 +5,7 @@ mod helpers;
 use itertools::Itertools;
 
 use ced::remote::jsonrpc::ClientEvent;
-use ced::remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
+use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
 use ced::remote::{start_daemon, Client, Events, Session};
 
 const CLIENT_ID: usize = 1;
@@ -21,7 +21,7 @@ fn starting_notifications() {
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
         })
         .collect();
@@ -33,7 +33,7 @@ fn starting_notifications() {
 
 #[derive(Clone, Default)]
 struct State {
-    view: View,
+    view: ViewParams,
 }
 
 struct SyncClient {
@@ -97,7 +97,7 @@ fn connect_socket() {
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
         })
         .collect();
@@ -117,7 +117,7 @@ fn connect_tcp() {
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
         })
         .collect();

@@ -5,8 +5,10 @@ use std::ops::Deref;
 use regex::{CaptureLocations, Regex};
 
 use crate::editor::{Editor, EditorInfo};
-use remote::protocol::notification::menu::{Entry, Params as NotificationParams};
-use remote::protocol::{Face, TextFragment};
+use remote::protocol::{
+    notifications::{MenuParams, MenuParamsEntry},
+    Face, TextFragment,
+};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Token {
@@ -378,13 +380,13 @@ impl Menu {
         filter.filter(&self.entries)
     }
 
-    pub fn to_notification_params(&self, search: &str) -> NotificationParams {
+    pub fn to_notification_params(&self, search: &str) -> MenuParams {
         let command = self.command.to_string();
         let title = self.title.to_string();
         let entries = if self.is_prompt() {
             self.entries
                 .iter()
-                .map(|e| Entry {
+                .map(|e| MenuParamsEntry {
                     value: e.key.clone(),
                     fragments: vec![TextFragment {
                         text: e.label.clone(),
@@ -397,7 +399,7 @@ impl Menu {
             self.filter(search)
                 .iter()
                 .filter(|c| c.is_match())
-                .map(|c| Entry {
+                .map(|c| MenuParamsEntry {
                     value: c.object.key.clone(),
                     fragments: c
                         .tokenize()
@@ -415,7 +417,7 @@ impl Menu {
                 })
                 .collect()
         };
-        NotificationParams {
+        MenuParams {
             command,
             title,
             search: search.to_string(),

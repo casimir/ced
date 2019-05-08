@@ -5,7 +5,7 @@ use failure::Error;
 
 use crate::editor::Editor;
 use crate::server::Broadcaster;
-use remote::protocol::request::edit::Params as EditParams;
+use remote::protocol::requests::EditParams;
 
 const CLIENT_ID: usize = 1;
 

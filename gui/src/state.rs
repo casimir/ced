@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 
-use ced_remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
+use ced_remote::protocol::notifications;
 use ced_remote::{Connection, ConnectionEvent, Menu};
 use gtk::{ContainerExt, LabelExt, WidgetExt};
 
@@ -76,14 +76,15 @@ impl State {
         self.connection.quit();
     }
 
-    pub fn refresh_view(&self, view: &View) {
+    pub fn refresh_view(&self, view: &notifications::ViewParams) {
         for child in self.main_view.get_children() {
             self.main_view.remove(&child);
         }
 
         for item in view {
+            use notifications::ViewParamsItem::*;
             match item {
-                ViewItem::Header(header) => {
+                Header(header) => {
                     let label = gtk::Label::new(None);
                     let markup = format!(
                         "<span weight=\"bold\">{} [{}:{}]</span>",
@@ -93,7 +94,7 @@ impl State {
                     label.set_halign(gtk::Align::Start);
                     self.main_view.add(&label);
                 }
-                ViewItem::Lines(content) => {
+                Lines(content) => {
                     for line in &content.lines {
                         let label = gtk::Label::new(line.as_str());
                         label.set_halign(gtk::Align::Start);

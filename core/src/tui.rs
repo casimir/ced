@@ -14,8 +14,7 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use remote::protocol::notification::view::ParamsItem as ViewParamsItem;
-use remote::protocol::Face;
+use remote::protocol::{notifications, Face};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
@@ -117,7 +116,7 @@ impl Term {
             let mut i = 0;
             let mut content = Vec::new();
             'outer: for item in &state.view {
-                use self::ViewParamsItem::*;
+                use notifications::ViewParamsItem::*;
                 match item {
                     Header(header) => {
                         let buffer = &header.buffer;

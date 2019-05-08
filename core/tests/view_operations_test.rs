@@ -2,20 +2,20 @@ use std::path::PathBuf;
 
 mod helpers;
 
-use ced::remote::protocol;
+use ced::remote::protocol::requests;
 
 const CLIENT_ID: usize = 1;
 
-fn p_file(name: &str, path: &PathBuf) -> protocol::request::edit::Params {
-    protocol::request::edit::Params {
+fn p_file(name: &str, path: &PathBuf) -> requests::EditParams {
+    requests::EditParams {
         file: String::from(name),
         path: Some(path.display().to_string()),
         scratch: false,
     }
 }
 
-fn p_scratch(name: &str) -> protocol::request::edit::Params {
-    protocol::request::edit::Params {
+fn p_scratch(name: &str) -> requests::EditParams {
+    requests::EditParams {
         file: String::from(name),
         path: None,
         scratch: true,

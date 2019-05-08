@@ -4,8 +4,8 @@ use std::fmt;
 use std::ops::{Deref, Range};
 
 use crate::editor::Buffer;
-use remote::protocol::notification::view::{
-    Params as NotificationParams, ParamsHeader, ParamsItem, ParamsLines,
+use remote::protocol::notifications::{
+    ViewParams, ViewParamsHeader, ViewParamsItem, ViewParamsLines,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -152,19 +152,19 @@ impl View {
         self.0.len() == 0
     }
 
-    pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> NotificationParams {
+    pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> ViewParams {
         self.as_vec()
             .iter()
             .map(|item| match item {
                 ViewItem::Header((buffer, focus)) => match focus {
-                    Focus::Range(range) => ParamsItem::Header(ParamsHeader {
+                    Focus::Range(range) => ViewParamsItem::Header(ViewParamsHeader {
                         buffer: buffer.to_string(),
                         start: range.start + 1,
                         end: range.end,
                     }),
                     Focus::Whole => {
                         let b = &buffers[&buffer.to_string()];
-                        ParamsItem::Header(ParamsHeader {
+                        ViewParamsItem::Header(ViewParamsHeader {
                             buffer: buffer.to_string(),
                             start: 1,
                             end: b.line_count(),
@@ -173,7 +173,7 @@ impl View {
                 },
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
-                    ParamsItem::Lines(ParamsLines {
+                    ViewParamsItem::Lines(ViewParamsLines {
                         lines: buffer.lines(lens.focus.clone()),
                         first_line_num: lens.focus.start() + 1,
                     })
