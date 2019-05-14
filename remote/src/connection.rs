@@ -64,20 +64,20 @@ impl ConnectionState {
                     self.echo = Some(text.clone());
                     ConnectionEvent::Echo(text)
                 }),
-                "info" => {
-                    if let Ok(Some(params)) = notif.params::<notifications::InfoParams>() {
+                "info" => notif
+                    .params::<notifications::InfoParams>()
+                    .ok()
+                    .unwrap_or(None)
+                    .map(|params| {
                         self.client = params.client;
                         self.session = params.session;
-                        Some(ConnectionEvent::Info(
-                            self.client.clone(),
-                            self.session.clone(),
-                        ))
-                    } else {
-                        None
-                    }
-                }
-                "menu" => {
-                    if let Ok(Some(params)) = notif.params::<notifications::MenuParams>() {
+                        ConnectionEvent::Info(self.client.to_owned(), self.session.to_owned())
+                    }),
+                "menu" => notif
+                    .params::<notifications::MenuParams>()
+                    .ok()
+                    .unwrap_or(None)
+                    .map(|params| {
                         self.menu = Some(Menu {
                             command: params.command,
                             title: params.title,
@@ -86,19 +86,16 @@ impl ConnectionState {
                             selected: 0,
                         });
                         self.echo = None;
-                        Some(ConnectionEvent::Menu(self.menu.clone().unwrap()))
-                    } else {
-                        None
-                    }
-                }
-                "view" => {
-                    if let Ok(Some(params)) = notif.params::<notifications::ViewParams>() {
-                        self.view = params;
-                        Some(ConnectionEvent::View(self.view.clone()))
-                    } else {
-                        None
-                    }
-                }
+                        ConnectionEvent::Menu(self.menu.clone().unwrap())
+                    }),
+                "view" => notif
+                    .params::<notifications::ViewParams>()
+                    .ok()
+                    .unwrap_or(None)
+                    .map(|view| {
+                        self.view = view;
+                        ConnectionEvent::View(self.view.clone())
+                    }),
                 _ => None,
             }
         } else {
