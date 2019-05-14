@@ -26,7 +26,7 @@ use crate::server::BroadcastMessage;
 use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
-    requests,
+    requests, Face, Text, TextFragment,
 };
 use remote::response;
 
@@ -43,9 +43,9 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn broadcast<I>(&self, message: Notification, only_clients: I)
+    pub fn broadcast<C>(&self, message: Notification, only_clients: C)
     where
-        I: Into<Option<Vec<usize>>>,
+        C: Into<Option<Vec<usize>>>,
     {
         let bm = match only_clients.into() {
             Some(cs) => BroadcastMessage::for_clients(cs, message),
@@ -56,6 +56,35 @@ impl Notifier {
 
     pub fn notify(&self, client_id: usize, message: Notification) {
         self.broadcast(message, vec![client_id]);
+    }
+
+    fn echo<C>(&self, client_id: C, text: &str, face: Face)
+    where
+        C: Into<Option<usize>>,
+    {
+        let params = Text::from(TextFragment {
+            text: text.to_owned(),
+            face,
+        });
+        let notif = notifications::Echo::new(params);
+        match client_id.into() {
+            Some(id) => self.notify(id, notif),
+            None => self.broadcast(notif, None),
+        }
+    }
+
+    pub fn message<C>(&self, client_id: C, text: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        self.echo(client_id, text, Face::Default);
+    }
+
+    pub fn error<C>(&self, client_id: C, text: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        self.echo(client_id, text, Face::Error);
     }
 
     pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
@@ -99,13 +128,11 @@ impl Editor {
 
         let mut view = View::default();
         editor.core.open_scratch("*debug*");
-        editor.core.append_debug(&format!(
+        editor.core.debug(&format!(
             "command: {}",
             env::args().collect::<Vec<_>>().join(" ")
         ));
-        editor
-            .core
-            .append_debug(&format!("cwd: {}", editor.cwd.display()));
+        editor.core.debug(&format!("cwd: {}", editor.cwd.display()));
         view.add_lens(Lens {
             buffer: String::from("*debug*"),
             focus: Focus::Whole,
@@ -153,7 +180,8 @@ impl Editor {
         let msg: Request = match line.parse() {
             Ok(req) => req,
             Err(err) => {
-                error!("{}: {}", err, line);
+                self.core
+                    .error(client_id, "protocol", &format!("{}: {}", err, line));
                 return Ok(Response::invalid_request(Id::Null, line));
             }
         };
@@ -169,8 +197,11 @@ impl Editor {
             "menu-select" => response!(msg, |params| self.command_menu_select(client_id, params)),
             "keys" => response!(msg, |params| self.command_keys(client_id, params)),
             method => {
-                self.core
-                    .append_debug(&format!("unknown command: {}\n", msg));
+                self.core.error(
+                    client_id,
+                    "protocol",
+                    &format!("unknown command: {}\n", msg),
+                );
                 Ok(Response::method_not_found(msg.id, method))
             }
         }

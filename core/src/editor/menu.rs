@@ -388,10 +388,11 @@ impl Menu {
                 .iter()
                 .map(|e| MenuParamsEntry {
                     value: e.key.clone(),
-                    fragments: vec![TextFragment {
+                    text: TextFragment {
                         text: e.label.clone(),
                         face: Face::Prompt,
-                    }],
+                    }
+                    .into(),
                     description: e.description.clone(),
                 })
                 .collect()
@@ -401,7 +402,7 @@ impl Menu {
                 .filter(|c| c.is_match())
                 .map(|c| MenuParamsEntry {
                     value: c.object.key.clone(),
-                    fragments: c
+                    text: c
                         .tokenize()
                         .iter()
                         .map(|t| TextFragment {
@@ -412,7 +413,8 @@ impl Menu {
                                 Face::Default
                             },
                         })
-                        .collect(),
+                        .collect::<Vec<TextFragment>>()
+                        .into(),
                     description: c.object.description.clone(),
                 })
                 .collect()

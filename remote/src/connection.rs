@@ -8,7 +8,7 @@ use crate::jsonrpc::{ClientEvent, Id, Request};
 use crate::protocol::{
     notifications,
     requests::{self, Request as _},
-    Key,
+    Key, Text,
 };
 use crate::session::Session;
 
@@ -41,6 +41,7 @@ impl Menu {
 
 #[derive(Debug)]
 pub enum ConnectionEvent {
+    Echo(Text),
     Info(String, String),
     Menu(Menu),
     View(notifications::ViewParams),
@@ -50,6 +51,7 @@ pub enum ConnectionEvent {
 pub struct ConnectionState {
     pub client: String,
     pub session: String,
+    pub echo: Option<Text>,
     pub view: notifications::ViewParams,
     pub menu: Option<Menu>,
 }
@@ -58,6 +60,10 @@ impl ConnectionState {
     fn event_update(&mut self, event: &ClientEvent) -> Option<ConnectionEvent> {
         if let ClientEvent::Notification(notif) = event {
             match notif.method.as_str() {
+                "echo" => notif.params::<Text>().ok().unwrap_or(None).map(|text| {
+                    self.echo = Some(text.clone());
+                    ConnectionEvent::Echo(text)
+                }),
                 "info" => {
                     if let Ok(Some(params)) = notif.params::<notifications::InfoParams>() {
                         self.client = params.client;
@@ -79,6 +85,7 @@ impl ConnectionState {
                             entries: params.entries,
                             selected: 0,
                         });
+                        self.echo = None;
                         Some(ConnectionEvent::Menu(self.menu.clone().unwrap()))
                     } else {
                         None

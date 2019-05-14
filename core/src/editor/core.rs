@@ -41,6 +41,7 @@ pub enum ErrorKind {
 pub struct Core {
     state: Arc<Mutex<CoreState>>,
     notifier: Notifier,
+    pub debug_mode: bool,
 }
 
 impl Core {
@@ -52,6 +53,7 @@ impl Core {
                 views: StackMap::new(),
             })),
             notifier,
+            debug_mode: true,
         }
     }
 
@@ -110,16 +112,52 @@ impl Core {
         self.notifier.view_update(params);
     }
 
-    pub fn append_debug(&mut self, content: &str) {
-        // TODO better behavior
-        // if flag is true
-        //    create buffer if absent
-        //    append to buffer
-        if let Some(debug_buffer) = lock!(self).buffers.get_mut("*debug*") {
-            debug_buffer.append(&format!("{}\n", content));
+    fn append_to(&mut self, buffer: &str, content: &str) {
+        if !self.buffer_exists(buffer) {
+            self.open_scratch(buffer);
         }
-        log::info!("{}", content);
-        self.notify_view_update(self.clients_with_buffer("*debug*"));
+        if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
+            buf.append(&format!("{}\n", content));
+        }
+        self.notify_view_update(self.clients_with_buffer(buffer));
+    }
+
+    pub fn debug(&mut self, content: &str) {
+        log::debug!("{}", content);
+
+        if self.debug_mode {
+            self.append_to("*debug*", content);
+        }
+    }
+
+    pub fn message<C>(&mut self, client: C, content: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        let client_id = client.into();
+        let msg = if let Some(id) = client_id {
+            format!("{}|{}", id, content)
+        } else {
+            format!("*|{}", content)
+        };
+        self.append_to("*messages*", &msg);
+        self.notifier.message(client_id, content);
+    }
+
+    pub fn error<C>(&mut self, client: C, tag: &str, content: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        log::error!("{}: {}", tag, content);
+        let client_id = client.into();
+        let text = format!("{}: {}", tag, content);
+        let msg = if let Some(id) = client_id {
+            format!("{}|{}", id, text)
+        } else {
+            format!("*|{}", text)
+        };
+        self.append_to("*errors*", &msg);
+        self.notifier.error(client_id, &text);
     }
 
     pub fn add_client(&mut self, id: usize, info: &EditorInfo) {
@@ -146,13 +184,13 @@ impl Core {
             };
             state.clients.insert(id, context.clone());
         }
-        self.append_debug(&format!("new client: {}", id));
+        self.debug(&format!("new client: {}", id));
         self.notifier.info_update(id, info);
     }
 
     pub fn remove_client(&mut self, id: usize) {
         lock!(self).clients.remove(&id);
-        self.append_debug(&format!("client left: {}", id));
+        self.debug(&format!("client left: {}", id));
     }
 
     pub fn open_scratch(&mut self, name: &str) {
@@ -180,7 +218,7 @@ impl Core {
         }
 
         let view = lock!(self).views.remove(&view_id.to_owned()).unwrap();
-        self.append_debug(&format!("delete view: {}", view_id));
+        self.debug(&format!("delete view: {}", view_id));
         for buffer in view.borrow().buffers() {
             let mut has_ref = false;
             for view in lock!(self).views.values() {
@@ -191,7 +229,7 @@ impl Core {
             }
             if !has_ref {
                 lock!(self).buffers.remove(&buffer.to_owned());
-                self.append_debug(&format!("delete buffer: {}", buffer));
+                self.debug(&format!("delete buffer: {}", buffer));
             }
         }
         if lock!(self).views.is_empty() {
@@ -252,7 +290,7 @@ impl Core {
         } else if exists {
             let reloaded = lock!(self).buffers.get_mut(name).unwrap().load_from_disk();
             if reloaded {
-                self.append_debug(&format!("reloaded from disk: {}", name));
+                self.debug(&format!("reloaded from disk: {}", name));
             }
             reloaded
         } else {
@@ -268,7 +306,7 @@ impl Core {
             context.view = view;
         }
 
-        self.append_debug(&format!("edit: {}", name));
+        self.debug(&format!("edit: {}", name));
         if notify_change {
             self.notify_view_update(self.clients_with_buffer(name));
         } else {
@@ -353,9 +391,17 @@ unsafe impl Send for Core {}
 
 impl rlua::UserData for Core {
     fn add_methods<'lua, M: rlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("append_debug", |_, this, content: String| {
-            this.append_debug(&content);
+        methods.add_method_mut("debug", |_, this, content: String| {
+            this.debug(&content);
             Ok(())
-        })
+        });
+        methods.add_method_mut("message", |_, this, (client, content): (usize, String)| {
+            this.message(client, &content);
+            Ok(())
+        });
+        methods.add_method_mut("error", |_, this, (client, content): (usize, String)| {
+            this.error(client, "lua", &content);
+            Ok(())
+        });
     }
 }

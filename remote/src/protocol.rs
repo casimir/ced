@@ -3,6 +3,7 @@ pub use crate::keys::Key;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Face {
     Default,
+    Error,
     Match,
     Prompt,
     Selection,
@@ -14,9 +15,45 @@ pub struct TextFragment {
     pub face: Face,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Text(Vec<TextFragment>);
+
+impl Text {
+    pub fn len(&self) -> usize {
+        self.0.iter().map(|tf| tf.text.len()).sum()
+    }
+
+    pub fn render<F>(&self, decorator: F) -> String
+    where
+        F: Fn(&TextFragment) -> String,
+    {
+        self.0
+            .iter()
+            .map(decorator)
+            .collect::<Vec<String>>()
+            .join("")
+    }
+
+    pub fn plain(&self) -> String {
+        self.render(|tf| tf.text.to_owned())
+    }
+}
+
+impl From<Vec<TextFragment>> for Text {
+    fn from(fts: Vec<TextFragment>) -> Text {
+        Text(fts)
+    }
+}
+
+impl From<TextFragment> for Text {
+    fn from(ft: TextFragment) -> Text {
+        Text(vec![ft])
+    }
+}
+
 pub mod notifications {
     use crate::jsonrpc::Notification as JNotification;
-    use crate::protocol::TextFragment;
+    use crate::protocol::Text;
 
     pub trait Notification {
         const METHOD: &'static str;
@@ -47,6 +84,7 @@ pub mod notifications {
         };
     }
 
+    notification!(Echo, "echo", Text);
     notification!(Info, "info", InfoParams);
     notification!(Menu, "menu", MenuParams);
     notification!(View, "view", ViewParams);
@@ -61,7 +99,7 @@ pub mod notifications {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct MenuParamsEntry {
         pub value: String,
-        pub fragments: Vec<TextFragment>,
+        pub text: Text,
         pub description: Option<String>,
     }
 

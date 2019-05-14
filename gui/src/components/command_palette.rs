@@ -7,15 +7,11 @@ use gtk::{
 
 use crate::State;
 
-fn format_palette_entry(fragments: &[TextFragment]) -> String {
-    fragments
-        .iter()
-        .map(|f| match f.face {
-            Face::Match => format!("<span weight=\"bold\">{}</span>", f.text,),
-            _ => f.text.clone(),
-        })
-        .collect::<Vec<String>>()
-        .join("")
+fn format_palette_entry(ft: &TextFragment) -> String {
+    match ft.face {
+        Face::Match => format!("<span weight=\"bold\">{}</span>", ft.text,),
+        _ => ft.text.to_owned(),
+    }
 }
 
 pub struct CommandPalette {
@@ -119,7 +115,7 @@ impl CommandPalette {
         for entry in &menu.entries {
             let label = gtk::Label::new(None);
             label.set_halign(gtk::Align::Start);
-            let markup = format_palette_entry(&entry.fragments);
+            let markup = entry.text.render(format_palette_entry);
             match &entry.description {
                 Some(desc) => {
                     let with_desc = format!("{} ({})", markup, desc);

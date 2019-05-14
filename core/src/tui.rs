@@ -14,12 +14,25 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use remote::protocol::{notifications, Face};
+use remote::protocol::{notifications, Face, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
     Input(Key),
     Resize(u16, u16),
+}
+
+fn format_text(tf: &TextFragment) -> String {
+    match tf.face {
+        Face::Default => tf.text.to_owned(),
+        Face::Error => format!(
+            "{}{}{}",
+            termion::color::Fg(termion::color::Red),
+            tf.text,
+            termion::color::Fg(termion::color::Reset)
+        ),
+        _ => tf.text.to_owned(),
+    }
 }
 
 pub struct Term {
@@ -76,11 +89,12 @@ impl Term {
         });
         let messages = self.connection.connect();
         while !self.exit_pending {
+            use ConnectionEvent::*;
             select! {
                 recv(messages) -> msg => match msg {
                     Ok(ev) => match ev {
-                        ConnectionEvent::Info(_, _)|ConnectionEvent::View(_) => self.draw_view(),
-                        ConnectionEvent::Menu(menu) => self.draw_menu(&menu),
+                        Echo(_)|Info(_, _)|View(_) => self.draw_view(),
+                        Menu(menu) => self.draw_menu(&menu),
                     }
                     Err(_) => break,
                 },
@@ -145,12 +159,15 @@ impl Term {
         }
 
         let client_label = format!("[{}@{}]", state.client, state.session);
-        let padding = " ".repeat(width as usize - client_label.len());
+        let padding_len = width as usize - client_label.len();
+        let echo = state.echo.unwrap_or_default();
+        let padding = " ".repeat(padding_len - echo.len());
         write!(
             self.screen,
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}",
             Goto(1, height),
             termion::style::Invert,
+            echo.render(format_text),
             padding,
             client_label,
             termion::style::Reset
@@ -182,20 +199,16 @@ impl Term {
                 if i == display_size {
                     break;
                 }
-                let item = &menu.entries[i]
-                    .fragments
-                    .iter()
-                    .map(|f| match f.face {
-                        Face::Match => format!(
-                            "{}{}{}",
-                            termion::style::Underline,
-                            f.text,
-                            termion::style::NoUnderline,
-                        ),
-                        _ => f.text.clone(),
-                    })
-                    .collect::<Vec<String>>()
-                    .join("");
+                let item = &menu.entries[i].text.render(|ft| match ft.face {
+                    Face::Match => format!(
+                        "{}{}{}",
+                        termion::style::Underline,
+                        ft.text,
+                        termion::style::NoUnderline,
+                    ),
+                    _ => ft.text.to_owned(),
+                });
+
                 let item_view = if item.len() > width as usize {
                     &item[..width as usize]
                 } else {
