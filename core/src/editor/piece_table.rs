@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::datastruct::{Consecutive, RBNode, RBTree};
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::Range;
+use rbtset::{Consecutive, Node, RBTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct Piece {
@@ -146,15 +146,15 @@ enum Action {
 pub struct PieceTable {
     original: String,
     added: String,
-    pieces: RBTree<Piece>,
+    pieces: RBTreeSet<Piece>,
     last_action: Option<Action>,
-    undos: Vec<RBTree<Piece>>,
-    redos: Vec<RBTree<Piece>>,
+    undos: Vec<RBTreeSet<Piece>>,
+    redos: Vec<RBTreeSet<Piece>>,
 }
 
 impl PieceTable {
     pub fn with_text(text: &str) -> PieceTable {
-        let mut pieces = RBTree::new();
+        let mut pieces = RBTreeSet::new();
         pieces.insert(Piece {
             offset: 0,
             start: 0,
@@ -175,7 +175,7 @@ impl PieceTable {
         PieceTable {
             original: String::new(),
             added: String::new(),
-            pieces: RBTree::new(),
+            pieces: RBTreeSet::new(),
             last_action: None,
             undos: Vec::new(),
             redos: Vec::new(),
@@ -250,10 +250,10 @@ impl PieceTable {
 
     pub fn text_range(&self, range: Range) -> Option<String> {
         self.pieces
-            .get(&Piece::offset(range.start()))
+            .get_node(&Piece::offset(range.start()))
             .map(|start_piece| {
-                start_piece
-                    .values()
+                self.pieces
+                    .values_from(&start_piece)
                     .take_while(|p| p.offset < range.end())
                     .map(|p| {
                         let buffer = if p.original {
@@ -291,9 +291,9 @@ impl PieceTable {
         });
     }
 
-    fn shift_offset_after(&mut self, node: &RBNode<Piece>, value: i64) {
+    fn shift_offset_after(&mut self, node: &Node<Piece>, value: i64) {
         if value != 0 {
-            for n in node.iter().skip(1) {
+            for n in self.pieces.iter_from(node).skip(1) {
                 n.apply(|p| p.offset = (p.offset as i64 + value) as usize);
             }
         }
@@ -301,7 +301,7 @@ impl PieceTable {
 
     pub fn insert(&mut self, offset: usize, text: &str) {
         self.action(Action::Insert);
-        if let Some(ref mut node) = self.pieces.get(&Piece::offset(offset)) {
+        if let Some(ref mut node) = self.pieces.get_node(&Piece::offset(offset)) {
             let added_start = self.added.len();
             self.added.push_str(text);
             let new = Piece {
@@ -312,7 +312,7 @@ impl PieceTable {
             };
             let sub_pieces = node.data().split(new.offset, new.length);
             self.shift_offset_after(node, new.length as i64);
-            self.pieces.delete_node(node);
+            self.pieces.remove_node(node);
             if let Some(p) = sub_pieces.0 {
                 self.pieces.insert(p);
             }
@@ -325,9 +325,10 @@ impl PieceTable {
 
     pub fn delete(&mut self, range: Range) {
         self.action(Action::Delete);
-        if let Some(start_node) = self.pieces.get(&Piece::offset(range.start())) {
-            let pieces = start_node
-                .values()
+        if let Some(start_node) = self.pieces.get_node(&Piece::offset(range.start())) {
+            let pieces = self
+                .pieces
+                .values_from(&start_node)
                 .take_while(|p| p.offset < range.end())
                 .collect::<Vec<Piece>>();
             let (head, _) = pieces[0].truncate(range.start(), range.len());
@@ -398,7 +399,7 @@ mod tests {
         pieces.insert(0, "🦊 ");
         pieces.insert(56, ", so quick");
 
-        print!("{}", pieces.pieces.dump_as_dot());
+        print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
             pieces.text(),
             "🦊 the quick brown fox jumps over the lazy dog 🐶, so quick"
@@ -426,7 +427,7 @@ mod tests {
         );
         pieces.delete(Range::new(28, 5)); // "|lazy |"
 
-        print!("{}", pieces.pieces.dump_as_dot());
+        print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
             pieces.text(),
             "🦊 the fox jumps over the dog 🐶, so quick"
@@ -446,7 +447,7 @@ mod tests {
         pieces.replace(Range::new(9, 11), "sneaky"); // "quick brown| "
         pieces.replace(Range::new(35, 8), "mighty bear"); // "|lazy |dog|"
 
-        print!("{}", pieces.pieces.dump_as_dot());
+        print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
             pieces.text(),
             "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick"
@@ -466,7 +467,7 @@ mod tests {
         let new_text = "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick";
         pieces.apply_diff(new_text);
 
-        print!("{}", pieces.pieces.dump_as_dot());
+        print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(pieces.text(), new_text);
     }
 

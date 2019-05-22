@@ -19,7 +19,7 @@ term = ["termion"]
 
 [dependencies]
 ced-remote = { path = "../remote" }
-clap = "2.32"
+clap = "2.33"
 crossbeam-channel = "0.3"
 dirs = "1.0"
 env_logger = "0.6"
@@ -29,19 +29,13 @@ human-panic = "1.0"
 ignore = "0.4"
 log = "0.4"
 mio = "0.6"
+rbtset = "1.0"
 regex = "1.1"
-rlua = "0.16.2"
+rlua = "0.16"
 rustyline = "3.0.0" # for repl example only
 
 [target.'cfg(unix)'.dependencies]
 termion = { version = "1.5", optional = true }
 
 [dev-dependencies]
-criterion = "0.2"
-itertools = "0.7"
-lazy_static = "1.2"
-rand = "0.6"
-
-[[bench]]
-name = "rbtree"
-harness = false
+itertools = "0.8"

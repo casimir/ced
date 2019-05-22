@@ -6,10 +6,10 @@ use std::sync::{Arc, Mutex};
 
 use failure::Error;
 
-use crate::datastruct::StackMap;
 use crate::editor::range::Range;
 use crate::editor::view::{Focus, Lens, View};
 use crate::editor::{Buffer, EditorInfo, Notifier};
+use crate::stackmap::StackMap;
 
 #[derive(Clone, Debug)]
 struct ClientContext {
