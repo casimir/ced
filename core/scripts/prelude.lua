@@ -1,5 +1,17 @@
-editor:append_debug("init lua state...")
+-- http://lua-users.org/wiki/ObjectOrientationTutorial
 
-function key_handler (client, key)
-    editor:append_debug('client "'..client..'" sent key "'..key..'"')
-end
+keys = require "keys"
+
+clients = {
+    new = function(id)
+        return {
+            status_line = {
+                client = {index = 100}
+            },
+            key_handler = keys.PrintHandler.new(id)
+        }
+    end
+}
+
+editor:debug("lua state ready")
+editor:debug("lua path: " .. package.path)

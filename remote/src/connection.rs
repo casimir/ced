@@ -44,6 +44,7 @@ pub enum ConnectionEvent {
     Echo(Text),
     Info(String, String),
     Menu(Menu),
+    Status(notifications::StatusParams),
     View(notifications::ViewParams),
 }
 
@@ -52,6 +53,7 @@ pub struct ConnectionState {
     pub client: String,
     pub session: String,
     pub echo: Option<Text>,
+    pub status: notifications::StatusParams,
     pub view: notifications::ViewParams,
     pub menu: Option<Menu>,
 }
@@ -87,6 +89,14 @@ impl ConnectionState {
                         });
                         self.echo = None;
                         ConnectionEvent::Menu(self.menu.clone().unwrap())
+                    }),
+                "status" => notif
+                    .params::<notifications::StatusParams>()
+                    .ok()
+                    .unwrap_or(None)
+                    .map(|params| {
+                        self.status = params;
+                        ConnectionEvent::Status(self.status.clone())
                     }),
                 "view" => notif
                     .params::<notifications::ViewParams>()

@@ -148,12 +148,49 @@ impl Editor {
         editor
             .lua
             .context(|lua: rlua::Context| {
+                // TODO handle runtime path correctly
+                let rtp = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts");
+                lua.load(&format!(
+                    "package.path = package.path .. ';{}'",
+                    rtp.join("?.lua").display().to_string().replace(r"\", "/")
+                ))
+                .exec()?;
                 lua.globals().set("editor", lua_pipe)?;
-                lua.load(include_str!("../../scripts/prelude.lua")).exec()
+                lua.load("require 'prelude'").exec()
             })
             .expect("load prelude script");
 
         editor
+    }
+
+    fn send_status_update(&self, client_id: usize) {
+        // TODO error handling maybe?
+        let mut params = self.lua.context(|lua: rlua::Context| {
+            let config = lua
+                .load(&format!("clients[{}].status_line", client_id))
+                .eval::<HashMap<String, rlua::Table>>()
+                .expect("get status line config");
+            config
+                .iter()
+                .map(|(k, v)| match k.as_str() {
+                    "client" => notifications::StatusParamsItem {
+                        index: v.get("index").expect("get status item index"),
+                        text: format!("[{}@{}]", client_id, self.session_name).into(),
+                    },
+                    _ => notifications::StatusParamsItem {
+                        index: v.get("index").expect("get status item index"),
+                        text: v
+                            .get::<_, String>("text")
+                            .expect("get status item text")
+                            .into(),
+                    },
+                })
+                .collect::<notifications::StatusParams>()
+        });
+        params.sort_by(|a, b| a.index.cmp(&b.index));
+        self.core
+            .get_notifier()
+            .notify(client_id, notifications::Status::new(params))
     }
 
     pub fn add_client(&mut self, id: usize) {
@@ -164,10 +201,21 @@ impl Editor {
             views: &[],
         };
         self.core.add_client(id, &info);
+        self.lua.context(|lua: rlua::Context| {
+            lua.load(&format!("clients[{0}] = clients.new({0})", id))
+                .exec()
+                .expect("set client context");
+        });
+        self.send_status_update(id);
     }
 
     pub fn remove_client(&mut self, id: usize) {
         self.core.remove_client(id);
+        self.lua.context(|lua: rlua::Context| {
+            lua.load(&format!("clients[{}] = nil", id))
+                .exec()
+                .expect("unset client context");
+        });
     }
 
     pub fn removed_clients(&mut self) -> Vec<usize> {
@@ -341,14 +389,27 @@ impl Editor {
     ) -> Result<<requests::Keys as requests::Request>::Result, JError> {
         self.lua
             .context(|lua: rlua::Context| {
-                let globals = lua.globals();
-                let handler: rlua::Function = globals.get("key_handler")?;
-                    handler.call((client_id, key.as_str()))?;
                 for key in params {
+                    // TODO pass object instead of string
+                    let src = format!(
+                        "clients[{}].key_handler:handle('{}')",
+                        client_id,
+                        key.to_string()
+                    );
+                    let result = lua.load(&src).eval::<rlua::Table>()?;
+                    if result
+                        .get::<_, bool>("redraw_status")
+                        .ok()
+                        .unwrap_or_default()
+                    {
+                        self.send_status_update(client_id);
+                    }
                 }
                 Ok(())
             })
-            .map_err(|e: rlua::Error| JError::internal_error(&e.to_string()))?;
-        Ok(())
+            .map_err(|e: rlua::Error| {
+                self.core.error(client_id, "key handler", &e.to_string());
+                JError::internal_error(&e.to_string())
+            })
     }
 }

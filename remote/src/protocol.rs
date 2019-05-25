@@ -40,14 +40,23 @@ impl Text {
 }
 
 impl From<Vec<TextFragment>> for Text {
-    fn from(fts: Vec<TextFragment>) -> Text {
-        Text(fts)
+    fn from(tfs: Vec<TextFragment>) -> Text {
+        Text(tfs)
     }
 }
 
 impl From<TextFragment> for Text {
-    fn from(ft: TextFragment) -> Text {
-        Text(vec![ft])
+    fn from(tf: TextFragment) -> Text {
+        Text(vec![tf])
+    }
+}
+
+impl From<String> for Text {
+    fn from(s: String) -> Text {
+        Text(vec![TextFragment {
+            text: s.to_owned(),
+            face: Face::Default,
+        }])
     }
 }
 
@@ -87,6 +96,7 @@ pub mod notifications {
     notification!(Echo, "echo", Text);
     notification!(Info, "info", InfoParams);
     notification!(Menu, "menu", MenuParams);
+    notification!(Status, "status", StatusParams);
     notification!(View, "view", ViewParams);
 
     #[derive(Serialize, Deserialize)]
@@ -123,6 +133,14 @@ pub mod notifications {
         pub lines: Vec<String>,
         pub first_line_num: usize,
     }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct StatusParamsItem {
+        pub index: isize,
+        pub text: Text,
+    }
+
+    pub type StatusParams = Vec<StatusParamsItem>;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(tag = "type")]

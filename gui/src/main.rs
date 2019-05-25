@@ -35,6 +35,9 @@ fn main() {
                         ConnectionEvent::Menu(menu) => {
                             state.refresh_command_palette(&menu, window_id)
                         }
+                        ConnectionEvent::Status(_) => {
+                            // TODO
+                        }
                         ConnectionEvent::View(view) => state.refresh_view(&view),
                     }
                 }

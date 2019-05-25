@@ -93,8 +93,9 @@ impl Term {
             select! {
                 recv(messages) -> msg => match msg {
                     Ok(ev) => match ev {
-                        Echo(_)|Info(_, _)|View(_) => self.draw_view(),
                         Menu(menu) => self.draw_menu(&menu),
+                        Echo(_)|Status(_)|View(_) => self.draw_view(),
+                        Info(_, _) => {},
                     }
                     Err(_) => break,
                 },
@@ -123,7 +124,7 @@ impl Term {
 
     fn draw_view(&mut self) {
         let (width, height) = self.last_size;
-        write!(self.screen, "{}", termion::clear::All,).unwrap();
+        write!(self.screen, "{}", termion::clear::All).unwrap();
 
         let state = self.connection.state();
         {
@@ -158,21 +159,49 @@ impl Term {
             write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
         }
 
-        let client_label = format!("[{}@{}]", state.client, state.session);
-        let padding_len = width as usize - client_label.len();
         let echo = state.echo.unwrap_or_default();
-        let padding = " ".repeat(padding_len - echo.len());
-        write!(
-            self.screen,
-            "{}{}{}{}{}{}",
-            Goto(1, height),
-            termion::style::Invert,
-            echo.render(format_text),
-            padding,
-            client_label,
-            termion::style::Reset
-        )
-        .unwrap();
+        let status = state
+            .status
+            .iter()
+            .map(|item| item.text.plain())
+            .collect::<Vec<String>>()
+            .join("·");
+        if echo.len() >= width as usize {
+            write!(
+                self.screen,
+                "{}{}{}{}",
+                Goto(1, height),
+                termion::style::Invert,
+                echo.render(format_text),
+                termion::style::Reset
+            )
+            .unwrap();
+        } else if echo.len() + status.len() >= width as usize {
+            let skip = echo.len() - width as usize + 1;
+            write!(
+                self.screen,
+                "{}{}{} {}{}",
+                Goto(1, height),
+                termion::style::Invert,
+                echo.render(format_text),
+                &status[skip..],
+                termion::style::Reset
+            )
+            .unwrap();
+        } else {
+            let padding = width as usize - echo.len() - status.len();
+            write!(
+                self.screen,
+                "{}{}{}{}{}{}",
+                Goto(1, height),
+                termion::style::Invert,
+                echo.render(format_text),
+                " ".repeat(padding),
+                status,
+                termion::style::Reset
+            )
+            .unwrap();
+        }
         self.flush();
     }
 
