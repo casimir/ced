@@ -103,6 +103,23 @@ impl Notifier {
     }
 }
 
+struct LuaResultEvents {
+    redraw_status: bool,
+}
+
+impl<'lua> From<rlua::Table<'lua>> for LuaResultEvents {
+    fn from(table: rlua::Table<'lua>) -> LuaResultEvents {
+        macro_rules! bool {
+            ($t:ident, $k:expr) => {
+                $t.get::<_, bool>($k).ok().unwrap_or_default()
+            };
+        }
+        LuaResultEvents {
+            redraw_status: bool!(table, "redraw_status"),
+        }
+    }
+}
+
 pub struct Editor {
     session_name: String,
     cwd: PathBuf,
@@ -163,34 +180,35 @@ impl Editor {
         editor
     }
 
-    fn send_status_update(&self, client_id: usize) {
-        // TODO error handling maybe?
-        let mut params = self.lua.context(|lua: rlua::Context| {
+    fn send_status_update(&mut self, client_id: usize) {
+        let items: rlua::Result<_> = self.lua.context(|lua: rlua::Context| {
             let config = lua
                 .load(&format!("clients[{}].status_line", client_id))
-                .eval::<HashMap<String, rlua::Table>>()
-                .expect("get status line config");
-            config
-                .iter()
-                .map(|(k, v)| match k.as_str() {
+                .eval::<HashMap<String, rlua::Table>>()?;
+            let mut items = Vec::new();
+            for (k, v) in config {
+                items.push(match k.as_str() {
                     "client" => notifications::StatusParamsItem {
-                        index: v.get("index").expect("get status item index"),
+                        index: v.get("index")?,
                         text: format!("[{}@{}]", client_id, self.session_name).into(),
                     },
                     _ => notifications::StatusParamsItem {
-                        index: v.get("index").expect("get status item index"),
-                        text: v
-                            .get::<_, String>("text")
-                            .expect("get status item text")
-                            .into(),
+                        index: v.get("index")?,
+                        text: v.get::<_, String>("text")?.into(),
                     },
                 })
-                .collect::<notifications::StatusParams>()
+            }
+            Ok(items)
         });
-        params.sort_by(|a, b| a.index.cmp(&b.index));
-        self.core
-            .get_notifier()
-            .notify(client_id, notifications::Status::new(params))
+        match items {
+            Ok(mut params) => {
+                params.sort_by(|a, b| a.index.cmp(&b.index));
+                self.core
+                    .get_notifier()
+                    .notify(client_id, notifications::Status::new(params))
+            }
+            Err(e) => self.core.error(client_id, "status line", &e.to_string()),
+        }
     }
 
     pub fn add_client(&mut self, id: usize) {
@@ -222,6 +240,12 @@ impl Editor {
         let ids: Vec<usize> = self.stopped_clients.iter().cloned().collect();
         self.stopped_clients.clear();
         ids
+    }
+
+    fn dispatch_lua_result(&mut self, client_id: usize, result: LuaResultEvents) {
+        if result.redraw_status {
+            self.send_status_update(client_id);
+        }
     }
 
     pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, Error> {
@@ -387,29 +411,26 @@ impl Editor {
         client_id: usize,
         params: &<requests::Keys as requests::Request>::Params,
     ) -> Result<<requests::Keys as requests::Request>::Result, JError> {
-        self.lua
-            .context(|lua: rlua::Context| {
-                for key in params {
-                    // TODO pass object instead of string
-                    let src = format!(
-                        "clients[{}].key_handler:handle('{}')",
-                        client_id,
-                        key.to_string()
-                    );
-                    let result = lua.load(&src).eval::<rlua::Table>()?;
-                    if result
-                        .get::<_, bool>("redraw_status")
-                        .ok()
-                        .unwrap_or_default()
-                    {
-                        self.send_status_update(client_id);
-                    }
+        for key in params {
+            let result = self.lua.context(|lua: rlua::Context| {
+                // TODO pass object instead of string
+                let src = format!(
+                    "clients[{}].key_handler:handle('{}')",
+                    client_id,
+                    key.to_string()
+                );
+                lua.load(&src)
+                    .eval::<rlua::Table>()
+                    .map(LuaResultEvents::from)
+            });
+            match result {
+                Ok(res) => self.dispatch_lua_result(client_id, res),
+                Err(e) => {
+                    self.core.error(client_id, "key handler", &e.to_string());
+                    return Err(JError::internal_error(&e.to_string()));
                 }
-                Ok(())
-            })
-            .map_err(|e: rlua::Error| {
-                self.core.error(client_id, "key handler", &e.to_string());
-                JError::internal_error(&e.to_string())
-            })
+            }
+        }
+        Ok(())
     }
 }
