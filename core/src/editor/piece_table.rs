@@ -1,4 +1,5 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
+use std::collections::BTreeSet;
 
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::Range;
@@ -143,10 +144,26 @@ enum Action {
     Insert,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Coord {
+    l: usize,
+    c: usize,
+}
+
+impl From<(usize, usize)> for Coord {
+    fn from(tuple: (usize, usize)) -> Coord {
+        Coord {
+            l: tuple.0,
+            c: tuple.1,
+        }
+    }
+}
+
 pub struct PieceTable {
     original: String,
     added: String,
     pieces: RBTreeSet<Piece>,
+    newlines: BTreeSet<usize>,
     last_action: Option<Action>,
     undos: Vec<RBTreeSet<Piece>>,
     redos: Vec<RBTreeSet<Piece>>,
@@ -155,6 +172,7 @@ pub struct PieceTable {
 impl PieceTable {
     pub fn with_text(text: &str) -> PieceTable {
         let mut pieces = RBTreeSet::new();
+        let newlines = text.match_indices('\n').map(|(i, _)| i).collect();
         pieces.insert(Piece {
             offset: 0,
             start: 0,
@@ -165,6 +183,7 @@ impl PieceTable {
             original: String::from(text),
             added: String::new(),
             pieces,
+            newlines,
             last_action: None,
             undos: Vec::new(),
             redos: Vec::new(),
@@ -176,10 +195,19 @@ impl PieceTable {
             original: String::new(),
             added: String::new(),
             pieces: RBTreeSet::new(),
+            newlines: BTreeSet::new(),
             last_action: None,
             undos: Vec::new(),
             redos: Vec::new(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.pieces.values().fold(0, |acc, p| acc + p.length)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pieces.is_empty()
     }
 
     fn commit(&mut self) {
@@ -273,6 +301,74 @@ impl PieceTable {
         self.text().lines().map(ToOwned::to_owned).collect()
     }
 
+    pub fn offset_to_coord(&self, offset: usize) -> Coord {
+        let offset = min(offset, self.len());
+        let preceding_lines = self.newlines.range(..offset).collect::<Vec<_>>();
+        let line_offset = preceding_lines.last().map_or(0, |&&i| i);
+        Coord {
+            l: preceding_lines.len() + 1,
+            c: offset - line_offset,
+        }
+    }
+
+    pub fn coord_to_offset(&self, coord: Coord) -> usize {
+        if coord.l == 1 {
+            min(coord.c - 1, self.line_length(1))
+        } else if coord.l - 2 <= self.newlines.len() {
+            let mut nls = self.newlines.iter().collect::<Vec<_>>();
+            nls.sort_unstable();
+            let max_col = if coord.l <= nls.len() {
+                *nls[coord.l - 1]
+            } else {
+                self.len()
+            };
+            min(*nls[coord.l - 2] + coord.c, max_col)
+        } else {
+            self.len()
+        }
+    }
+
+    pub fn line_length(&self, index: usize) -> usize {
+        let mut nls = self.newlines.iter().collect::<Vec<_>>();
+        nls.sort_unstable();
+        if nls.is_empty() {
+            0
+        } else if index == 1 {
+            *nls[0]
+        } else if index - 1 < nls.len() {
+            nls[index - 1] - nls[index - 2] - 1
+        } else if index - 1 == nls.len() {
+            self.len() - nls[index - 2] - 1
+        } else {
+            0
+        }
+    }
+
+    pub fn longest_line(&self) -> (usize, usize) {
+        let mut longest = (0, 0);
+        for i in 1..=(self.newlines.len() + 1) {
+            let len = self.line_length(i);
+            if longest.1 < len {
+                longest = (i, len);
+            }
+        }
+        longest
+    }
+
+    pub fn lines_range<C>(&self, from: C, to: C) -> Vec<String>
+    where
+        C: Into<Coord>,
+    {
+        let offset = self.coord_to_offset(from.into());
+        let length = self.coord_to_offset(to.into()) - offset;
+        let range = Range::new(offset, length);
+        self.text_range(range)
+            .unwrap_or_default()
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
     pub fn append(&mut self, text: &str) {
         self.action(Action::Insert);
         let offset = if let Some(last) = self.pieces.last() {
@@ -289,6 +385,8 @@ impl PieceTable {
             length: text.len(),
             original: false,
         });
+        self.newlines
+            .extend(text.match_indices('\n').map(|(i, _)| offset + i))
     }
 
     fn shift_offset_after(&mut self, node: &Node<Piece>, value: i64) {
@@ -318,6 +416,16 @@ impl PieceTable {
             }
             self.pieces.insert(new);
             self.pieces.insert(sub_pieces.1);
+            self.newlines = self
+                .newlines
+                .iter()
+                .map(|&i| if offset <= i { i + new.length } else { i })
+                .collect();
+            self.newlines.extend(
+                text.match_indices('\n')
+                    .map(|(i, _)| i + offset)
+                    .collect::<Vec<_>>(),
+            );
         } else {
             self.append(text);
         }
@@ -349,6 +457,19 @@ impl PieceTable {
                 start_node.apply(|n| n.offset -= range.len());
                 self.shift_offset_after(&start_node, -(range.len() as i64));
             }
+            self.newlines = self
+                .newlines
+                .iter()
+                .filter_map(|&i| {
+                    if range.start() <= i && i < range.end() {
+                        None
+                    } else if range.end() <= i {
+                        Some(i - range.len())
+                    } else {
+                        Some(i)
+                    }
+                })
+                .collect();
         }
     }
 
@@ -534,5 +655,100 @@ mod tests {
         assert_eq!(pieces.text(), redeleted);
         assert!(pieces.redo());
         assert_eq!(pieces.text(), new_text);
+    }
+
+    #[test]
+    fn newline_caching() {
+        let mut pieces = PieceTable::new();
+        assert!(pieces.newlines.is_empty());
+        pieces.append("first line\nsecond line\nthe end");
+        assert_eq!(
+            pieces.newlines,
+            [10, 22].iter().map(|&i| i as usize).collect()
+        );
+        pieces.insert(11, "surprise line\n");
+        assert_eq!(
+            pieces.newlines,
+            [10, 24, 36].iter().map(|&i| i as usize).collect()
+        );
+        pieces.replace(Range::new(11, 8), "another");
+        assert_eq!(
+            pieces.newlines,
+            [10, 23, 35].iter().map(|&i| i as usize).collect()
+        );
+        pieces.delete(Range::new(11, 24));
+        assert_eq!(
+            pieces.newlines,
+            [10, 11].iter().map(|&i| i as usize).collect()
+        );
+    }
+
+    #[test]
+    fn line_length() {
+        let pieces = PieceTable::with_text("first line\nsecond line\nthe end");
+        assert_eq!(pieces.line_length(1), 10);
+        assert_eq!(pieces.line_length(2), 11);
+        assert_eq!(pieces.line_length(3), 7);
+        assert_eq!(pieces.line_length(4), 0);
+
+        assert_eq!(pieces.longest_line(), (2, 11));
+    }
+
+    #[test]
+    fn coordinates() {
+        let text = r#"Vous qui venez ici
+dans une humble posture
+
+De vos flancs alourdis
+décharger le fardeau
+
+Veuillez quand vous aurez
+Soulagé la nature
+
+Et déposé dans l'urne
+un modeste cadeau
+
+Epancher dans l'amphore
+un courant d'onde pure
+
+Et sur l'autel fumant
+placer pour chapiteau
+
+Le couvercle arrondi
+dont l'auguste jointure
+
+Aux parfums indiscrets
+doit servir de tombeau"#;
+
+        let pieces = PieceTable::with_text(text);
+        assert_eq!(
+            pieces.lines_range((1, 6), (1, 15)),
+            vec!["qui venez".to_owned()]
+        );
+        assert_eq!(
+            pieces.lines_range((1, 1), (2, 1)),
+            vec!["Vous qui venez ici".to_owned()]
+        );
+        assert_eq!(
+            pieces.lines_range((4, 1), (6, 1)),
+            vec![
+                "De vos flancs alourdis".to_owned(),
+                "décharger le fardeau".to_owned(),
+            ]
+        );
+        assert_eq!(
+            pieces.lines_range((7, 10), (8, 9)),
+            vec!["quand vous aurez".to_owned(), "Soulagé".to_owned()]
+        );
+
+        let coord = (5, 5).into();
+        assert_eq!(pieces.offset_to_coord(pieces.coord_to_offset(coord)), coord);
+
+        assert_eq!(
+            pieces.offset_to_coord(pieces.coord_to_offset((3, 999).into())),
+            Coord { l: 3, c: 1 }
+        );
+
+        assert_eq!(pieces.coord_to_offset((9999, 9999).into()), pieces.len());
     }
 }
