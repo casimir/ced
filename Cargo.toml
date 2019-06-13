@@ -4,5 +4,4 @@ members = [
     "./core",
     "./gui",
     "./remote",
-    "./remote-ffi",
 ]
