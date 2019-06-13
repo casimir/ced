@@ -32,7 +32,6 @@ mio = "0.6"
 rbtset = "1.0"
 regex = "1.1"
 rlua = "0.16"
-rustyline = "3.0.0" # for repl example only
 
 [target.'cfg(unix)'.dependencies]
 termion = { version = "1.5", optional = true }
