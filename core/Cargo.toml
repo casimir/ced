@@ -3,14 +3,11 @@ name = "ced"
 version = "0.1.0"
 authors = ["Martin Chaine <martin@casimir.me>"]
 edition = "2018"
+default-run = "ced"
 
 [lib]
 name = "ced"
 path = "src/lib.rs"
-
-[[bin]]
-name = "ced"
-path = "src/main.rs"
 
 [features]
 default = ["term"]
