@@ -3,8 +3,6 @@ extern crate ced;
 extern crate clap;
 extern crate env_logger;
 extern crate failure;
-#[macro_use]
-extern crate human_panic;
 
 use clap::{App, Arg};
 use failure::Error;
@@ -48,7 +46,6 @@ impl Mode {
 }
 
 fn main() -> Result<(), Error> {
-    setup_panic!();
     env_logger::init();
 
     let matches = App::new("ced")
