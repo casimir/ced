@@ -52,7 +52,7 @@ impl Term {
         };
         term.cursor_visible(false);
         for fname in filenames {
-            term.connection.edit(fname, true);
+            term.connection.edit(fname, false);
         }
         Ok(term)
     }
