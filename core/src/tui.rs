@@ -31,6 +31,12 @@ fn format_text(tf: &TextFragment) -> String {
             tf.text,
             termion::color::Fg(termion::color::Reset)
         ),
+        Face::Selection => format!(
+            "{}{}{}",
+            termion::style::Invert,
+            tf.text,
+            termion::style::NoInvert,
+        ),
         _ => tf.text.to_owned(),
     }
 }
@@ -145,10 +151,11 @@ impl Term {
                             if i == (height - 1) {
                                 break 'outer;
                             }
-                            let line_view = if line.len() > width as usize {
-                                &line[..width as usize]
+                            let rendered = line.render(format_text);
+                            let line_view = if line.text_len() > width as usize {
+                                &rendered[..width as usize]
                             } else {
-                                &line
+                                &rendered
                             };
                             content.push(line_view.to_string());
                             i += 1;
@@ -166,7 +173,7 @@ impl Term {
             .map(|item| item.text.plain())
             .collect::<Vec<String>>()
             .join("·");
-        if echo.len() >= width as usize {
+        if echo.text_len() >= width as usize {
             write!(
                 self.screen,
                 "{}{}{}{}",
@@ -176,8 +183,8 @@ impl Term {
                 termion::style::Reset
             )
             .unwrap();
-        } else if echo.len() + status.len() >= width as usize {
-            let skip = echo.len() - width as usize + 1;
+        } else if echo.text_len() + status.len() >= width as usize {
+            let skip = echo.text_len() - width as usize + 1;
             write!(
                 self.screen,
                 "{}{}{} {}{}",
@@ -189,7 +196,7 @@ impl Term {
             )
             .unwrap();
         } else {
-            let padding = width as usize - echo.len() - status.len();
+            let padding = width as usize - echo.text_len() - status.len();
             write!(
                 self.screen,
                 "{}{}{}{}{}{}",

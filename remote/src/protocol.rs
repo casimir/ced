@@ -1,6 +1,6 @@
 pub use crate::keys::Key;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Face {
     Default,
     Error,
@@ -9,56 +9,14 @@ pub enum Face {
     Selection,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TextFragment {
-    pub text: String,
-    pub face: Face,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Text(Vec<TextFragment>);
-
-impl Text {
-    pub fn len(&self) -> usize {
-        self.0.iter().map(|tf| tf.text.len()).sum()
-    }
-
-    pub fn render<F>(&self, decorator: F) -> String
-    where
-        F: Fn(&TextFragment) -> String,
-    {
-        self.0
-            .iter()
-            .map(decorator)
-            .collect::<Vec<String>>()
-            .join("")
-    }
-
-    pub fn plain(&self) -> String {
-        self.render(|tf| tf.text.to_owned())
+impl Default for Face {
+    fn default() -> Face {
+        Face::Default
     }
 }
 
-impl From<Vec<TextFragment>> for Text {
-    fn from(tfs: Vec<TextFragment>) -> Text {
-        Text(tfs)
-    }
-}
-
-impl From<TextFragment> for Text {
-    fn from(tf: TextFragment) -> Text {
-        Text(vec![tf])
-    }
-}
-
-impl From<String> for Text {
-    fn from(s: String) -> Text {
-        Text(vec![TextFragment {
-            text: s.to_owned(),
-            face: Face::Default,
-        }])
-    }
-}
+pub type Text = ornament::Text<Face>;
+pub type TextFragment = ornament::TextFragment<Face>;
 
 pub mod notifications {
     use crate::jsonrpc::Notification as JNotification;
@@ -130,7 +88,7 @@ pub mod notifications {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct ViewParamsLines {
-        pub lines: Vec<String>,
+        pub lines: Vec<Text>,
         pub first_line_num: usize,
     }
 

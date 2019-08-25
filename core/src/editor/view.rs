@@ -1,11 +1,15 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
+use crate::editor::range::Range as _;
+use crate::editor::selection::Selection;
 use crate::editor::Buffer;
-use remote::protocol::notifications::{
-    ViewParams, ViewParamsHeader, ViewParamsItem, ViewParamsLines,
+use ornament::Decorator;
+use remote::protocol::{
+    notifications::{ViewParams, ViewParamsHeader, ViewParamsItem, ViewParamsLines},
+    Face, Text,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,7 +83,7 @@ impl LensGroup {
     }
 }
 
-impl<'a> Deref for LensGroup {
+impl<'a> std::ops::Deref for LensGroup {
     type Target = Vec<Lens>;
 
     fn deref(&self) -> &Self::Target {
@@ -152,7 +156,11 @@ impl View {
         self.0.len() == 0
     }
 
-    pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> ViewParams {
+    pub fn to_notification_params(
+        &self,
+        buffers: &HashMap<String, Buffer>,
+        selections: Option<&HashMap<String, Vec<Selection>>>,
+    ) -> ViewParams {
         self.as_vec()
             .iter()
             .map(|item| match item {
@@ -173,8 +181,53 @@ impl View {
                 },
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
+                    let sels = selections.and_then(|ss| ss.get(&lens.buffer));
+                    let mut selected = HashMap::new();
+                    if let Some(ss) = sels {
+                        for s in ss {
+                            let start = buffer.content.offset_to_coord(s.start());
+                            let end = buffer.content.offset_to_coord(s.end());
+                            if start.l == end.l {
+                                selected.insert(start.l - 1, (Some(start.c - 1), Some(end.c - 1)));
+                            } else {
+                                for i in start.l..=end.l {
+                                    let range = if i == start.l {
+                                        (Some(start.c - 1), None)
+                                    } else if i == end.l {
+                                        (None, Some(end.c - 1))
+                                    } else {
+                                        (None, None)
+                                    };
+                                    selected.insert(i - 1, range);
+                                }
+                            }
+                        }
+                    }
+                    let lines = buffer
+                        .lines(lens.focus.clone())
+                        .iter()
+                        .enumerate()
+                        .map(|(i, l)| {
+                            if let Some(s) = selected.get(&i) {
+                                match *s {
+                                    (Some(start), Some(end)) => Decorator::with_text(&l)
+                                        .set(Face::Selection, start..end + 1)
+                                        .build(),
+                                    (Some(start), None) => Decorator::with_text(&l)
+                                        .set(Face::Selection, start..l.len())
+                                        .build(),
+                                    (None, Some(end)) => Decorator::with_text(&l)
+                                        .set(Face::Selection, 0..end + 1)
+                                        .build(),
+                                    (None, None) => Text::from(l.as_str()),
+                                }
+                            } else {
+                                Text::from(l.as_str())
+                            }
+                        })
+                        .collect();
                     ViewParamsItem::Lines(ViewParamsLines {
-                        lines: buffer.lines(lens.focus.clone()),
+                        lines,
                         first_line_num: lens.focus.start() + 1,
                     })
                 }

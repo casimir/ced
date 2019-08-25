@@ -5,6 +5,7 @@ mod diff;
 pub mod menu;
 mod piece_table;
 mod range;
+mod selection;
 pub mod view;
 
 use std::collections::{HashMap, HashSet};

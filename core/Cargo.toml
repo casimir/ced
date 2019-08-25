@@ -25,8 +25,9 @@ failure_derive = "0.1"
 ignore = "0.4"
 log = "0.4"
 mio = "0.6"
+ornament = "0.1"
 rbtset = "1.0"
-regex = "1.1"
+regex = "1.2"
 rlua = "0.16"
 
 [target.'cfg(unix)'.dependencies]

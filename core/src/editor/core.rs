@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use failure::Error;
 
-use crate::editor::range::Range;
+use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
 use crate::editor::{Buffer, EditorInfo, Notifier};
 use crate::stackmap::StackMap;
@@ -14,7 +14,7 @@ use crate::stackmap::StackMap;
 #[derive(Clone, Debug)]
 struct ClientContext {
     view: Rc<RefCell<View>>,
-    selections: HashMap<String, HashMap<String, Range>>,
+    selections: HashMap<String, HashMap<String, Vec<Selection>>>,
 }
 
 struct CoreState {
@@ -100,13 +100,9 @@ impl Core {
         let params = clients
             .iter()
             .map(|id| {
-                (
-                    *id,
-                    state.clients[&id]
-                        .view
-                        .borrow()
-                        .to_notification_params(&state.buffers),
-                )
+                let view = state.clients[&id].view.borrow();
+                let selections = state.clients[&id].selections.get(&view.key());
+                (*id, view.to_notification_params(&state.buffers, selections))
             })
             .collect();
         self.notifier.view_update(params);
@@ -174,7 +170,7 @@ impl Core {
                         .borrow()
                         .buffers()
                         .iter()
-                        .map(|&b| (b.clone(), Range::new(0, 1)))
+                        .map(|&b| (b.clone(), vec![Selection::new()]))
                         .collect(),
                 );
                 ClientContext {

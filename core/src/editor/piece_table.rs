@@ -1,8 +1,8 @@
-use std::cmp::{min, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::collections::BTreeSet;
 
 use crate::editor::diff::{diff, Diff};
-use crate::editor::range::Range;
+use crate::editor::range::{OffsetRange, Range};
 use rbtset::{Consecutive, Node, RBTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq)]
@@ -78,7 +78,7 @@ impl Piece {
         (p1, p2)
     }
 
-    fn ranged(self, range: Range) -> Piece {
+    fn ranged(self, range: OffsetRange) -> Piece {
         if self.contains(range.start()) && self.contains(range.end()) {
             Piece {
                 offset: range.start(),
@@ -146,8 +146,8 @@ enum Action {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Coord {
-    l: usize,
-    c: usize,
+    pub l: usize,
+    pub c: usize,
 }
 
 impl From<(usize, usize)> for Coord {
@@ -276,7 +276,7 @@ impl PieceTable {
         self.join("")
     }
 
-    pub fn text_range(&self, range: Range) -> Option<String> {
+    pub fn text_range(&self, range: OffsetRange) -> Option<String> {
         self.pieces
             .get_node(&Piece::offset(range.start()))
             .map(|start_piece| {
@@ -301,13 +301,17 @@ impl PieceTable {
         self.text().lines().map(ToOwned::to_owned).collect()
     }
 
+    pub fn line_count(&self) -> usize {
+        self.newlines.len() + 1
+    }
+
     pub fn offset_to_coord(&self, offset: usize) -> Coord {
         let offset = min(offset, self.len());
         let preceding_lines = self.newlines.range(..offset).collect::<Vec<_>>();
         let line_offset = preceding_lines.last().map_or(0, |&&i| i);
         Coord {
             l: preceding_lines.len() + 1,
-            c: offset - line_offset,
+            c: max(offset - line_offset, 1),
         }
     }
 
@@ -361,7 +365,7 @@ impl PieceTable {
     {
         let offset = self.coord_to_offset(from.into());
         let length = self.coord_to_offset(to.into()) - offset;
-        let range = Range::new(offset, length);
+        let range = OffsetRange::new(offset, length);
         self.text_range(range)
             .unwrap_or_default()
             .lines()
@@ -431,7 +435,7 @@ impl PieceTable {
         }
     }
 
-    pub fn delete(&mut self, range: Range) {
+    pub fn delete(&mut self, range: OffsetRange) {
         self.action(Action::Delete);
         if let Some(start_node) = self.pieces.get_node(&Piece::offset(range.start())) {
             let pieces = self
@@ -473,7 +477,7 @@ impl PieceTable {
         }
     }
 
-    pub fn replace(&mut self, range: Range, text: &str) {
+    pub fn replace(&mut self, range: OffsetRange, text: &str) {
         self.start_bulk();
         self.delete(range);
         self.insert(range.start(), text);
@@ -490,7 +494,7 @@ impl PieceTable {
         self.start_bulk();
         for diff in diffs {
             match diff {
-                Diff::Left(len) => self.delete(Range::new(loffset, len)),
+                Diff::Left(len) => self.delete(OffsetRange::new(loffset, len)),
                 Diff::Right(len) => {
                     self.insert(loffset, &text[roffset..roffset + len]);
                     loffset += len;
@@ -538,15 +542,15 @@ mod tests {
         pieces.insert(56, ", so quick");
 
         assert_eq!(
-            pieces.text_range(Range::new(9, 12)),
+            pieces.text_range(OffsetRange::new(9, 12)),
             Some(String::from("quick brown "))
         );
-        pieces.delete(Range::new(9, 12)); // "quick brown| "
+        pieces.delete(OffsetRange::new(9, 12)); // "quick brown| "
         assert_eq!(
-            pieces.text_range(Range::new(28, 5)),
+            pieces.text_range(OffsetRange::new(28, 5)),
             Some(String::from("lazy "))
         );
-        pieces.delete(Range::new(28, 5)); // "|lazy |"
+        pieces.delete(OffsetRange::new(28, 5)); // "|lazy |"
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
@@ -565,8 +569,8 @@ mod tests {
         pieces.insert(0, "🦊 ");
         pieces.insert(56, ", so quick");
 
-        pieces.replace(Range::new(9, 11), "sneaky"); // "quick brown| "
-        pieces.replace(Range::new(35, 8), "mighty bear"); // "|lazy |dog|"
+        pieces.replace(OffsetRange::new(9, 11), "sneaky"); // "quick brown| "
+        pieces.replace(OffsetRange::new(35, 8), "mighty bear"); // "|lazy |dog|"
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
@@ -621,7 +625,7 @@ mod tests {
         assert!(!pieces.undo());
 
         // delete + undo/redo
-        pieces.delete(Range::new(53, 10));
+        pieces.delete(OffsetRange::new(53, 10));
         let deleted = "🦊 the quick brown fox jumps over the lazy dog 🐶";
         assert_eq!(pieces.text(), deleted);
         assert!(pieces.undo());
@@ -637,7 +641,7 @@ mod tests {
         pieces.insert(9, "really ");
         assert_eq!(pieces.text(), inserted);
         let redeleted = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
-        pieces.delete(Range::new(0, 5));
+        pieces.delete(OffsetRange::new(0, 5));
         assert_eq!(pieces.text(), redeleted);
         assert!(pieces.undo());
         assert_eq!(pieces.text(), inserted);
@@ -671,12 +675,12 @@ mod tests {
             pieces.newlines,
             [10, 24, 36].iter().map(|&i| i as usize).collect()
         );
-        pieces.replace(Range::new(11, 8), "another");
+        pieces.replace(OffsetRange::new(11, 8), "another");
         assert_eq!(
             pieces.newlines,
             [10, 23, 35].iter().map(|&i| i as usize).collect()
         );
-        pieces.delete(Range::new(11, 24));
+        pieces.delete(OffsetRange::new(11, 24));
         assert_eq!(
             pieces.newlines,
             [10, 11].iter().map(|&i| i as usize).collect()

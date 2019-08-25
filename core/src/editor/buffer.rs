@@ -58,7 +58,7 @@ fn find_shortest_name(sources: &[BufferSource], idx: usize) -> String {
 
 pub struct Buffer {
     pub source: BufferSource,
-    content: PieceTable,
+    pub content: PieceTable,
     last_sync: Option<SystemTime>,
     modified: bool,
 }
@@ -96,8 +96,7 @@ impl Buffer {
     }
 
     pub fn line_count(&self) -> usize {
-        // FIXME
-        self.content.lines().len()
+        self.content.line_count()
     }
 
     pub fn lines(&self, focus: Focus) -> Vec<String> {

@@ -96,7 +96,7 @@ impl State {
                 }
                 Lines(content) => {
                     for line in &content.lines {
-                        let label = gtk::Label::new(line.as_str());
+                        let label = gtk::Label::new(line.plain().as_str());
                         label.set_halign(gtk::Align::Start);
                         self.main_view.add(&label);
                     }
