@@ -21,7 +21,7 @@ impl ServerStream {
         }
     }
 
-    pub fn inner_clone(&self) -> Result<Box<Stream>, Error> {
+    pub fn inner_clone(&self) -> Result<Box<dyn Stream>, Error> {
         use self::ServerStream::*;
         match self {
             Socket(inner) => {

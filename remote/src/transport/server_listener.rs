@@ -23,7 +23,7 @@ impl ServerListener {
         }
     }
 
-    pub fn inner(&self) -> &Evented {
+    pub fn inner(&self) -> &dyn Evented {
         use self::ServerListener::*;
         match self {
             Socket(inner) => inner,
@@ -31,7 +31,7 @@ impl ServerListener {
         }
     }
 
-    pub fn accept(&self) -> io::Result<Box<EventedStream>> {
+    pub fn accept(&self) -> io::Result<Box<dyn EventedStream>> {
         use self::ServerListener::*;
         match self {
             Socket(inner) => {

@@ -3,12 +3,12 @@ pub trait Range {
     fn start(&self) -> usize;
     fn end(&self) -> usize;
 
-    fn overlap(&self, other: &Range) -> bool {
+    fn overlap(&self, other: &dyn Range) -> bool {
         (self.start() <= other.start() && other.start() < self.end())
             || (other.start() <= self.start() && self.start() < other.end())
     }
 
-    fn contains(&self, other: &Range) -> bool {
+    fn contains(&self, other: &dyn Range) -> bool {
         self.start() <= other.start() && other.end() <= self.end()
     }
 }

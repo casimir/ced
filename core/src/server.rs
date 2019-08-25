@@ -73,11 +73,11 @@ impl Default for Broadcaster {
 }
 
 struct Connection<'a> {
-    handle: Box<EventedStream + 'a>,
+    handle: Box<dyn EventedStream + 'a>,
 }
 
 impl<'a> Connection<'a> {
-    fn new(handle: Box<EventedStream>) -> Connection<'a> {
+    fn new(handle: Box<dyn EventedStream>) -> Connection<'a> {
         Connection { handle }
     }
 }

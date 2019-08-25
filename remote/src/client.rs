@@ -9,7 +9,7 @@ use crate::session::Session;
 use crate::transport::{ServerStream, Stream};
 
 pub struct Events {
-    lines: Lines<BufReader<Box<Stream>>>,
+    lines: Lines<BufReader<Box<dyn Stream>>>,
 }
 
 impl Iterator for Events {
