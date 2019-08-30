@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn shortest_name() {
-        let s_debug = BufferSource::Scratch("*debug*".into());
+        let s_debug = BufferSource::Scratch("*buffer*".into());
         let f_some = BufferSource::File(PathBuf::from("/some/file.ext"));
         let f_where_1 = BufferSource::File(PathBuf::from("/some/where/file.where"));
         let f_where_2 = BufferSource::File(PathBuf::from("/any/where/file.where"));
@@ -180,7 +180,7 @@ mod tests {
 
         let sources = [s_debug, f_some, f_where_1, f_where_2, f_where_3];
 
-        assert_eq!(find_shortest_name(&sources, 0), "*debug*");
+        assert_eq!(find_shortest_name(&sources, 0), "*buffer*");
         assert_eq!(find_shortest_name(&sources, 1), "file.ext");
         assert_eq!(find_shortest_name(&sources, 2), "some/where/file.where");
         assert_eq!(find_shortest_name(&sources, 3), "any/where/file.where");

@@ -4,6 +4,7 @@ mod helpers;
 
 use itertools::Itertools;
 
+use ced::editor::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use ced::remote::jsonrpc::ClientEvent;
 use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
 use ced::remote::{start_daemon, Client, Events, Session};
@@ -27,7 +28,7 @@ fn starting_notifications() {
         .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
 }
 
@@ -103,7 +104,7 @@ fn connect_socket() {
         .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
 }
 
@@ -123,6 +124,6 @@ fn connect_tcp() {
         .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
 }

@@ -11,6 +11,9 @@ use crate::editor::view::{Focus, Lens, View};
 use crate::editor::{Buffer, EditorInfo, Notifier};
 use crate::stackmap::StackMap;
 
+pub const BUFFER_DEBUG: &str = "*debug*";
+pub const BUFFER_SCRATCH: &str = "*scratch*";
+
 #[derive(Clone, Debug)]
 struct ClientContext {
     view: Rc<RefCell<View>>,
@@ -122,7 +125,7 @@ impl Core {
         log::debug!("{}", content);
 
         if self.debug_mode {
-            self.append_to("*debug*", content);
+            self.append_to(BUFFER_DEBUG, content);
         }
     }
 
@@ -230,7 +233,7 @@ impl Core {
         }
         if lock!(self).views.is_empty() {
             if lock!(self).buffers.is_empty() {
-                self.open_scratch("*scratch*");
+                self.open_scratch(BUFFER_SCRATCH);
             }
             let view = View::for_buffer("*scratch*");
             lock!(self)

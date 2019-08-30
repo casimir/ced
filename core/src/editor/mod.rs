@@ -19,6 +19,7 @@ use rlua;
 pub use self::buffer::{Buffer, BufferSource};
 use self::command::default_commands;
 use self::core::Core;
+pub use self::core::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use self::menu::Menu;
 use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
@@ -145,19 +146,19 @@ impl Editor {
         };
 
         let mut view = View::default();
-        editor.core.open_scratch("*debug*");
+        editor.core.open_scratch(BUFFER_DEBUG);
         editor.core.debug(&format!(
             "command: {}",
             env::args().collect::<Vec<_>>().join(" ")
         ));
         editor.core.debug(&format!("cwd: {}", editor.cwd.display()));
         view.add_lens(Lens {
-            buffer: String::from("*debug*"),
+            buffer: BUFFER_DEBUG.to_owned(),
             focus: Focus::Whole,
         });
-        editor.core.open_scratch("*scratch*");
+        editor.core.open_scratch(BUFFER_SCRATCH);
         view.add_lens(Lens {
-            buffer: String::from("*scratch*"),
+            buffer: BUFFER_SCRATCH.to_owned(),
             focus: Focus::Whole,
         });
         editor.core.add_view(view);
