@@ -194,18 +194,29 @@ impl Core {
 
     pub fn open_scratch(&mut self, name: &str) {
         let buffer = Buffer::new_scratch(name.to_owned());
-        lock!(self).buffers.insert(name.into(), buffer);
+        lock!(self).buffers.insert(name.to_owned(), buffer);
     }
 
     pub fn open_file(&mut self, buffer_name: &str, filename: &PathBuf) {
         let buffer = Buffer::new_file(filename);
-        lock!(self).buffers.insert(buffer_name.to_string(), buffer);
+        lock!(self).buffers.insert(buffer_name.to_owned(), buffer);
     }
 
     pub fn add_view(&mut self, view: View) {
         lock!(self)
             .views
-            .insert(view.key(), Rc::new(RefCell::new(view)));
+            .insert(view.key(), Rc::new(RefCell::new(view.clone())));
+        for (_id, context) in lock!(self).clients.iter_mut() {
+            let sels_by_view = context
+                .selections
+                .entry(view.key())
+                .or_insert_with(HashMap::new);
+            for buffer in view.buffers() {
+                sels_by_view
+                    .entry(buffer.to_owned())
+                    .or_insert_with(|| vec![Selection::new()]);
+            }
+        }
     }
 
     pub fn delete_view(&mut self, view_id: &str) -> Result<(), Error> {
@@ -218,6 +229,9 @@ impl Core {
 
         let view = lock!(self).views.remove(&view_id.to_owned()).unwrap();
         self.debug(&format!("delete view: {}", view_id));
+        for (_id, context) in lock!(self).clients.iter_mut() {
+            context.selections.remove(view_id);
+        }
         for buffer in view.borrow().buffers() {
             let mut has_ref = false;
             for view in lock!(self).views.values() {
@@ -235,10 +249,7 @@ impl Core {
             if lock!(self).buffers.is_empty() {
                 self.open_scratch(BUFFER_SCRATCH);
             }
-            let view = View::for_buffer("*scratch*");
-            lock!(self)
-                .views
-                .insert(view.key(), Rc::new(RefCell::new(view)));
+            self.add_view(View::for_buffer(BUFFER_SCRATCH));
         }
         let mut to_notify = Vec::new();
         let latest_view = Rc::clone(lock!(self).views.latest_value().expect("get latest view"));
@@ -261,21 +272,15 @@ impl Core {
         f(&mut new_view);
         let new_key = new_view.key();
         if old_key != new_key {
-            if new_view.is_empty() {
-                self.delete_view(&old_key).unwrap();
-            } else {
-                let view = Rc::new(RefCell::new(new_view));
-                lock!(self).views.insert(new_key, Rc::clone(&view));
-                let mut to_notify = Vec::new();
-                for (id, context) in lock!(self).clients.iter_mut() {
-                    if context.view.borrow().key() == old_key {
-                        context.view = Rc::clone(&view);
-                        to_notify.push(*id);
+            if !new_view.is_empty() {
+                for (_id, context) in lock!(self).clients.iter_mut() {
+                    if let Some(old_sels) = context.selections.remove(&old_key) {
+                        context.selections.insert(new_key.clone(), old_sels);
                     }
                 }
-                self.notify_view_update(to_notify);
+                self.add_view(new_view);
             }
-            lock!(self).views.remove(&old_key);
+            self.delete_view(&old_key).expect("delete old view");
         }
     }
 
@@ -297,19 +302,19 @@ impl Core {
             true
         };
 
-        {
-            let mut state = lock!(self);
-            let view = Rc::new(RefCell::new(View::for_buffer(name)));
-            state.views.insert(view.borrow().key(), Rc::clone(&view));
-            let context = state.clients.get_mut(&client_id).unwrap();
-            context.view = view;
-        }
+        let view = View::for_buffer(name);
+        let view_id = view.key();
+        self.add_view(view);
+        self.view(client_id, &view_id).expect("set view after edit");
 
         self.debug(&format!("edit: {}", name));
         if notify_change {
-            self.notify_view_update(self.clients_with_buffer(name));
-        } else {
-            self.notify_view_update(vec![client_id]);
+            let client_ids = self
+                .clients_with_buffer(name)
+                .into_iter()
+                .filter(|&id| id != client_id)
+                .collect();
+            self.notify_view_update(client_ids);
         }
     }
 
