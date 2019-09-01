@@ -6,16 +6,14 @@ use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel as channel;
-use failure::Error;
+use remote::protocol::{notifications, Face, TextFragment};
+use remote::{Connection, ConnectionEvent, Menu, Session};
 use termion;
 use termion::cursor::Goto;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
-
-use remote::protocol::{notifications, Face, TextFragment};
-use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
     Input(Key),
@@ -49,7 +47,7 @@ pub struct Term {
 }
 
 impl Term {
-    pub fn new(session: &Session, filenames: &[&str]) -> Result<Term, Error> {
+    pub fn new(session: &Session, filenames: &[&str]) -> io::Result<Term> {
         let mut term = Term {
             connection: Connection::new(session)?,
             exit_pending: false,
@@ -63,7 +61,7 @@ impl Term {
         Ok(term)
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
+    pub fn start(&mut self) {
         let (events_tx, events_rx) = channel::unbounded();
         let keys_tx = events_tx.clone();
         thread::spawn(move || {
@@ -112,7 +110,6 @@ impl Term {
                 }
             }
         }
-        Ok(())
     }
 
     fn flush(&mut self) {

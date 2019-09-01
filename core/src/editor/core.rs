@@ -1,10 +1,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-
-use failure::Error;
 
 use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
@@ -32,13 +31,23 @@ macro_rules! lock {
     };
 }
 
-#[derive(Debug, Fail)]
-pub enum ErrorKind {
-    #[fail(display = "buffer not found: {}", name)]
+#[derive(Debug)]
+pub enum Error {
     BufferNotFound { name: String },
-    #[fail(display = "view not found: {}", view_id)]
     ViewNotFound { view_id: String },
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Error::*;
+        match self {
+            BufferNotFound { name } => write!(f, "buffer not found: {}", name),
+            ViewNotFound { view_id } => write!(f, "view not found: {}", view_id),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[derive(Clone)]
 pub struct Core {
@@ -221,10 +230,9 @@ impl Core {
 
     pub fn delete_view(&mut self, view_id: &str) -> Result<(), Error> {
         if !self.view_exists(view_id) {
-            return Err(ErrorKind::ViewNotFound {
+            return Err(Error::ViewNotFound {
                 view_id: view_id.to_owned(),
-            }
-            .into());
+            });
         }
 
         let view = lock!(self).views.remove(&view_id.to_owned()).unwrap();
@@ -339,10 +347,9 @@ impl Core {
             self.notify_view_update(vec![client_id]);
             Ok(())
         } else {
-            Err(ErrorKind::ViewNotFound {
+            Err(Error::ViewNotFound {
                 view_id: view_id.to_owned(),
-            }
-            .into())
+            })
         }
     }
 
@@ -353,10 +360,9 @@ impl Core {
 
     pub fn add_to_current_view(&mut self, client_id: usize, buffer: &str) -> Result<(), Error> {
         if !self.buffer_exists(buffer) {
-            return Err(ErrorKind::BufferNotFound {
+            return Err(Error::BufferNotFound {
                 name: buffer.to_owned(),
-            }
-            .into());
+            });
         }
 
         let view_id = lock!(self).clients[&client_id].view.borrow().key();
@@ -375,10 +381,9 @@ impl Core {
         buffer: &str,
     ) -> Result<(), Error> {
         if !self.buffer_exists(buffer) {
-            return Err(ErrorKind::BufferNotFound {
+            return Err(Error::BufferNotFound {
                 name: buffer.to_owned(),
-            }
-            .into());
+            });
         }
 
         let view_id = lock!(self).clients[&client_id].view.borrow().key();

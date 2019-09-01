@@ -2,9 +2,6 @@
 
 #[macro_use]
 extern crate crossbeam_channel;
-extern crate failure;
-#[macro_use]
-extern crate failure_derive;
 pub extern crate ced_remote as remote;
 extern crate ignore;
 #[macro_use]

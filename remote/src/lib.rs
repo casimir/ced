@@ -3,7 +3,6 @@ extern crate crossbeam_channel;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate failure;
 extern crate mio;
 extern crate regex;
 #[macro_use]
@@ -27,10 +26,8 @@ mod session;
 mod transport;
 
 use std::env;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
-
-use failure::Error;
 
 pub use self::client::{Client, Events, StdioClient};
 pub use self::connection::{Connection, ConnectionEvent, ConnectionState, Menu};
@@ -58,7 +55,7 @@ pub fn find_bin() -> String {
     )
 }
 
-pub fn start_daemon(session: &Session) -> Result<u32, Error> {
+pub fn start_daemon(session: &Session) -> io::Result<u32> {
     let bin = find_bin();
     let session_arg = format!("--session={}", session.mode);
     let args = vec!["--mode=server", &session_arg];
@@ -92,7 +89,7 @@ pub fn start_daemon(session: &Session) -> Result<u32, Error> {
     Ok(pid)
 }
 
-pub fn ensure_session(session: &Session) -> Result<(), Error> {
+pub fn ensure_session(session: &Session) -> io::Result<()> {
     if let ConnectionMode::Socket(path) = &session.mode {
         if !path.exists() {
             start_daemon(&session)?;

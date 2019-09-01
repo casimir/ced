@@ -2,9 +2,9 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 
-use regex::{CaptureLocations, Regex};
-
 use crate::editor::{Editor, EditorInfo};
+use regex::{CaptureLocations, Regex};
+use remote::jsonrpc;
 use remote::protocol::{
     notifications::{MenuParams, MenuParamsEntry},
     Face, TextFragment,
@@ -299,7 +299,7 @@ mod tests {
     }
 }
 
-pub type MenuAction = fn(&str, &mut Editor, usize) -> Result<(), failure::Error>;
+pub type MenuAction = fn(&str, &mut Editor, usize) -> Result<(), jsonrpc::Error>;
 
 #[derive(Clone)]
 pub struct MenuEntry {

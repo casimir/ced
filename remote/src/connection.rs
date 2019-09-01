@@ -1,7 +1,5 @@
+use std::io;
 use std::sync::{Arc, RwLock};
-
-use crossbeam_channel as channel;
-use failure::Error;
 
 use crate::client::Client;
 use crate::jsonrpc::{ClientEvent, Id, Request};
@@ -11,6 +9,7 @@ use crate::protocol::{
     Key, Text,
 };
 use crate::session::Session;
+use crossbeam_channel as channel;
 
 #[derive(Clone, Debug, Default)]
 pub struct Menu {
@@ -122,7 +121,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(session: &Session) -> Result<Connection, Error> {
+    pub fn new(session: &Session) -> io::Result<Connection> {
         let (client, requests) = Client::new(session)?;
         Ok(Connection {
             client,

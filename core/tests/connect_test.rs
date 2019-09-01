@@ -1,13 +1,13 @@
-use std::env;
-
 mod helpers;
 
-use itertools::Itertools;
+use std::env;
+use std::io;
 
 use ced::editor::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use ced::remote::jsonrpc::ClientEvent;
 use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
 use ced::remote::{start_daemon, Client, Events, Session};
+use itertools::Itertools;
 
 const CLIENT_ID: usize = 1;
 
@@ -43,7 +43,7 @@ struct SyncClient {
 }
 
 impl SyncClient {
-    pub fn start(session: &Session) -> Result<SyncClient, failure::Error> {
+    pub fn start(session: &Session) -> io::Result<SyncClient> {
         let (client, _) = Client::new(session)?;
         Ok(SyncClient {
             events: client.run(),
@@ -51,8 +51,8 @@ impl SyncClient {
         })
     }
 
-    fn drain_notifications(&mut self) -> Result<(), failure::Error> {
-        let is_notification = |res: &Result<ClientEvent, failure::Error>| match res {
+    fn drain_notifications(&mut self) {
+        let is_notification = |res: &Result<ClientEvent, _>| match res {
             Ok(ev) => ev.is_notification(),
             _ => false,
         };
@@ -70,7 +70,6 @@ impl SyncClient {
                 _ => {}
             }
         }
-        Ok(())
     }
 }
 
@@ -92,7 +91,7 @@ fn start_client_and_server(session: &Session) -> SyncClient {
 fn connect_socket() {
     let session = Session::from_name("_test");
     let mut client = start_client_and_server(&session);
-    client.drain_notifications().unwrap();
+    client.drain_notifications();
 
     let view = client.state.view;
     let buffers: Vec<String> = view
@@ -112,7 +111,7 @@ fn connect_socket() {
 fn connect_tcp() {
     let session = Session::from_name("@:7357");
     let mut client = start_client_and_server(&session);
-    client.drain_notifications().unwrap();
+    client.drain_notifications();
 
     let view = client.state.view;
     let buffers: Vec<String> = view

@@ -1,15 +1,13 @@
 use std::io::{self, BufRead};
 use std::thread;
 
-use failure::Error;
-
 use crate::editor::Editor;
 use crate::server::Broadcaster;
 use remote::protocol::requests::EditParams;
 
 const CLIENT_ID: usize = 1;
 
-pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
+pub fn start_standalone(filenames: &[&str]) {
     let broadcaster = Broadcaster::default();
     let mut editor = Editor::new("", broadcaster.tx);
 
@@ -44,5 +42,4 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
     }
 
     editor.remove_client(CLIENT_ID);
-    Ok(())
 }

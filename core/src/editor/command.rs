@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
-use ignore::Walk;
-
 use crate::editor::menu::{Menu, MenuEntry};
 use crate::editor::{Editor, EditorInfo, View};
+use ignore::Walk;
+use remote::jsonrpc;
 use remote::protocol::{
     notifications::{self, Notification as _},
     requests,
 };
 
-fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<(), failure::Error> {
+fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<(), jsonrpc::Error> {
     {
         let menu = editor.command_map.get_mut(key).unwrap();
         let info = EditorInfo {

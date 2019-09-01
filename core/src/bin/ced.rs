@@ -2,14 +2,13 @@ extern crate ced;
 #[macro_use]
 extern crate clap;
 extern crate env_logger;
-extern crate failure;
 
-use clap::{App, Arg};
-use failure::Error;
+use std::io;
 
 use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
 use ced::server::Server;
 use ced::standalone::start_standalone;
+use clap::{App, Arg};
 
 #[cfg(all(feature = "term", unix))]
 arg_enum! {
@@ -45,7 +44,7 @@ impl Mode {
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> io::Result<()> {
     env_logger::init();
 
     let matches = App::new("ced")
@@ -101,18 +100,23 @@ fn main() -> Result<(), Error> {
             }
             Mode::json => {
                 ensure_session(&session)?;
-                StdioClient::new(&session)?.run()
+                StdioClient::new(&session)?.run();
+                Ok(())
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
                 Server::new(session).run()
             }
-            Mode::standalone => start_standalone(&filenames),
+            Mode::standalone => {
+                start_standalone(&filenames);
+                Ok(())
+            }
             #[cfg(all(feature = "term", unix))]
             Mode::term => {
                 use ced::tui::Term;
                 ensure_session(&session)?;
-                Term::new(&session, &filenames)?.start()
+                Term::new(&session, &filenames)?.start();
+                Ok(())
             }
         }
     }

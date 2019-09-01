@@ -12,10 +12,6 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
 
-use crossbeam_channel as channel;
-use failure::Error;
-use rlua;
-
 pub use self::buffer::{Buffer, BufferSource};
 use self::command::default_commands;
 use self::core::Core;
@@ -25,12 +21,14 @@ use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
-use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
+use crossbeam_channel as channel;
+use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
     requests, Face, Text, TextFragment,
 };
 use remote::response;
+use rlua;
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
@@ -250,7 +248,7 @@ impl Editor {
         }
     }
 
-    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, Error> {
+    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, JsonCodingError> {
         let msg: Request = match line.parse() {
             Ok(req) => req,
             Err(err) => {
@@ -279,14 +277,13 @@ impl Editor {
                 Ok(Response::method_not_found(msg.id, method))
             }
         }
-        .map_err(Error::from)
     }
 
     pub fn command_edit(
         &mut self,
         client_id: usize,
         params: &<requests::Edit as requests::Request>::Params,
-    ) -> Result<<requests::Edit as requests::Request>::Result, JError> {
+    ) -> Result<<requests::Edit as requests::Request>::Result, Error> {
         if params.scratch {
             self.core
                 .edit(client_id, &params.file, None, params.scratch);
@@ -308,7 +305,7 @@ impl Editor {
     pub fn command_quit(
         &mut self,
         client_id: usize,
-    ) -> Result<<requests::Quit as requests::Request>::Result, JError> {
+    ) -> Result<<requests::Quit as requests::Request>::Result, Error> {
         self.core.remove_client(client_id);
         self.stopped_clients.insert(client_id);
         Ok(())
@@ -318,16 +315,16 @@ impl Editor {
         &mut self,
         client_id: usize,
         params: &<requests::View as requests::Request>::Params,
-    ) -> Result<<requests::View as requests::Request>::Result, JError> {
+    ) -> Result<<requests::View as requests::Request>::Result, Error> {
         self.core
             .view(client_id, &params)
-            .map_err(|e| JError::invalid_request(&e.to_string()))
+            .map_err(|e| Error::invalid_request(&e.to_string()))
     }
 
     pub fn command_view_delete(
         &mut self,
         client_id: usize,
-    ) -> Result<<requests::ViewDelete as requests::Request>::Result, JError> {
+    ) -> Result<<requests::ViewDelete as requests::Request>::Result, Error> {
         self.core.delete_current_view(client_id);
         Ok(())
     }
@@ -336,30 +333,30 @@ impl Editor {
         &mut self,
         client_id: usize,
         params: &<requests::ViewAdd as requests::Request>::Params,
-    ) -> Result<<requests::ViewAdd as requests::Request>::Result, JError> {
+    ) -> Result<<requests::ViewAdd as requests::Request>::Result, Error> {
         self.core
             .add_to_current_view(client_id, &params)
-            .map_err(|e| JError::invalid_request(&e.to_string()))
+            .map_err(|e| Error::invalid_request(&e.to_string()))
     }
 
     pub fn command_view_remove(
         &mut self,
         client_id: usize,
         params: &<requests::ViewRemove as requests::Request>::Params,
-    ) -> Result<<requests::ViewRemove as requests::Request>::Result, JError> {
+    ) -> Result<<requests::ViewRemove as requests::Request>::Result, Error> {
         self.core
             .remove_from_current_view(client_id, &params)
-            .map_err(|e| JError::invalid_request(&e.to_string()))
+            .map_err(|e| Error::invalid_request(&e.to_string()))
     }
 
     pub fn command_menu(
         &mut self,
         client_id: usize,
         params: &<requests::Menu as requests::Request>::Params,
-    ) -> Result<<requests::Menu as requests::Request>::Result, JError> {
+    ) -> Result<<requests::Menu as requests::Request>::Result, Error> {
         {
             let menu = self.command_map.get_mut(&params.command).ok_or({
-                JError::invalid_params(&format!("unknown command: {}", &params.command))
+                Error::invalid_params(&format!("unknown command: {}", &params.command))
             })?;
             if params.search.is_empty() {
                 let info = EditorInfo {
@@ -383,36 +380,29 @@ impl Editor {
         &mut self,
         client_id: usize,
         params: &<requests::MenuSelect as requests::Request>::Params,
-    ) -> Result<<requests::MenuSelect as requests::Request>::Result, JError> {
+    ) -> Result<<requests::MenuSelect as requests::Request>::Result, Error> {
         let menu = self.command_map.get(&params.command).ok_or_else(|| {
-            JError::invalid_params(&format!("unknown command: {}", &params.command))
+            Error::invalid_params(&format!("unknown command: {}", &params.command))
         })?;
         let mut entry = menu.get(&params.choice);
         if entry.is_none() && menu.is_prompt() {
             entry = menu.get("");
         }
         if entry.is_none() {
-            return Err(JError::invalid_params(&format!(
+            return Err(Error::invalid_params(&format!(
                 "unknown choice: {}",
                 params.choice
             )));
         }
         let action = entry.unwrap().action;
-        let res = (action)(&params.choice, self, client_id);
-        if let Some(error) = res.err() {
-            match error.downcast::<JError>() {
-                Ok(err) => return Err(err),
-                Err(err) => return Err(JError::internal_error(&err.to_string())),
-            }
-        }
-        Ok(())
+        (action)(&params.choice, self, client_id)
     }
 
     pub fn command_keys(
         &mut self,
         client_id: usize,
         params: &<requests::Keys as requests::Request>::Params,
-    ) -> Result<<requests::Keys as requests::Request>::Result, JError> {
+    ) -> Result<<requests::Keys as requests::Request>::Result, Error> {
         for key in params {
             let result = self.lua.context(|lua: rlua::Context| {
                 // TODO pass object instead of string
@@ -429,7 +419,7 @@ impl Editor {
                 Ok(res) => self.dispatch_lua_result(client_id, res),
                 Err(e) => {
                     self.core.error(client_id, "key handler", &e.to_string());
-                    return Err(JError::internal_error(&e.to_string()));
+                    return Err(Error::internal_error(&e.to_string()));
                 }
             }
         }

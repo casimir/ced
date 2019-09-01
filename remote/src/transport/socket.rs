@@ -5,7 +5,6 @@ use std::ops::Deref;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use failure::Error;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
 #[cfg(unix)]
 use mio_uds::UnixListener;
@@ -17,7 +16,7 @@ use mio_uds_windows::UnixListener;
 pub struct SocketListener(UnixListener);
 
 impl SocketListener {
-    pub fn bind(path: &Path) -> Result<SocketListener, Error> {
+    pub fn bind(path: &Path) -> io::Result<SocketListener> {
         let root_dir = path.parent().unwrap();
         if !root_dir.exists() {
             fs::create_dir_all(root_dir)?

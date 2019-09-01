@@ -1,8 +1,6 @@
 use std::io;
 use std::net::TcpStream;
 
-use failure::Error;
-
 use crate::transport::socket::SocketStream;
 use crate::transport::Stream;
 use crate::ConnectionMode;
@@ -21,7 +19,7 @@ impl ServerStream {
         }
     }
 
-    pub fn inner_clone(&self) -> Result<Box<dyn Stream>, Error> {
+    pub fn inner_clone(&self) -> io::Result<Box<dyn Stream>> {
         use self::ServerStream::*;
         match self {
             Socket(inner) => {

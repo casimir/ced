@@ -1,6 +1,5 @@
 use std::io;
 
-use failure::Error;
 use mio::net::TcpListener;
 use mio::Evented;
 
@@ -14,7 +13,7 @@ pub enum ServerListener {
 }
 
 impl ServerListener {
-    pub fn new(session: &Session) -> Result<ServerListener, Error> {
+    pub fn new(session: &Session) -> io::Result<ServerListener> {
         match &session.mode {
             ConnectionMode::Socket(path) => Ok(ServerListener::Socket(SocketListener::bind(path)?)),
             ConnectionMode::Tcp(sock_addr) => {

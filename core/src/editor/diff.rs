@@ -77,6 +77,7 @@ fn find_lcs(left: &[u8], right: &[u8]) -> Vec<u8> {
     lcs
 }
 
+#[allow(clippy::many_single_char_names)]
 pub fn diff(left: &str, right: &str) -> Vec<Diff> {
     let bleft = left.as_bytes();
     let bright = right.as_bytes();

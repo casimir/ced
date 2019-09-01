@@ -7,11 +7,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::rc::Rc;
 use std::thread;
 
-use crossbeam_channel as channel;
-use failure::Error;
-use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
-
 use crate::editor::Editor;
+use crossbeam_channel as channel;
+use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 
@@ -110,7 +108,7 @@ impl Server {
         client_id: usize,
         conn: &mut Connection,
         message: &T,
-    ) -> Result<(), io::Error>
+    ) -> io::Result<()>
     where
         T: fmt::Display,
     {
@@ -118,7 +116,7 @@ impl Server {
         conn.handle.write_fmt(format_args!("{}\n", message))
     }
 
-    pub fn run(&self) -> Result<(), Error> {
+    pub fn run(&self) -> io::Result<()> {
         let broadcaster = Broadcaster::default();
         let mut editor = Editor::new(&self.session.to_string(), broadcaster.tx);
         let listener = ServerListener::new(&self.session)?;
@@ -172,14 +170,13 @@ impl Server {
                     BROADCAST => {
                         while let Ok(bm) = broadcaster.rx.try_recv() {
                             let mut conns = connections.borrow_mut();
-                            let errors: Vec<Error> = conns
+                            let errors: Vec<io::Error> = conns
                                 .iter_mut()
                                 .filter(|(&client_id, _)| bm.should_notify(client_id))
                                 .map(|(&client_id, c)| {
                                     self.write_message(client_id, c, &bm.message)
                                 })
                                 .filter_map(Result::err)
-                                .map(Error::from)
                                 .collect();
                             for e in &errors {
                                 error!("{}", e)
