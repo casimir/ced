@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub use crate::keys::Key;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -7,6 +9,13 @@ pub enum Face {
     Match,
     Prompt,
     Selection,
+}
+
+// used in ffi to convert enum value to string
+impl fmt::Display for Face {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl Default for Face {
