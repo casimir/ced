@@ -3,4 +3,6 @@
 members = [
     "./core",
     "./remote",
+    "./remote-ffi",
+    "./remote-ffi-gen",
 ]

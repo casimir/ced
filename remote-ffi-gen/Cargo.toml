@@ -1,0 +1,9 @@
+[package]
+name = "remote-ffi-gen"
+version = "0.1.0"
+authors = ["Martin Chaine <martin@casimir.me>"]
+edition = "2018"
+
+[dependencies]
+toml = "0.5"
+serde = { version = "1.0", features = ["derive"] }

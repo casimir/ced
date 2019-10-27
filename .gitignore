@@ -1,12 +1,13 @@
-# rust
+#  generated
+remote-ffi/include/bindings.h
+remote-ffi/src/ffi.rs
 
+# rust
 target/
 
 # xcode
-
 xcuserdata/
 
 # vscode
-
 *.code-workspace
 .vscode/

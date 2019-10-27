@@ -1,0 +1,8 @@
+include_guard = "CED_FFI_H"
+include_version = true
+language = "C"
+tab_width = 4
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"

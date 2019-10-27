@@ -1,0 +1,16 @@
+[package]
+name = "remote-ffi"
+version = "0.1.0"
+authors = ["Martin Chaine <martin@casimir.me>"]
+edition = "2018"
+
+[lib]
+name = "ced_remote"
+crate-type = ["cdylib"]
+
+[dependencies]
+remote = { path = "../remote", package = "ced-remote" }
+
+[build-dependencies]
+cbindgen = "0.9"
+ffigen = { path = "../remote-ffi-gen", package = "remote-ffi-gen" }

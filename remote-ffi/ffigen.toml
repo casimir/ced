@@ -1,0 +1,36 @@
+prefix = "ced_"
+
+[[structure]]
+symbol = "CedConnection"
+module = "crate::connection"
+
+[[structure]]
+symbol = "CedEvent"
+module = "crate::event"
+
+[[structure]]
+symbol = "CedTextItem"
+module = "crate::text"
+[structure.functions]
+iterator = true
+
+[[structure]]
+symbol = "CedVersion"
+
+[[structure]]
+symbol = "StatusItem"
+module = "crate::event"
+[structure.functions]
+iterator = true
+
+[[structure]]
+symbol = "ViewItem"
+module = "crate::event"
+[structure.functions]
+iterator = true
+
+[[structure]]
+symbol = "ViewLens"
+module = "crate::event"
+[structure.functions]
+iterator = true
