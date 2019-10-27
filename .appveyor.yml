@@ -1,8 +1,8 @@
 environment:
   matrix:
-    - TARGET: x86_64-pc-windows-gnu
+    - TARGET: x86_64-pc-windows-msvc
       CHANNEL: stable
-    - TARGET: x86_64-pc-windows-gnu
+    - TARGET: x86_64-pc-windows-msvc
       CHANNEL: beta
   RUST_BACKTRACE: full
 
@@ -12,7 +12,6 @@ install:
   - SET PATH=C:\Users\appveyor\.cargo\bin;C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%
   - rustc -vV
   - cargo -vV
-  - pacman --noconfirm -S mingw-w64-x86_64-gtk3
 
 build: false
 test_script:
