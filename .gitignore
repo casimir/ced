@@ -1,6 +1,6 @@
 # rust
 
-target
+target/
 
 # xcode
 
@@ -9,3 +9,4 @@ xcuserdata/
 # vscode
 
 *.code-workspace
+.vscode/

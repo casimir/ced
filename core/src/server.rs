@@ -7,27 +7,39 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::rc::Rc;
 use std::thread;
 
+use crate::editor::Editor;
 use crossbeam_channel as channel;
-use failure::Error;
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
-
-use editor::Editor;
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
 
 #[derive(Debug)]
 pub struct BroadcastMessage {
     pub message: Notification,
-    pub skiplist: Vec<usize>,
+    clients: Option<Vec<usize>>,
 }
 
 impl BroadcastMessage {
-    pub fn new_skip(message: Notification, skiplist: Vec<usize>) -> BroadcastMessage {
-        BroadcastMessage { message, skiplist }
+    pub fn new(message: Notification) -> BroadcastMessage {
+        BroadcastMessage {
+            message,
+            clients: None,
+        }
     }
 
-    pub fn new(message: Notification) -> BroadcastMessage {
-        Self::new_skip(message, Vec::new())
+    pub fn for_clients(clients: Vec<usize>, message: Notification) -> BroadcastMessage {
+        BroadcastMessage {
+            message,
+            clients: Some(clients),
+        }
+    }
+
+    #[inline]
+    pub fn should_notify(&self, client_id: usize) -> bool {
+        match &self.clients {
+            Some(cs) => cs.contains(&client_id),
+            None => true,
+        }
     }
 }
 
@@ -59,11 +71,11 @@ impl Default for Broadcaster {
 }
 
 struct Connection<'a> {
-    handle: Box<EventedStream + 'a>,
+    handle: Box<dyn EventedStream + 'a>,
 }
 
 impl<'a> Connection<'a> {
-    fn new(handle: Box<EventedStream>) -> Connection<'a> {
+    fn new(handle: Box<dyn EventedStream>) -> Connection<'a> {
         Connection { handle }
     }
 }
@@ -96,7 +108,7 @@ impl Server {
         client_id: usize,
         conn: &mut Connection,
         message: &T,
-    ) -> Result<(), io::Error>
+    ) -> io::Result<()>
     where
         T: fmt::Display,
     {
@@ -104,7 +116,7 @@ impl Server {
         conn.handle.write_fmt(format_args!("{}\n", message))
     }
 
-    pub fn run(&self) -> Result<(), Error> {
+    pub fn run(&self) -> io::Result<()> {
         let broadcaster = Broadcaster::default();
         let mut editor = Editor::new(&self.session.to_string(), broadcaster.tx);
         let listener = ServerListener::new(&self.session)?;
@@ -121,9 +133,10 @@ impl Server {
             BROADCAST,
             Ready::readable(),
             PollOpt::edge(),
-        ).unwrap();
-        // notify readiness to a potentially awaiting client
-        println!("");
+        )
+        .unwrap();
+        // notify readiness to a potential awaiting client
+        println!();
         loop {
             poll.poll(&mut events, None).unwrap();
             for event in events.iter() {
@@ -144,7 +157,8 @@ impl Server {
                             Token(next_client_id),
                             Ready::readable(),
                             PollOpt::edge(),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         info!("client {} connected", next_client_id);
                         let conn = Connection::new(stream);
@@ -156,13 +170,13 @@ impl Server {
                     BROADCAST => {
                         while let Ok(bm) = broadcaster.rx.try_recv() {
                             let mut conns = connections.borrow_mut();
-                            let errors: Vec<Error> = conns
+                            let errors: Vec<io::Error> = conns
                                 .iter_mut()
-                                .filter(|(client_id, _)| !bm.skiplist.contains(&client_id))
-                                .map(|(client_id, c)| {
-                                    self.write_message(*client_id, c, &bm.message)
-                                }).filter_map(Result::err)
-                                .map(Error::from)
+                                .filter(|(&client_id, _)| bm.should_notify(client_id))
+                                .map(|(&client_id, c)| {
+                                    self.write_message(client_id, c, &bm.message)
+                                })
+                                .filter_map(Result::err)
                                 .collect();
                             for e in &errors {
                                 error!("{}", e)
@@ -175,8 +189,8 @@ impl Server {
                         {
                             {
                                 let mut conns = connections.borrow_mut();
-                                let mut conn = conns.get_mut(&client_id).unwrap();
-                                let mut stream = conn.handle.as_mut();
+                                let conn = conns.get_mut(&client_id).unwrap();
+                                let stream = conn.handle.as_mut();
                                 let mut reader = BufReader::new(stream);
                                 if let Err(e) = reader.read_line(&mut line) {
                                     if e.kind() == WouldBlock {
@@ -190,7 +204,7 @@ impl Server {
                                 match editor.handle(client_id, &line) {
                                     Ok(message) => {
                                         let mut conns = connections.borrow_mut();
-                                        let mut conn = conns.get_mut(&client_id).unwrap();
+                                        let conn = conns.get_mut(&client_id).unwrap();
                                         self.write_message(client_id, conn, &message)
                                             .expect("send response to client");
                                     }

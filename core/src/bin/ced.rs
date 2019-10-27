@@ -2,19 +2,16 @@ extern crate ced;
 #[macro_use]
 extern crate clap;
 extern crate env_logger;
-extern crate failure;
-#[macro_use]
-extern crate human_panic;
 
-use clap::{App, Arg};
-use failure::Error;
+use std::io;
 
 use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
 use ced::server::Server;
 use ced::standalone::start_standalone;
+use clap::{App, Arg};
 
 #[cfg(all(feature = "term", unix))]
-arg_enum!{
+arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
     pub enum Mode {
@@ -26,7 +23,7 @@ arg_enum!{
     }
 }
 #[cfg(not(all(feature = "term", unix)))]
-arg_enum!{
+arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
     pub enum Mode {
@@ -47,8 +44,7 @@ impl Mode {
     }
 }
 
-fn main() -> Result<(), Error> {
-    setup_panic!();
+fn main() -> io::Result<()> {
     env_logger::init();
 
     let matches = App::new("ced")
@@ -60,25 +56,28 @@ fn main() -> Result<(), Error> {
                 .short("l")
                 .long("list")
                 .help("Lists running sessions"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("SESSION")
                 .short("s")
                 .long("session")
                 .takes_value(true)
                 .help("Sets session name"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("MODE")
                 .short("m")
                 .long("mode")
                 .possible_values(&Mode::variants())
                 .default_value(Mode::default_value())
                 .help("Mode to use"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("FILE")
                 .multiple(true)
                 .help("A list of files to open"),
-        ).get_matches();
-    let bin_path = std::env::args().next().unwrap();
+        )
+        .get_matches();
 
     if matches.is_present("list") {
         for session_name in Session::list() {
@@ -96,22 +95,28 @@ fn main() -> Result<(), Error> {
         };
 
         match value_t!(matches.value_of("MODE"), Mode).unwrap() {
-            Mode::daemon => start_daemon(&bin_path, &session)
-                .map(|pid| eprintln!("server started with pid {}", pid)),
+            Mode::daemon => {
+                start_daemon(&session).map(|pid| eprintln!("server started with pid {}", pid))
+            }
             Mode::json => {
-                ensure_session(&bin_path, &session)?;
-                StdioClient::new(&session)?.run()
+                ensure_session(&session)?;
+                StdioClient::new(&session)?.run();
+                Ok(())
             }
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
                 Server::new(session).run()
             }
-            Mode::standalone => start_standalone(&filenames),
+            Mode::standalone => {
+                start_standalone(&filenames);
+                Ok(())
+            }
             #[cfg(all(feature = "term", unix))]
             Mode::term => {
                 use ced::tui::Term;
-                ensure_session(&bin_path, &session)?;
-                Term::new(&session, &filenames)?.start()
+                ensure_session(&session)?;
+                Term::new(&session, &filenames)?.start();
+                Ok(())
             }
         }
     }

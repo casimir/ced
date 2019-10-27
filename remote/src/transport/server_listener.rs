@@ -1,13 +1,11 @@
 use std::io;
 
-use failure::Error;
 use mio::net::TcpListener;
 use mio::Evented;
 
-use transport::EventedStream;
-use {ConnectionMode, Session};
-
-use transport::socket::SocketListener;
+use crate::transport::socket::SocketListener;
+use crate::transport::EventedStream;
+use crate::{ConnectionMode, Session};
 
 pub enum ServerListener {
     Socket(SocketListener),
@@ -15,7 +13,7 @@ pub enum ServerListener {
 }
 
 impl ServerListener {
-    pub fn new(session: &Session) -> Result<ServerListener, Error> {
+    pub fn new(session: &Session) -> io::Result<ServerListener> {
         match &session.mode {
             ConnectionMode::Socket(path) => Ok(ServerListener::Socket(SocketListener::bind(path)?)),
             ConnectionMode::Tcp(sock_addr) => {
@@ -24,7 +22,7 @@ impl ServerListener {
         }
     }
 
-    pub fn inner(&self) -> &Evented {
+    pub fn inner(&self) -> &dyn Evented {
         use self::ServerListener::*;
         match self {
             Socket(inner) => inner,
@@ -32,7 +30,7 @@ impl ServerListener {
         }
     }
 
-    pub fn accept(&self) -> io::Result<Box<EventedStream>> {
+    pub fn accept(&self) -> io::Result<Box<dyn EventedStream>> {
         use self::ServerListener::*;
         match self {
             Socket(inner) => {

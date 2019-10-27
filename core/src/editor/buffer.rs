@@ -5,7 +5,8 @@ use std::ops::Index;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use editor::view::Focus;
+use crate::editor::view::Focus;
+use crate::editor::PieceTable;
 
 fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
     let head = path.parent().unwrap();
@@ -55,10 +56,9 @@ fn find_shortest_name(sources: &[BufferSource], idx: usize) -> String {
     }
 }
 
-#[derive(Clone)]
 pub struct Buffer {
     pub source: BufferSource,
-    lines: Vec<String>,
+    pub content: PieceTable,
     last_sync: Option<SystemTime>,
     modified: bool,
 }
@@ -67,7 +67,7 @@ impl Buffer {
     pub fn new_scratch(name: String) -> Buffer {
         Buffer {
             source: BufferSource::Scratch(name),
-            lines: Vec::new(),
+            content: PieceTable::new(),
             last_sync: None,
             modified: false,
         }
@@ -82,29 +82,32 @@ impl Buffer {
             full_path.as_path().canonicalize().unwrap()
         };
 
-        let mut buffer = Buffer {
+        let mut file = File::open(&absolute_path).unwrap();
+        let mut file_content = String::new();
+        file.read_to_string(&mut file_content).expect("read file");
+        let last_sync = Some(SystemTime::now());
+
+        Buffer {
             source: BufferSource::File(absolute_path),
-            lines: Vec::new(),
-            last_sync: None,
+            content: PieceTable::with_text(&file_content),
+            last_sync,
             modified: false,
-        };
-        buffer.load_from_disk(true);
-        buffer
+        }
     }
 
     pub fn line_count(&self) -> usize {
-        self.lines.len()
+        self.content.line_count()
     }
 
-    pub fn lines(&self, focus: Focus) -> &[String] {
+    pub fn lines(&self, focus: Focus) -> Vec<String> {
         match focus {
-            Focus::Range(range) => &self.lines[range],
-            Focus::Whole => &self.lines[..],
+            Focus::Range(range) => self.content.lines()[range].to_vec(),
+            Focus::Whole => self.content.lines(),
         }
     }
 
     pub fn shortest_name(&self, sources: &[BufferSource]) -> String {
-        let idx = sources.iter().position(|ref x| **x == self.source).unwrap();
+        let idx = sources.iter().position(|x| *x == self.source).unwrap();
         find_shortest_name(sources, idx)
     }
 
@@ -129,16 +132,15 @@ impl Buffer {
         true
     }
 
-    pub fn load_from_disk(&mut self, force: bool) -> bool {
+    pub fn load_from_disk(&mut self) -> bool {
         match self.source {
             BufferSource::Scratch(_) => true,
             BufferSource::File(ref path) => {
-                if force || !self.is_synced() {
+                if !self.is_synced() {
                     let mut file = File::open(&path).unwrap();
                     let mut content = String::new();
-                    file.read_to_string(&mut content)
-                        .unwrap_or_else(|_| panic!("failed to read: {}", path.display()));
-                    self.lines = content.lines().map(ToOwned::to_owned).collect();
+                    file.read_to_string(&mut content).expect("read file");
+                    self.content.apply_diff(&content);
                     self.last_sync = Some(SystemTime::now());
                     true
                 } else {
@@ -148,15 +150,15 @@ impl Buffer {
         }
     }
 
-    pub fn append(&mut self, content: &str) {
-        self.lines.push(content.to_owned());
+    pub fn append(&mut self, text: &str) {
+        self.content.append(text);
         self.modified = true;
     }
 }
 
 impl ToString for Buffer {
     fn to_string(&self) -> String {
-        let mut content = self.lines.join("\n").to_owned();
+        let mut content = self.content.text();
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
@@ -170,7 +172,7 @@ mod tests {
 
     #[test]
     fn shortest_name() {
-        let s_debug = BufferSource::Scratch("*debug*".into());
+        let s_debug = BufferSource::Scratch("*buffer*".into());
         let f_some = BufferSource::File(PathBuf::from("/some/file.ext"));
         let f_where_1 = BufferSource::File(PathBuf::from("/some/where/file.where"));
         let f_where_2 = BufferSource::File(PathBuf::from("/any/where/file.where"));
@@ -178,11 +180,11 @@ mod tests {
 
         let sources = [s_debug, f_some, f_where_1, f_where_2, f_where_3];
 
-        assert!(find_shortest_name(&sources, 0) == "*debug*");
-        assert!(find_shortest_name(&sources, 1) == "file.ext");
-        assert!(find_shortest_name(&sources, 2) == "some/where/file.where");
-        assert!(find_shortest_name(&sources, 3) == "any/where/file.where");
-        assert!(find_shortest_name(&sources, 4) == "here/file.where");
+        assert_eq!(find_shortest_name(&sources, 0), "*buffer*");
+        assert_eq!(find_shortest_name(&sources, 1), "file.ext");
+        assert_eq!(find_shortest_name(&sources, 2), "some/where/file.where");
+        assert_eq!(find_shortest_name(&sources, 3), "any/where/file.where");
+        assert_eq!(find_shortest_name(&sources, 4), "here/file.where");
     }
 
     #[test]
@@ -198,8 +200,8 @@ mod tests {
         let buffer = Buffer::new_file(&filename);
         let source = BufferSource::File(full_path.as_path().canonicalize().unwrap());
 
-        assert!(buffer.source == source);
+        assert_eq!(buffer.source, source);
         assert!(buffer.last_sync.is_some());
-        assert!(buffer.lines == lines);
+        assert_eq!(buffer.lines(Focus::Whole), lines);
     }
 }

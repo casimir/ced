@@ -1,24 +1,20 @@
-use std::io::{self, BufRead, BufReader, Lines, Write};
+use std::io::{self, BufRead, BufReader, Lines};
 use std::thread;
 
+use crate::jsonrpc::{ClientEvent, JsonCodingError, Request};
+use crate::session::Session;
+use crate::transport::{ServerStream, Stream};
 use crossbeam_channel as channel;
-use failure::Error;
-
-use jsonrpc::{ClientEvent, Request};
-use session::Session;
-use transport::{ServerStream, Stream};
 
 pub struct Events {
-    lines: Lines<BufReader<Box<Stream>>>,
+    lines: Lines<BufReader<Box<dyn Stream>>>,
 }
 
 impl Iterator for Events {
-    type Item = Result<ClientEvent, Error>;
+    type Item = Result<ClientEvent, JsonCodingError>;
 
-    fn next(&mut self) -> Option<Result<ClientEvent, Error>> {
-        self.lines
-            .next()
-            .map(|l| l.unwrap().parse().map_err(Error::from))
+    fn next(&mut self) -> Option<Result<ClientEvent, JsonCodingError>> {
+        self.lines.next().map(|l| l.unwrap().parse())
     }
 }
 
@@ -28,7 +24,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(session: &Session) -> Result<(Client, channel::Sender<Request>), Error> {
+    pub fn new(session: &Session) -> io::Result<(Client, channel::Sender<Request>)> {
         let (requests_tx, requests) = channel::unbounded();
         let client = Client {
             stream: ServerStream::new(&session.mode)?,
@@ -58,12 +54,12 @@ pub struct StdioClient {
 }
 
 impl StdioClient {
-    pub fn new(session: &Session) -> Result<StdioClient, Error> {
+    pub fn new(session: &Session) -> io::Result<StdioClient> {
         let (client, requests) = Client::new(session)?;
         Ok(StdioClient { client, requests })
     }
 
-    pub fn run(&self) -> Result<(), Error> {
+    pub fn run(&self) {
         let requests_tx = self.requests.clone();
         thread::spawn(move || {
             let stdin = io::stdin();
@@ -83,6 +79,5 @@ impl StdioClient {
                 Err(e) => error!("invalid event: {}", e),
             }
         }
-        Ok(())
     }
 }

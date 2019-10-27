@@ -1,198 +1,183 @@
-#[derive(Clone, Serialize, Deserialize)]
+use std::fmt;
+
+pub use crate::keys::Key;
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Face {
     Default,
+    Error,
     Match,
+    Prompt,
+    Selection,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TextFragment {
-    pub text: String,
-    pub face: Face,
-}
-
-pub mod notification {
-    /// Sent to to the client when connection is complete.
-    pub mod info {
-        use jsonrpc::Notification;
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub session: String,
-        }
-
-        pub fn new(session: &str) -> Notification {
-            let params = Params {
-                session: session.to_string(),
-            };
-            Notification::new("info".to_string(), params).expect("new 'info' notification")
-        }
+// used in ffi to convert enum value to string
+impl fmt::Display for Face {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
+}
 
-    pub mod menu {
-        use jsonrpc::Notification;
-        use protocol::TextFragment;
+impl Default for Face {
+    fn default() -> Face {
+        Face::Default
+    }
+}
 
-        #[derive(Serialize, Deserialize)]
-        pub struct Entry {
-            pub value: String,
-            pub fragments: Vec<TextFragment>,
-            pub description: Option<String>,
-        }
+pub type Text = ornament::Text<Face>;
+pub type TextFragment = ornament::TextFragment<Face>;
 
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub command: String,
-            pub title: String,
-            pub search: String,
-            pub entries: Vec<Entry>,
-        }
+pub mod notifications {
+    use crate::jsonrpc::Notification as JNotification;
+    use crate::protocol::Text;
 
-        pub fn new<P>(params: P) -> Notification
+    pub trait Notification {
+        const METHOD: &'static str;
+        type Params: serde::Serialize;
+
+        fn new<P>(p: P) -> JNotification
         where
-            P: Into<Params>,
+            P: Into<Self::Params>,
         {
-            Notification::new("menu".to_string(), params.into()).unwrap()
+            let params: Self::Params = p.into();
+            JNotification::new(Self::METHOD, params)
+                .expect(&format!("new {} notification", Self::METHOD))
+        }
+
+        fn new_noarg() -> JNotification {
+            JNotification::new(Self::METHOD, ())
+                .expect(&format!("new {} notification", Self::METHOD))
         }
     }
 
-    pub mod view {
-        use jsonrpc::Notification;
-
-        #[derive(Clone, Debug, Serialize, Deserialize)]
-        pub struct ParamsHeader {
-            pub buffer: String,
-            pub start: usize,
-            pub end: usize,
-        }
-
-        #[derive(Clone, Debug, Serialize, Deserialize)]
-        pub struct ParamsLines {
-            pub lines: Vec<String>,
-            pub first_line_num: usize,
-        }
-
-        #[derive(Clone, Debug, Serialize, Deserialize)]
-        #[serde(tag = "type")]
-        pub enum ParamsItem {
-            Header(ParamsHeader),
-            Lines(ParamsLines),
-        }
-
-        pub type Params = Vec<ParamsItem>;
-
-        pub fn new<P>(params: P) -> Notification
-        where
-            P: Into<Params>,
-        {
-            Notification::new("view".to_string(), params.into()).expect("new 'init' notification")
-        }
+    macro_rules! notification {
+        ($name:ident, $method:expr, $params:ty) => {
+            pub struct $name;
+            impl Notification for $name {
+                const METHOD: &'static str = $method;
+                type Params = $params;
+            }
+        };
     }
+
+    notification!(Echo, "echo", Text);
+    notification!(Info, "info", InfoParams);
+    notification!(Menu, "menu", MenuParams);
+    notification!(Status, "status", StatusParams);
+    notification!(View, "view", ViewParams);
+
+    #[derive(Serialize, Deserialize)]
+    pub struct InfoParams {
+        pub client: String,
+        pub session: String,
+        pub cwd: String,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct MenuParamsEntry {
+        pub value: String,
+        pub text: Text,
+        pub description: Option<String>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct MenuParams {
+        pub command: String,
+        pub title: String,
+        pub search: String,
+        pub entries: Vec<MenuParamsEntry>,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct ViewParamsHeader {
+        pub buffer: String,
+        pub start: usize,
+        pub end: usize,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct ViewParamsLines {
+        pub lines: Vec<Text>,
+        pub first_line_num: usize,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct StatusParamsItem {
+        pub index: isize,
+        pub text: Text,
+    }
+
+    pub type StatusParams = Vec<StatusParamsItem>;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(tag = "type")]
+    pub enum ViewParamsItem {
+        Header(ViewParamsHeader),
+        Lines(ViewParamsLines),
+    }
+
+    pub type ViewParams = Vec<ViewParamsItem>;
 }
 
-pub mod request {
-    pub mod command_list {
-        use std::collections::BTreeMap;
+pub mod requests {
+    use super::Key;
+    use crate::jsonrpc::{Id, Request as JRequest};
 
-        pub type Params = ();
+    pub trait Request {
+        const METHOD: &'static str;
+        type Params: serde::Serialize;
+        type Result;
 
-        pub type Result = BTreeMap<String, String>;
-    }
+        fn new<P>(id: Id, p: P) -> JRequest
+        where
+            P: Into<Self::Params>,
+        {
+            let params: Self::Params = p.into();
+            JRequest::new(id, Self::METHOD, params).expect(&format!("new {} request", Self::METHOD))
+        }
 
-    pub mod quit {
-        use jsonrpc::{Id, Request};
-
-        pub type Params = ();
-
-        pub type Result = ();
-
-        pub fn new(id: Id) -> Request {
-            Request::new(id, "quit".to_string(), ()).expect("new quit request")
+        fn new_noarg(id: Id) -> JRequest {
+            JRequest::new(id, Self::METHOD, ()).expect(&format!("new {} request", Self::METHOD))
         }
     }
 
-    pub mod buffer_select {
-        use jsonrpc::{Id, Request};
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub buffer: String,
-        }
-
-        pub fn new(id: Id, buffer: &str) -> Request {
-            let params = Params {
-                buffer: buffer.to_string(),
-            };
-            Request::new(id, "buffer-select".to_string(), params)
-                .expect("new 'buffer-select' request")
-        }
+    macro_rules! request {
+        ($name:ident, $method:expr, $params:ty, $result:ty) => {
+            pub struct $name;
+            impl Request for $name {
+                const METHOD: &'static str = $method;
+                type Params = $params;
+                type Result = $result;
+            }
+        };
     }
 
-    pub mod edit {
-        use jsonrpc::{Id, Request};
+    request!(Quit, "quit", (), ());
+    request!(Edit, "edit", EditParams, ());
+    request!(View, "view", String, ());
+    request!(ViewDelete, "view-delete", (), ());
+    request!(ViewAdd, "view-add", String, ());
+    request!(ViewRemove, "view-remove", String, ());
+    request!(Menu, "menu", MenuParams, ());
+    request!(MenuSelect, "menu-select", MenuSelectParams, ());
+    request!(Keys, "keys", Vec<Key>, ());
 
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub file: String,
-            pub path: Option<String>,
-        }
-
-        pub fn new(id: Id, file: &str) -> Request {
-            let params = Params {
-                file: file.to_string(),
-                path: None,
-            };
-            Request::new(id, "edit".to_string(), params).unwrap()
-        }
-
-        pub type Result = ();
+    #[derive(Serialize, Deserialize)]
+    pub struct EditParams {
+        pub file: String,
+        pub path: Option<String>,
+        pub scratch: bool,
     }
 
-    pub mod view {
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub view_id: String,
-        }
-
-        pub type Result = ();
+    #[derive(Serialize, Deserialize)]
+    pub struct MenuParams {
+        pub command: String,
+        pub search: String,
     }
 
-    pub mod menu {
-        use jsonrpc::{Id, Request};
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub command: String,
-            pub search: String,
-        }
-
-        pub fn new(id: Id, command: &str, search: &str) -> Request {
-            let params = Params {
-                command: command.to_string(),
-                search: search.to_string(),
-            };
-            Request::new(id, "menu".to_string(), params).unwrap()
-        }
-
-        pub type Result = ();
-    }
-
-    pub mod menu_select {
-        use jsonrpc::{Id, Request};
-
-        #[derive(Serialize, Deserialize)]
-        pub struct Params {
-            pub command: String,
-            pub choice: String,
-        }
-
-        pub fn new(id: Id, command: &str, choice: &str) -> Request {
-            let params = Params {
-                command: command.to_string(),
-                choice: choice.to_string(),
-            };
-            Request::new(id, "menu-select".to_string(), params).unwrap()
-        }
-
-        pub type Result = ();
+    #[derive(Serialize, Deserialize)]
+    pub struct MenuSelectParams {
+        pub command: String,
+        pub choice: String,
     }
 }

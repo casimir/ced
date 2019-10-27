@@ -1,15 +1,13 @@
 use std::io::{self, BufRead};
 use std::thread;
 
-use failure::Error;
-
-use editor::Editor;
-use remote::protocol::request::edit::Params as EditParams;
-use server::Broadcaster;
+use crate::editor::Editor;
+use crate::server::Broadcaster;
+use remote::protocol::requests::EditParams;
 
 const CLIENT_ID: usize = 1;
 
-pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
+pub fn start_standalone(filenames: &[&str]) {
     let broadcaster = Broadcaster::default();
     let mut editor = Editor::new("", broadcaster.tx);
 
@@ -18,6 +16,7 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
         let params = EditParams {
             file: fname.to_string(),
             path: None,
+            scratch: false,
         };
         let _ = editor
             .command_edit(CLIENT_ID, &params)
@@ -26,7 +25,7 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
     let rx = broadcaster.rx.clone();
     thread::spawn(move || loop {
         let bm = rx.recv().expect("receive broadcast message");
-        if !bm.skiplist.contains(&CLIENT_ID) {
+        if bm.should_notify(CLIENT_ID) {
             println!("{}", &bm.message);
         }
     });
@@ -43,5 +42,4 @@ pub fn start_standalone(filenames: &[&str]) -> Result<(), Error> {
     }
 
     editor.remove_client(CLIENT_ID);
-    Ok(())
 }

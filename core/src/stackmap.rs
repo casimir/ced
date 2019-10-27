@@ -1,12 +1,20 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Fail)]
-#[fail(display = "invalid operation: {}", reason)]
+#[derive(Debug)]
 pub struct InvalidOp {
     reason: &'static str,
 }
+
+impl fmt::Display for InvalidOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid operation: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidOp {}
 
 pub struct StackMap<K, V> {
     stack: Vec<K>,

@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{from_value, to_string, to_value, Value};
 
+pub type JsonCodingError = serde_json::Error;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Id {
@@ -23,9 +25,10 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new<T, P>(id: Id, method: String, params: P) -> serde_json::Result<Request>
+    pub fn new<T, M, P>(id: Id, method: M, params: P) -> Result<Request, JsonCodingError>
     where
         T: Serialize,
+        M: Into<String>,
         P: Into<Option<T>>,
     {
         let serialized_params = match params.into() {
@@ -35,12 +38,12 @@ impl Request {
         Ok(Request {
             jsonrpc: "2.0".to_string(),
             id,
-            method,
+            method: method.into(),
             params: serialized_params,
         })
     }
 
-    pub fn params<T>(&self) -> serde_json::Result<Option<T>>
+    pub fn params<T>(&self) -> Result<Option<T>, JsonCodingError>
     where
         T: DeserializeOwned,
     {
@@ -52,7 +55,7 @@ impl Request {
 }
 
 impl FromStr for Request {
-    type Err = serde_json::Error;
+    type Err = JsonCodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
@@ -75,9 +78,10 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn new<T, P>(method: String, params: P) -> serde_json::Result<Notification>
+    pub fn new<T, M, P>(method: M, params: P) -> Result<Notification, JsonCodingError>
     where
         T: Serialize,
+        M: Into<String>,
         P: Into<Option<T>>,
     {
         let serialized_params = match params.into() {
@@ -86,12 +90,12 @@ impl Notification {
         };
         Ok(Notification {
             jsonrpc: "2.0".to_string(),
-            method,
+            method: method.into(),
             params: serialized_params,
         })
     }
 
-    pub fn params<T>(&self) -> serde_json::Result<Option<T>>
+    pub fn params<T>(&self) -> Result<Option<T>, JsonCodingError>
     where
         T: DeserializeOwned,
     {
@@ -103,7 +107,7 @@ impl Notification {
 }
 
 impl FromStr for Notification {
-    type Err = serde_json::Error;
+    type Err = JsonCodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
@@ -125,7 +129,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new<T, D>(code: i32, message: String, data: D) -> serde_json::Result<Error>
+    pub fn new<T, D>(code: i32, message: String, data: D) -> Result<Error, JsonCodingError>
     where
         T: Serialize,
         D: Into<Option<T>>,
@@ -141,7 +145,7 @@ impl Error {
         })
     }
 
-    pub fn data<T>(&self) -> serde_json::Result<Option<T>>
+    pub fn data<T>(&self) -> Result<Option<T>, JsonCodingError>
     where
         T: DeserializeOwned,
     {
@@ -163,7 +167,8 @@ impl Error {
             -32600,
             "The JSON sent is not a valid Request object.".to_string(),
             source,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub fn method_not_found(method: &str) -> Error {
@@ -171,7 +176,8 @@ impl Error {
             -32601,
             "The method does not exist / is not available.".to_string(),
             method,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub fn invalid_params(reason: &str) -> Error {
@@ -203,7 +209,7 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn new<T>(id: Id, result: Result<T, Error>) -> serde_json::Result<Response>
+    pub fn new<T>(id: Id, result: Result<T, Error>) -> Result<Response, JsonCodingError>
     where
         T: Serialize,
     {
@@ -217,7 +223,7 @@ impl Response {
         Ok(resp)
     }
 
-    pub fn result<T>(&self) -> serde_json::Result<Result<T, Error>>
+    pub fn result<T>(&self) -> Result<Result<T, Error>, JsonCodingError>
     where
         T: DeserializeOwned,
     {
@@ -227,7 +233,7 @@ impl Response {
         })
     }
 
-    pub fn set_result<T>(&mut self, result: Result<T, Error>) -> serde_json::Result<()>
+    pub fn set_result<T>(&mut self, result: Result<T, Error>) -> Result<(), JsonCodingError>
     where
         T: Serialize,
     {
@@ -244,7 +250,7 @@ impl Response {
         Ok(())
     }
 
-    pub fn success<T>(id: Id, result: Option<T>) -> serde_json::Result<Response>
+    pub fn success<T>(id: Id, result: Option<T>) -> Result<Response, JsonCodingError>
     where
         T: Serialize,
     {
@@ -289,7 +295,7 @@ impl Response {
 }
 
 impl FromStr for Response {
-    type Err = serde_json::Error;
+    type Err = JsonCodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
@@ -329,7 +335,7 @@ impl ClientEvent {
 }
 
 impl FromStr for ClientEvent {
-    type Err = serde_json::Error;
+    type Err = JsonCodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
@@ -354,8 +360,8 @@ macro_rules! response {
             $msg.id.clone(),
             match $msg.params() {
                 Ok(Some(ref params)) => $call(params),
-                Ok(None) => Err(JError::invalid_request("missing field: params")),
-                Err(err) => Err(JError::invalid_params(&err.to_string())),
+                Ok(None) => Err(Error::invalid_request("missing field: params")),
+                Err(err) => Err(Error::invalid_params(&err.to_string())),
             },
         )
     };

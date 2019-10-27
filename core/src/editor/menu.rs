@@ -2,11 +2,13 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 
+use crate::editor::{Editor, EditorInfo};
 use regex::{CaptureLocations, Regex};
-
-use editor::Editor;
-use remote::protocol::notification::menu::{Entry, Params as NotificationParams};
-use remote::protocol::{Face, TextFragment};
+use remote::jsonrpc;
+use remote::protocol::{
+    notifications::{MenuParams, MenuParamsEntry},
+    Face, TextFragment,
+};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Token {
@@ -297,7 +299,7 @@ mod tests {
     }
 }
 
-pub type MenuAction = fn(&str, &mut Editor, usize) -> Result<(), failure::Error>;
+pub type MenuAction = fn(&str, &mut Editor, usize) -> Result<(), jsonrpc::Error>;
 
 #[derive(Clone)]
 pub struct MenuEntry {
@@ -313,64 +315,111 @@ impl Searchable for MenuEntry {
     }
 }
 
-pub type EntryProvider = fn() -> Vec<MenuEntry>;
+pub type EntryProvider = fn(&EditorInfo) -> Vec<MenuEntry>;
+
+#[derive(Clone)]
+enum Source {
+    Prompt(String, MenuAction),
+    Provider(EntryProvider),
+}
 
 #[derive(Clone)]
 pub struct Menu {
     pub command: String,
     pub title: String,
-    provider: EntryProvider,
+    source: Source,
     entries: Vec<MenuEntry>,
 }
 
 impl Menu {
     pub fn new(command: &str, title: &str, provider: EntryProvider) -> Menu {
-        let mut menu = Menu {
+        Menu {
             command: command.to_string(),
             title: title.to_string(),
-            provider,
+            source: Source::Provider(provider),
             entries: Vec::new(),
-        };
-        menu.populate();
-        menu
+        }
     }
 
-    pub fn populate(&mut self) {
-        self.entries = (self.provider)();
+    pub fn prompt(command: &str, title: &str, message: &str, action: MenuAction) -> Menu {
+        Menu {
+            command: command.to_string(),
+            title: title.to_string(),
+            source: Source::Prompt(message.to_string(), action),
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn is_prompt(&self) -> bool {
+        use Source::*;
+        match self.source {
+            Prompt(_, _) => true,
+            Provider(_) => false,
+        }
+    }
+
+    pub fn populate(&mut self, info: &EditorInfo) {
+        use Source::*;
+        self.entries = match &self.source {
+            Prompt(message, action) => vec![MenuEntry {
+                key: String::new(),
+                label: message.clone(),
+                description: None,
+                action: *action,
+            }],
+            Provider(provider) => (provider)(info),
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<&MenuEntry> {
         self.entries.iter().find(|e| e.key == key)
     }
 
-    pub fn filter(&self, search: &str) -> Candidates<MenuEntry> {
+    fn filter(&self, search: &str) -> Candidates<MenuEntry> {
         let filter = MenuFilter::new(search);
         filter.filter(&self.entries)
     }
 
-    pub fn to_notification_params(&self, search: &str) -> NotificationParams {
+    pub fn to_notification_params(&self, search: &str) -> MenuParams {
         let command = self.command.to_string();
         let title = self.title.to_string();
-        let entries = self
-            .filter(search)
-            .iter()
-            .filter(|c| c.is_match())
-            .map(|c| Entry {
-                value: c.object.key.clone(),
-                fragments: c
-                    .tokenize()
-                    .iter()
-                    .map(|t| TextFragment {
-                        text: t.text.clone(),
-                        face: if t.is_match {
-                            Face::Match
-                        } else {
-                            Face::Default
-                        },
-                    }).collect(),
-                description: c.object.description.clone(),
-            }).collect();
-        NotificationParams {
+        let entries = if self.is_prompt() {
+            self.entries
+                .iter()
+                .map(|e| MenuParamsEntry {
+                    value: e.key.clone(),
+                    text: TextFragment {
+                        text: e.label.clone(),
+                        face: Face::Prompt,
+                    }
+                    .into(),
+                    description: e.description.clone(),
+                })
+                .collect()
+        } else {
+            self.filter(search)
+                .iter()
+                .filter(|c| c.is_match())
+                .map(|c| MenuParamsEntry {
+                    value: c.object.key.clone(),
+                    text: c
+                        .tokenize()
+                        .iter()
+                        .map(|t| TextFragment {
+                            text: t.text.clone(),
+                            face: if t.is_match {
+                                Face::Match
+                            } else {
+                                Face::Default
+                            },
+                        })
+                        .collect::<Vec<TextFragment>>()
+                        .into(),
+                    description: c.object.description.clone(),
+                })
+                .collect()
+        };
+        MenuParams {
             command,
             title,
             search: search.to_string(),

@@ -2,14 +2,12 @@
 name = "ced"
 version = "0.1.0"
 authors = ["Martin Chaine <martin@casimir.me>"]
+edition = "2018"
+default-run = "ced"
 
 [lib]
 name = "ced"
 path = "src/lib.rs"
-
-[[bin]]
-name = "ced"
-path = "src/main.rs"
 
 [features]
 default = ["term"]
@@ -18,20 +16,20 @@ term = ["termion"]
 
 [dependencies]
 ced-remote = { path = "../remote" }
-clap = "2.32"
+clap = "2.33"
 crossbeam-channel = "0.3"
+dirs = "1.0"
 env_logger = "0.6"
-failure = "0.1"
-failure_derive = "0.1"
-human-panic = "1.0"
 ignore = "0.4"
-lazy_static = "1.2"
 log = "0.4"
 mio = "0.6"
-regex = "1.0"
+ornament = "0.2"
+rbtset = "1.0"
+regex = "1.2"
+rlua = "0.16"
 
 [target.'cfg(unix)'.dependencies]
 termion = { version = "1.5", optional = true }
 
 [dev-dependencies]
-itertools = "0.7"
+itertools = "0.8"

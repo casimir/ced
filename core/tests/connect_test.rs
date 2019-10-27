@@ -1,52 +1,40 @@
-extern crate ced;
-extern crate crossbeam_channel as channel;
-extern crate failure;
-extern crate itertools;
+mod helpers;
 
-use std::thread::sleep;
-use std::time::Duration;
+use std::env;
+use std::io;
 
-use itertools::Itertools;
-
-use ced::editor::Editor;
+use ced::editor::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use ced::remote::jsonrpc::ClientEvent;
-use ced::remote::protocol::notification::view::{Params as View, ParamsItem as ViewItem};
+use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
 use ced::remote::{start_daemon, Client, Events, Session};
-use ced::server::Broadcaster;
+use itertools::Itertools;
 
 const CLIENT_ID: usize = 1;
 
-#[derive(Clone, Default)]
-struct State {
-    view: View,
-}
-
 #[test]
 fn starting_notifications() {
-    let broadcaster = Broadcaster::default();
-    let mut editor = Editor::new("", broadcaster.tx);
-    let mut state = State::default();
+    let mut editor = helpers::SequentialEditor::new();
     editor.add_client(CLIENT_ID);
-    sleep(Duration::from_millis(150));
-    while let Ok(bm) = broadcaster.rx.try_recv() {
-        match bm.message.method.as_str() {
-            "view" => state.view = bm.message.params().unwrap().unwrap(),
-            _ => {}
-        }
-    }
+    editor.step();
     editor.remove_client(CLIENT_ID);
 
-    let view = state.view;
+    let view = &editor.state().view;
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
+}
+
+#[derive(Clone, Default)]
+struct State {
+    view: ViewParams,
 }
 
 struct SyncClient {
@@ -55,7 +43,7 @@ struct SyncClient {
 }
 
 impl SyncClient {
-    pub fn start(session: &Session) -> Result<SyncClient, failure::Error> {
+    pub fn start(session: &Session) -> io::Result<SyncClient> {
         let (client, _) = Client::new(session)?;
         Ok(SyncClient {
             events: client.run(),
@@ -63,8 +51,8 @@ impl SyncClient {
         })
     }
 
-    fn drain_notifications(&mut self) -> Result<(), failure::Error> {
-        let is_notification = |res: &Result<ClientEvent, failure::Error>| match res {
+    fn drain_notifications(&mut self) {
+        let is_notification = |res: &Result<ClientEvent, _>| match res {
             Ok(ev) => ev.is_notification(),
             _ => false,
         };
@@ -82,17 +70,19 @@ impl SyncClient {
                 _ => {}
             }
         }
-        Ok(())
     }
 }
 
 fn start_client_and_server(session: &Session) -> SyncClient {
-    let mut test_exe = std::env::current_exe().unwrap();
-    test_exe.pop();
-    test_exe.pop();
-    test_exe.push("ced");
-    start_daemon(test_exe.to_str().unwrap(), &session).expect("start a daemon");
-    SyncClient::start(&session).unwrap()
+    if env::var("CED_BIN").is_err() {
+        let mut test_exe = std::env::current_exe().unwrap();
+        test_exe.pop();
+        test_exe.pop();
+        test_exe.push("ced");
+        env::set_var("CED_BIN", test_exe.display().to_string());
+    }
+    start_daemon(&session).expect("start the daemon");
+    SyncClient::start(&session).expect("start the client")
 }
 
 // reactivate when a windows CI with 1803+ is available
@@ -101,18 +91,19 @@ fn start_client_and_server(session: &Session) -> SyncClient {
 fn connect_socket() {
     let session = Session::from_name("_test");
     let mut client = start_client_and_server(&session);
-    client.drain_notifications().unwrap();
+    client.drain_notifications();
 
     let view = client.state.view;
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
 }
 
@@ -120,17 +111,18 @@ fn connect_socket() {
 fn connect_tcp() {
     let session = Session::from_name("@:7357");
     let mut client = start_client_and_server(&session);
-    client.drain_notifications().unwrap();
+    client.drain_notifications();
 
     let view = client.state.view;
     let buffers: Vec<String> = view
         .iter()
         .filter_map(|item| match item {
-            ViewItem::Header(header) => Some(header.buffer.clone()),
+            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
     assert_eq!(
         buffers,
-        vec!["*debug*".to_string(), "*scratch*".to_string()]
+        vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
     );
 }

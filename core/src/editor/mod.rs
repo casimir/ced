@@ -1,186 +1,239 @@
 mod buffer;
+mod command;
+mod core;
+mod diff;
 pub mod menu;
+mod piece_table;
+mod range;
+mod selection;
 pub mod view;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
 
-use crossbeam_channel as channel;
-use failure::Error;
-use ignore::Walk;
-
 pub use self::buffer::{Buffer, BufferSource};
-use self::menu::{Menu, MenuEntry};
+use self::command::default_commands;
+use self::core::Core;
+pub use self::core::{BUFFER_DEBUG, BUFFER_SCRATCH};
+use self::menu::Menu;
+use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
-use remote::jsonrpc::{Error as JError, Id, Notification, Request, Response};
-use remote::protocol;
+use crate::server::BroadcastMessage;
+use crossbeam_channel as channel;
+use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
+use remote::protocol::{
+    notifications::{self, Notification as _},
+    requests, Face, Text, TextFragment,
+};
 use remote::response;
-use server::BroadcastMessage;
-use stackmap::StackMap;
+use rlua;
 
-lazy_static! {
-    static ref HELP: BTreeMap<&'static str, &'static str> = {
-        let mut h = BTreeMap::new();
-        h.insert("command-list", "list available commands");
-        h.insert("buffer-list", "list open buffers (with content)");
-        h.insert(
-            "edit <path>",
-            "edit a file, reload it from the disk if needed",
-        );
-        h.insert("view <view_id>", "select an existing view");
-        h
-    };
+pub struct EditorInfo<'a> {
+    pub session: &'a str,
+    pub cwd: &'a PathBuf,
+    pub buffers: &'a [String],
+    pub views: &'a [String],
 }
 
-#[derive(Clone, Debug)]
-pub struct ClientContext {
-    view: View,
-    buffer: String,
+#[derive(Clone)]
+pub struct Notifier {
+    sender: channel::Sender<BroadcastMessage>,
+}
+
+impl Notifier {
+    pub fn broadcast<C>(&self, message: Notification, only_clients: C)
+    where
+        C: Into<Option<Vec<usize>>>,
+    {
+        let bm = match only_clients.into() {
+            Some(cs) => BroadcastMessage::for_clients(cs, message),
+            None => BroadcastMessage::new(message),
+        };
+        self.sender.send(bm).expect("broadcast message");
+    }
+
+    pub fn notify(&self, client_id: usize, message: Notification) {
+        self.broadcast(message, vec![client_id]);
+    }
+
+    fn echo<C>(&self, client_id: C, text: &str, face: Face)
+    where
+        C: Into<Option<usize>>,
+    {
+        let params = Text::from(TextFragment {
+            text: text.to_owned(),
+            face,
+        });
+        let notif = notifications::Echo::new(params);
+        match client_id.into() {
+            Some(id) => self.notify(id, notif),
+            None => self.broadcast(notif, None),
+        }
+    }
+
+    pub fn message<C>(&self, client_id: C, text: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        self.echo(client_id, text, Face::Default);
+    }
+
+    pub fn error<C>(&self, client_id: C, text: &str)
+    where
+        C: Into<Option<usize>>,
+    {
+        self.echo(client_id, text, Face::Error);
+    }
+
+    pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
+        let params = notifications::InfoParams {
+            client: client_id.to_string(),
+            session: info.session.to_owned(),
+            cwd: info.cwd.display().to_string(),
+        };
+        self.notify(client_id, notifications::Info::new(params));
+    }
+
+    pub fn view_update(&self, params: Vec<(usize, notifications::ViewParams)>) {
+        for (client_id, np) in params {
+            self.notify(client_id, notifications::View::new(np));
+        }
+    }
+}
+
+struct LuaResultEvents {
+    redraw_status: bool,
+}
+
+impl<'lua> From<rlua::Table<'lua>> for LuaResultEvents {
+    fn from(table: rlua::Table<'lua>) -> LuaResultEvents {
+        macro_rules! bool {
+            ($t:ident, $k:expr) => {
+                $t.get::<_, bool>($k).ok().unwrap_or_default()
+            };
+        }
+        LuaResultEvents {
+            redraw_status: bool!(table, "redraw_status"),
+        }
+    }
 }
 
 pub struct Editor {
     session_name: String,
-    clients: StackMap<usize, ClientContext>,
-    broadcaster: channel::Sender<BroadcastMessage>,
-    buffers: HashMap<String, Buffer>,
-    views: StackMap<String, View>,
+    cwd: PathBuf,
     command_map: HashMap<String, Menu>,
     stopped_clients: HashSet<usize>,
+    core: Core,
+    lua: rlua::Lua,
 }
 
 impl Editor {
     pub fn new(session: &str, broadcaster: channel::Sender<BroadcastMessage>) -> Editor {
+        let notifier = Notifier {
+            sender: broadcaster,
+        };
         let mut editor = Editor {
             session_name: session.into(),
-            clients: StackMap::new(),
-            broadcaster,
-            buffers: HashMap::new(),
-            views: StackMap::new(),
-            command_map: HashMap::new(),
+            cwd: env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
+            command_map: default_commands(),
             stopped_clients: HashSet::new(),
+            core: Core::new(notifier),
+            lua: rlua::Lua::new(),
         };
 
         let mut view = View::default();
-        editor.open_scratch("*debug*");
+        editor.core.open_scratch(BUFFER_DEBUG);
+        editor.core.debug(&format!(
+            "command: {}",
+            env::args().collect::<Vec<_>>().join(" ")
+        ));
+        editor.core.debug(&format!("cwd: {}", editor.cwd.display()));
         view.add_lens(Lens {
-            buffer: String::from("*debug*"),
+            buffer: BUFFER_DEBUG.to_owned(),
             focus: Focus::Whole,
         });
-        editor.open_scratch("*scratch*");
+        editor.core.open_scratch(BUFFER_SCRATCH);
         view.add_lens(Lens {
-            buffer: String::from("*scratch*"),
+            buffer: BUFFER_SCRATCH.to_owned(),
             focus: Focus::Whole,
         });
-        editor.views.insert(view.key(), view);
+        editor.core.add_view(view);
 
-        editor.register_command(Menu::new("", "command", || {
-            let mut entries = Vec::new();
-            entries.push(MenuEntry {
-                key: "open".to_string(),
-                label: "Open file".to_string(),
-                description: Some("Open and read a new file.".to_string()),
-                action: |_key, editor, client_id| {
-                    let menu = &editor.command_map["open"];
-                    editor.notify(
-                        client_id,
-                        protocol::notification::menu::new(menu.to_notification_params("")),
-                    );
-                    Ok(())
-                },
-            });
-            entries.push(MenuEntry {
-                key: "quit".to_string(),
-                label: "Quit".to_string(),
-                description: Some("Quit the current client".to_string()),
-                action: |_key, editor, client_id| {
-                    editor.command_quit(client_id, &())?;
-                    Ok(())
-                },
-            });
-            entries
-        }));
-        editor.register_command(Menu::new("open", "file", || {
-            Walk::new("./")
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().map(|ft| !ft.is_dir()).unwrap_or(false))
-                .filter_map(|e| e.path().to_str().map(|s| String::from(&s[2..])))
-                .map(|fpath| MenuEntry {
-                    key: fpath.to_string(),
-                    label: fpath.to_string(),
-                    description: None,
-                    action: |key, editor, client_id| {
-                        let mut path = std::env::current_dir().unwrap();
-                        path.push(key);
-                        let params = protocol::request::edit::Params {
-                            file: key.to_owned(),
-                            path: Some(path.into_os_string().into_string().unwrap()),
-                        };
-                        editor.command_edit(client_id, &params)?;
-                        Ok(())
-                    },
-                }).collect()
-        }));
+        let lua_pipe = editor.core.clone();
+        editor
+            .lua
+            .context(|lua: rlua::Context| {
+                // TODO handle runtime path correctly
+                let rtp = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts");
+                lua.load(&format!(
+                    "package.path = package.path .. ';{}'",
+                    rtp.join("?.lua").display().to_string().replace(r"\", "/")
+                ))
+                .exec()?;
+                lua.globals().set("editor", lua_pipe)?;
+                lua.load("require 'prelude'").exec()
+            })
+            .expect("load prelude script");
 
         editor
     }
 
-    fn register_command(&mut self, menu: Menu) {
-        self.command_map.insert(menu.command.to_string(), menu);
-    }
-
-    fn broadcast<F>(&self, message: Notification, filter: F)
-    where
-        F: Fn(&usize) -> bool,
-    {
-        let skiplist = self
-            .clients
-            .keys()
-            .filter(|&k| !filter(k))
-            .cloned()
-            .collect();
-        let bm = BroadcastMessage::new_skip(message, skiplist);
-        self.broadcaster.send(bm).expect("broadcast message");
-    }
-
-    fn broadcast_all(&self, message: Notification) {
-        let bm = BroadcastMessage::new(message);
-        self.broadcaster.send(bm).expect("broadcast message");
-    }
-
-    fn notify(&self, client_id: usize, message: Notification) {
-        self.broadcast(message, |&k| k == client_id);
-    }
-
-    fn notify_view_update(&self, client_id: usize) {
-        let context = &self.clients[&client_id];
-        self.notify(
-            client_id,
-            protocol::notification::view::new(context.view.to_notification_params(&self.buffers)),
-        );
-    }
-
-    pub fn add_client(&mut self, id: usize) {
-        let context = if let Some(c) = self.clients.latest() {
-            self.clients[c].clone()
-        } else {
-            ClientContext {
-                view: self.views.latest_value().unwrap().clone(),
-                buffer: String::new(),
+    fn send_status_update(&mut self, client_id: usize) {
+        let items: rlua::Result<_> = self.lua.context(|lua: rlua::Context| {
+            let config = lua
+                .load(&format!("clients[{}].status_line", client_id))
+                .eval::<HashMap<String, rlua::Table>>()?;
+            let mut items = Vec::new();
+            for (k, v) in config {
+                items.push(match k.as_str() {
+                    "client" => notifications::StatusParamsItem {
+                        index: v.get("index")?,
+                        text: format!("[{}@{}]", client_id, self.session_name).into(),
+                    },
+                    _ => notifications::StatusParamsItem {
+                        index: v.get("index")?,
+                        text: v.get::<_, String>("text")?.into(),
+                    },
+                })
             }
-        };
-        self.clients.insert(id, context.clone());
-        self.append_debug(&format!("new client: {}", id));
-        self.notify(id, protocol::notification::info::new(&self.session_name));
-        if !context.view.contains_buffer("*debug*") {
-            self.notify_view_update(id);
+            Ok(items)
+        });
+        match items {
+            Ok(mut params) => {
+                params.sort_by(|a, b| a.index.cmp(&b.index));
+                self.core
+                    .get_notifier()
+                    .notify(client_id, notifications::Status::new(params))
+            }
+            Err(e) => self.core.error(client_id, "status line", &e.to_string()),
         }
     }
 
+    pub fn add_client(&mut self, id: usize) {
+        let info = EditorInfo {
+            session: &self.session_name,
+            cwd: &self.cwd,
+            buffers: &[],
+            views: &[],
+        };
+        self.core.add_client(id, &info);
+        self.lua.context(|lua: rlua::Context| {
+            lua.load(&format!("clients[{0}] = clients.new({0})", id))
+                .exec()
+                .expect("set client context");
+        });
+        self.send_status_update(id);
+    }
+
     pub fn remove_client(&mut self, id: usize) {
-        self.clients.remove(&id);
-        self.append_debug(&format!("client left: {}", id));
+        self.core.remove_client(id);
+        self.lua.context(|lua: rlua::Context| {
+            lua.load(&format!("clients[{}] = nil", id))
+                .exec()
+                .expect("unset client context");
+        });
     }
 
     pub fn removed_clients(&mut self) -> Vec<usize> {
@@ -189,115 +242,62 @@ impl Editor {
         ids
     }
 
-    fn open_scratch(&mut self, name: &str) {
-        let buffer = Buffer::new_scratch(name.to_owned());
-        self.buffers.insert(name.into(), buffer);
-    }
-
-    fn open_file(&mut self, buffer_name: &str, filename: &PathBuf) {
-        let buffer = Buffer::new_file(filename);
-        self.buffers.insert(buffer_name.to_string(), buffer);
-    }
-
-    fn delete_buffer(&mut self, buffer_name: &str) {
-        self.buffers.remove(&buffer_name.to_owned());
-        // TODO update view
-        if self.buffers.is_empty() {
-            self.open_scratch("*scratch*");
+    fn dispatch_lua_result(&mut self, client_id: usize, result: LuaResultEvents) {
+        if result.redraw_status {
+            self.send_status_update(client_id);
         }
     }
 
-    fn append_debug(&mut self, content: &str) {
-        if let Some(debug_buffer) = self.buffers.get_mut("*debug*") {
-            debug_buffer.append(content);
-        }
-        info!("{}", content);
-        for (client_id, context) in self.clients.iter() {
-            if context.view.contains_buffer("*debug*") {
-                self.notify_view_update(*client_id);
-            }
-        }
-    }
-
-    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, Error> {
-        let message: Request = match line.parse() {
+    pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, JsonCodingError> {
+        let msg: Request = match line.parse() {
             Ok(req) => req,
             Err(err) => {
-                error!("{}: {}", err, line);
+                self.core
+                    .error(client_id, "protocol", &format!("{}: {}", err, line));
                 return Ok(Response::invalid_request(Id::Null, line));
             }
         };
-        trace!("<- ({}) {}", client_id, message);
-        match message.method.as_str() {
-            "command-list" => response!(message, |params| self
-                .command_command_list(client_id, params)),
-            "edit" => response!(message, |params| self.command_edit(client_id, params)),
-            "quit" => response!(message, |params| self.command_quit(client_id, params)),
-            "view" => response!(message, |params| self.command_view(client_id, params)),
-            "menu" => response!(message, |params| self.command_menu(client_id, params)),
-            "menu-select" => response!(message, |params| self
-                .command_menu_select(client_id, params)),
+        trace!("<- ({}) {}", client_id, msg);
+        match msg.method.as_str() {
+            "edit" => response!(msg, |params| self.command_edit(client_id, params)),
+            "quit" => Response::new(msg.id.clone(), self.command_quit(client_id)),
+            "view" => response!(msg, |params| self.command_view(client_id, params)),
+            "view-delete" => Response::new(msg.id.clone(), self.command_view_delete(client_id)),
+            "view-add" => response!(msg, |params| self.command_view_add(client_id, params)),
+            "view-remove" => response!(msg, |params| self.command_view_remove(client_id, params)),
+            "menu" => response!(msg, |params| self.command_menu(client_id, params)),
+            "menu-select" => response!(msg, |params| self.command_menu_select(client_id, params)),
+            "keys" => response!(msg, |params| self.command_keys(client_id, params)),
             method => {
-                let dm = format!("unknown command: {}\n", message);
-                self.append_debug(&dm);
-                Ok(Response::method_not_found(message.id, method))
+                self.core.error(
+                    client_id,
+                    "protocol",
+                    &format!("unknown command: {}\n", msg),
+                );
+                Ok(Response::method_not_found(msg.id, method))
             }
-        }.map_err(Error::from)
-    }
-
-    fn command_command_list(
-        &mut self,
-        _client_id: usize,
-        _params: &protocol::request::command_list::Params,
-    ) -> Result<protocol::request::command_list::Result, JError> {
-        Ok(HELP
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect())
+        }
     }
 
     pub fn command_edit(
         &mut self,
         client_id: usize,
-        params: &protocol::request::edit::Params,
-    ) -> Result<protocol::request::edit::Result, JError> {
-        let path = match params.path.as_ref() {
-            Some(path) => PathBuf::from(path),
-            None => {
-                let mut absolute = env::current_dir().unwrap();
-                absolute.push(&params.file);
-                absolute
-            }
-        };
-        let notify_change = if self.buffers.contains_key(&params.file) {
-            let buffer = self.buffers.get_mut(&params.file).unwrap();
-            buffer.load_from_disk(false)
+        params: &<requests::Edit as requests::Request>::Params,
+    ) -> Result<<requests::Edit as requests::Request>::Result, Error> {
+        if params.scratch {
+            self.core
+                .edit(client_id, &params.file, None, params.scratch);
         } else {
-            self.open_file(&params.file, &path);
-            true
-        };
-
-        {
-            let context = self.clients.get_mut(&client_id).unwrap();
-            let mut view = View::default();
-            view.add_lens(Lens {
-                buffer: params.file.clone(),
-                focus: Focus::Whole,
-            });
-            context.view = view.clone();
-            self.views.insert(view.key(), view);
-        }
-
-        let dm = format!("edit: {:?}", path);
-        self.append_debug(&dm);
-        if notify_change {
-            for (id, ctx) in self.clients.iter() {
-                if ctx.view.contains_buffer(&params.file) {
-                    self.notify_view_update(*id);
+            let path = match params.path.as_ref() {
+                Some(path) => PathBuf::from(path),
+                None => {
+                    let mut absolute = self.cwd.clone();
+                    absolute.push(&params.file);
+                    absolute
                 }
-            }
-        } else {
-            self.notify_view_update(client_id);
+            };
+            self.core
+                .edit(client_id, &params.file, Some(&path), params.scratch);
         }
         Ok(())
     }
@@ -305,9 +305,8 @@ impl Editor {
     pub fn command_quit(
         &mut self,
         client_id: usize,
-        _params: &protocol::request::quit::Params,
-    ) -> Result<protocol::request::quit::Result, JError> {
-        self.remove_client(client_id);
+    ) -> Result<<requests::Quit as requests::Request>::Result, Error> {
+        self.core.remove_client(client_id);
         self.stopped_clients.insert(client_id);
         Ok(())
     }
@@ -315,42 +314,64 @@ impl Editor {
     pub fn command_view(
         &mut self,
         client_id: usize,
-        params: &protocol::request::view::Params,
-    ) -> Result<protocol::request::view::Result, JError> {
-        match self.views.get(&params.view_id) {
-            Some(view) => {
-                {
-                    let context = self.clients.get_mut(&client_id).unwrap();
-                    context.view = view.clone();
-                }
-                self.notify_view_update(client_id);
-                Ok(())
-            }
-            None => {
-                let reason = format!("view does not exist: {}", params.view_id);
-                Err(JError::invalid_request(&reason))
-            }
-        }
+        params: &<requests::View as requests::Request>::Params,
+    ) -> Result<<requests::View as requests::Request>::Result, Error> {
+        self.core
+            .view(client_id, &params)
+            .map_err(|e| Error::invalid_request(&e.to_string()))
+    }
+
+    pub fn command_view_delete(
+        &mut self,
+        client_id: usize,
+    ) -> Result<<requests::ViewDelete as requests::Request>::Result, Error> {
+        self.core.delete_current_view(client_id);
+        Ok(())
+    }
+
+    pub fn command_view_add(
+        &mut self,
+        client_id: usize,
+        params: &<requests::ViewAdd as requests::Request>::Params,
+    ) -> Result<<requests::ViewAdd as requests::Request>::Result, Error> {
+        self.core
+            .add_to_current_view(client_id, &params)
+            .map_err(|e| Error::invalid_request(&e.to_string()))
+    }
+
+    pub fn command_view_remove(
+        &mut self,
+        client_id: usize,
+        params: &<requests::ViewRemove as requests::Request>::Params,
+    ) -> Result<<requests::ViewRemove as requests::Request>::Result, Error> {
+        self.core
+            .remove_from_current_view(client_id, &params)
+            .map_err(|e| Error::invalid_request(&e.to_string()))
     }
 
     pub fn command_menu(
         &mut self,
         client_id: usize,
-        params: &protocol::request::menu::Params,
-    ) -> Result<protocol::request::menu::Result, JError> {
+        params: &<requests::Menu as requests::Request>::Params,
+    ) -> Result<<requests::Menu as requests::Request>::Result, Error> {
         {
             let menu = self.command_map.get_mut(&params.command).ok_or({
-                let reason = &format!("unknown command: {}", &params.command);
-                JError::invalid_params(reason)
+                Error::invalid_params(&format!("unknown command: {}", &params.command))
             })?;
             if params.search.is_empty() {
-                menu.populate();
+                let info = EditorInfo {
+                    session: &self.session_name,
+                    cwd: &self.cwd,
+                    buffers: &self.core.buffers(),
+                    views: &self.core.views(),
+                };
+                menu.populate(&info);
             }
         }
-        let menu = self.command_map[&params.command].clone();
-        self.notify(
+        let menu = &self.command_map[&params.command];
+        self.core.get_notifier().notify(
             client_id,
-            protocol::notification::menu::new(menu.to_notification_params(&params.search)),
+            notifications::Menu::new(menu.to_notification_params(&params.search)),
         );
         Ok(())
     }
@@ -358,28 +379,48 @@ impl Editor {
     pub fn command_menu_select(
         &mut self,
         client_id: usize,
-        params: &protocol::request::menu_select::Params,
-    ) -> Result<protocol::request::menu_select::Result, JError> {
-        let menu = self
-            .command_map
-            .get(&params.command)
-            .ok_or({
-                let reason = &format!("unknown command: {}", &params.command);
-                JError::invalid_params(reason)
-            })?.clone();
-        match menu.get(&params.choice) {
-            Some(entry) => {
-                let res = (entry.action)(&params.choice, self, client_id);
-                if let Some(error) = res.err() {
-                    match error.downcast::<JError>() {
-                        Ok(err) => return Err(err),
-                        Err(err) => return Err(JError::internal_error(&err.to_string())),
-                    }
+        params: &<requests::MenuSelect as requests::Request>::Params,
+    ) -> Result<<requests::MenuSelect as requests::Request>::Result, Error> {
+        let menu = self.command_map.get(&params.command).ok_or_else(|| {
+            Error::invalid_params(&format!("unknown command: {}", &params.command))
+        })?;
+        let mut entry = menu.get(&params.choice);
+        if entry.is_none() && menu.is_prompt() {
+            entry = menu.get("");
+        }
+        if entry.is_none() {
+            return Err(Error::invalid_params(&format!(
+                "unknown choice: {}",
+                params.choice
+            )));
+        }
+        let action = entry.unwrap().action;
+        (action)(&params.choice, self, client_id)
+    }
+
+    pub fn command_keys(
+        &mut self,
+        client_id: usize,
+        params: &<requests::Keys as requests::Request>::Params,
+    ) -> Result<<requests::Keys as requests::Request>::Result, Error> {
+        for key in params {
+            let result = self.lua.context(|lua: rlua::Context| {
+                // TODO pass object instead of string
+                let src = format!(
+                    "clients[{}].key_handler:handle('{}')",
+                    client_id,
+                    key.to_string()
+                );
+                lua.load(&src)
+                    .eval::<rlua::Table>()
+                    .map(LuaResultEvents::from)
+            });
+            match result {
+                Ok(res) => self.dispatch_lua_result(client_id, res),
+                Err(e) => {
+                    self.core.error(client_id, "key handler", &e.to_string());
+                    return Err(Error::internal_error(&e.to_string()));
                 }
-            }
-            None => {
-                let reason = &format!("unknown choice: {}", params.choice);
-                return Err(JError::invalid_params(reason));
             }
         }
         Ok(())

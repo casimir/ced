@@ -1,11 +1,15 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
-use editor::Buffer;
-use remote::protocol::notification::view::{
-    Params as NotificationParams, ParamsHeader, ParamsItem, ParamsLines,
+use crate::editor::range::Range as _;
+use crate::editor::selection::Selection;
+use crate::editor::Buffer;
+use ornament::Decorator;
+use remote::protocol::{
+    notifications::{ViewParams, ViewParamsHeader, ViewParamsItem, ViewParamsLines},
+    Face, Text,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,11 +49,13 @@ impl Ord for Focus {
         match (self, other) {
             (Focus::Whole, _) => Ordering::Greater,
             (_, Focus::Whole) => Ordering::Less,
-            (Focus::Range(a), Focus::Range(b)) => if a.start != b.start {
-                a.start.cmp(&b.start)
-            } else {
-                a.end.cmp(&b.end)
-            },
+            (Focus::Range(a), Focus::Range(b)) => {
+                if a.start != b.start {
+                    a.start.cmp(&b.start)
+                } else {
+                    a.end.cmp(&b.end)
+                }
+            }
         }
     }
 }
@@ -77,7 +83,7 @@ impl LensGroup {
     }
 }
 
-impl<'a> Deref for LensGroup {
+impl<'a> std::ops::Deref for LensGroup {
     type Target = Vec<Lens>;
 
     fn deref(&self) -> &Self::Target {
@@ -95,6 +101,15 @@ pub enum ViewItem {
 pub struct View(BTreeMap<String, LensGroup>);
 
 impl View {
+    pub fn for_buffer(buffer: &str) -> View {
+        let mut view = View::default();
+        view.add_lens(Lens {
+            buffer: buffer.to_string(),
+            focus: Focus::Whole,
+        });
+        view
+    }
+
     pub fn key(&self) -> String {
         let mut parts = Vec::new();
         for (buffer, group) in &self.0 {
@@ -114,6 +129,14 @@ impl View {
             .add(lens);
     }
 
+    pub fn remove_lens_group(&mut self, buffer: &str) -> Option<LensGroup> {
+        self.0.remove(buffer)
+    }
+
+    pub fn buffers(&self) -> Vec<&String> {
+        self.0.keys().collect()
+    }
+
     pub fn as_vec(&self) -> Vec<ViewItem> {
         let mut list = Vec::new();
         for (buffer, group) in &self.0 {
@@ -129,36 +152,87 @@ impl View {
         self.0.contains_key(buffer)
     }
 
-    pub fn to_notification_params(&self, buffers: &HashMap<String, Buffer>) -> NotificationParams {
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
+
+    pub fn to_notification_params(
+        &self,
+        buffers: &HashMap<String, Buffer>,
+        selections: Option<&HashMap<String, Vec<Selection>>>,
+    ) -> ViewParams {
         self.as_vec()
             .iter()
             .map(|item| match item {
-                ViewItem::Header((buffer, focus)) => {
-                    use editor::view::Focus;
-                    match focus {
-                        Focus::Range(range) => ParamsItem::Header(ParamsHeader {
+                ViewItem::Header((buffer, focus)) => match focus {
+                    Focus::Range(range) => ViewParamsItem::Header(ViewParamsHeader {
+                        buffer: buffer.to_string(),
+                        start: range.start + 1,
+                        end: range.end,
+                    }),
+                    Focus::Whole => {
+                        let b = &buffers[&buffer.to_string()];
+                        ViewParamsItem::Header(ViewParamsHeader {
                             buffer: buffer.to_string(),
-                            start: range.start + 1,
-                            end: range.end,
-                        }),
-                        Focus::Whole => {
-                            let b = &buffers[&buffer.to_string()];
-                            ParamsItem::Header(ParamsHeader {
-                                buffer: buffer.to_string(),
-                                start: 1,
-                                end: b.line_count(),
-                            })
-                        }
+                            start: 1,
+                            end: b.line_count(),
+                        })
                     }
-                }
+                },
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
-                    ParamsItem::Lines(ParamsLines {
-                        lines: buffer.lines(lens.focus.clone()).to_vec(),
+                    let sels = selections.and_then(|ss| ss.get(&lens.buffer));
+                    let mut selected = HashMap::new();
+                    if let Some(ss) = sels {
+                        for s in ss {
+                            let start = buffer.content.offset_to_coord(s.start());
+                            let end = buffer.content.offset_to_coord(s.end());
+                            if start.l == end.l {
+                                selected.insert(start.l - 1, (Some(start.c - 1), Some(end.c - 1)));
+                            } else {
+                                for i in start.l..=end.l {
+                                    let range = if i == start.l {
+                                        (Some(start.c - 1), None)
+                                    } else if i == end.l {
+                                        (None, Some(end.c - 1))
+                                    } else {
+                                        (None, None)
+                                    };
+                                    selected.insert(i - 1, range);
+                                }
+                            }
+                        }
+                    }
+                    let lines = buffer
+                        .lines(lens.focus.clone())
+                        .iter()
+                        .enumerate()
+                        .map(|(i, l)| {
+                            if let Some(s) = selected.get(&i) {
+                                match *s {
+                                    (Some(start), Some(end)) => Decorator::with_text(&l)
+                                        .set(Face::Selection, start..end + 1)
+                                        .build(),
+                                    (Some(start), None) => Decorator::with_text(&l)
+                                        .set(Face::Selection, start..l.len())
+                                        .build(),
+                                    (None, Some(end)) => Decorator::with_text(&l)
+                                        .set(Face::Selection, 0..end + 1)
+                                        .build(),
+                                    (None, None) => Text::from(l.as_str()),
+                                }
+                            } else {
+                                Text::from(l.as_str())
+                            }
+                        })
+                        .collect();
+                    ViewParamsItem::Lines(ViewParamsLines {
+                        lines,
                         first_line_num: lens.focus.start() + 1,
                     })
                 }
-            }).collect()
+            })
+            .collect()
     }
 }
 

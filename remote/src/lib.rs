@@ -3,12 +3,10 @@ extern crate crossbeam_channel;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate failure;
 extern crate mio;
 extern crate regex;
-extern crate serde;
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 #[cfg(windows)]
 extern crate mio_named_pipes;
 #[cfg(unix)]
@@ -20,29 +18,49 @@ extern crate serde_json;
 extern crate winapi;
 
 mod client;
+mod connection;
 pub mod jsonrpc;
+mod keys;
 pub mod protocol;
 mod session;
 mod transport;
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::env;
+use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, RwLock};
 
-use crossbeam_channel as channel;
-use failure::Error;
+pub use self::client::{Client, Events, StdioClient};
+pub use self::connection::{Connection, ConnectionEvent, ConnectionState, Menu};
+pub use self::jsonrpc::{ClientEvent, Id, Request};
+pub use self::session::{ConnectionMode, Session};
+pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
 
-pub use client::{Client, Events, StdioClient};
-pub use jsonrpc::{ClientEvent, Id, Request};
-pub use session::{ConnectionMode, Session};
-pub use transport::{EventedStream, ServerListener, ServerStream, Stream};
+pub fn find_bin() -> String {
+    env::var("CED_BIN").unwrap_or(
+        env::current_exe()
+            .map(|mut exe| {
+                exe.pop();
+                if cfg!(windows) {
+                    exe.push("ced.exe");
+                } else {
+                    exe.push("ced");
+                }
+                if exe.exists() {
+                    exe.display().to_string()
+                } else {
+                    String::from("ced")
+                }
+            })
+            .unwrap_or(String::from("ced")),
+    )
+}
 
-pub fn start_daemon(command: &str, session: &Session) -> Result<u32, Error> {
+pub fn start_daemon(session: &Session) -> io::Result<u32> {
+    let bin = find_bin();
     let session_arg = format!("--session={}", session.mode);
-    let args = vec![command, "--mode=server", &session_arg];
-    let prg = Command::new(&args[0])
-        .args(&args[1..])
+    let args = vec!["--mode=server", &session_arg];
+    let prg = Command::new(&bin)
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -67,97 +85,15 @@ pub fn start_daemon(command: &str, session: &Session) -> Result<u32, Error> {
         error!("could not capture stdout");
     }
 
-    info!("server command: {:?}", args);
+    info!("server command: {} {:?}", bin, args);
     Ok(pid)
 }
 
-pub fn ensure_session(command: &str, session: &Session) -> Result<(), Error> {
+pub fn ensure_session(session: &Session) -> io::Result<()> {
     if let ConnectionMode::Socket(path) = &session.mode {
         if !path.exists() {
-            start_daemon(command, &session)?;
+            start_daemon(&session)?;
         }
     }
     Ok(())
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ConnectionState {
-    pub session: String,
-    pub view: protocol::notification::view::Params,
-}
-
-impl ConnectionState {
-    fn update_context(&mut self, event: &ClientEvent) {
-        if let ClientEvent::Notification(notif) = event {
-            use protocol::notification::*;
-            match notif.method.as_str() {
-                "info" => {
-                    if let Ok(Some(params)) = notif.params::<info::Params>() {
-                        self.session = params.session;
-                    }
-                }
-                "view" => {
-                    if let Ok(Some(params)) = notif.params::<view::Params>() {
-                        self.view = params;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-pub struct Connection {
-    client: Client,
-    state_lock: Arc<RwLock<ConnectionState>>,
-    requests: channel::Sender<Request>,
-    next_request_id: i32,
-    pub pending: HashMap<Id, Request>,
-}
-
-impl Connection {
-    pub fn new(session: &Session) -> Result<Connection, Error> {
-        let (client, requests) = Client::new(session)?;
-        Ok(Connection {
-            client,
-            state_lock: Arc::new(RwLock::new(ConnectionState::default())),
-            requests,
-            next_request_id: 0,
-            pending: HashMap::new(),
-        })
-    }
-
-    pub fn state(&self) -> ConnectionState {
-        self.state_lock.read().unwrap().clone()
-    }
-
-    pub fn connect(&self) -> channel::Receiver<ClientEvent> {
-        let events = self.client.run();
-        let (tx, rx) = channel::unbounded();
-        let ctx_lock = self.state_lock.clone();
-        std::thread::spawn(move || {
-            for ev in events {
-                match ev {
-                    Ok(e) => {
-                        let mut ctx = ctx_lock.write().unwrap();
-                        ctx.update_context(&e);
-                        tx.send(e).expect("send event");
-                    }
-                    Err(e) => error!("{}", e),
-                }
-            }
-        });
-        rx
-    }
-
-    pub fn request_id(&mut self) -> Id {
-        let id = self.next_request_id;
-        self.next_request_id += 1;
-        Id::Number(id)
-    }
-
-    pub fn request(&mut self, message: Request) {
-        self.pending.insert(message.id.clone(), message.clone());
-        self.requests.send(message).expect("send request");
-    }
 }
