@@ -8,7 +8,7 @@ use crate::editor::selection::Selection;
 use crate::editor::Buffer;
 use ornament::Decorator;
 use remote::protocol::{
-    notifications::{ViewParams, ViewParamsHeader, ViewParamsItem, ViewParamsLines},
+    notifications::{ViewParams, ViewParamsItem, ViewParamsLens},
     Face, Text,
 };
 
@@ -161,24 +161,31 @@ impl View {
         buffers: &HashMap<String, Buffer>,
         selections: Option<&HashMap<String, Vec<Selection>>>,
     ) -> ViewParams {
-        self.as_vec()
-            .iter()
-            .map(|item| match item {
-                ViewItem::Header((buffer, focus)) => match focus {
-                    Focus::Range(range) => ViewParamsItem::Header(ViewParamsHeader {
-                        buffer: buffer.to_string(),
-                        start: range.start + 1,
-                        end: range.end,
-                    }),
-                    Focus::Whole => {
-                        let b = &buffers[&buffer.to_string()];
-                        ViewParamsItem::Header(ViewParamsHeader {
-                            buffer: buffer.to_string(),
-                            start: 1,
-                            end: b.line_count(),
-                        })
+        let mut params = Vec::new();
+        let mut current = ViewParamsItem::default();
+        let mut flush = false;
+        for item in self.as_vec() {
+            match item {
+                ViewItem::Header((buffer, focus)) => {
+                    if flush {
+                        params.push(current);
+                        current = ViewParamsItem::default();
                     }
-                },
+                    match focus {
+                        Focus::Range(range) => {
+                            current.buffer = buffer.to_string();
+                            current.start = range.start + 1;
+                            current.end = range.end;
+                        }
+                        Focus::Whole => {
+                            let b = &buffers[&buffer.to_string()];
+                            current.buffer = buffer.to_string();
+                            current.start = 1;
+                            current.end = b.line_count();
+                        }
+                    }
+                    flush = true;
+                }
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
                     let sels = selections.and_then(|ss| ss.get(&lens.buffer));
@@ -226,13 +233,17 @@ impl View {
                             }
                         })
                         .collect();
-                    ViewParamsItem::Lines(ViewParamsLines {
+                    current.lenses.push(ViewParamsLens {
                         lines,
                         first_line_num: lens.focus.start() + 1,
-                    })
+                    });
                 }
-            })
-            .collect()
+            }
+        }
+        if flush {
+            params.push(current);
+        }
+        params
     }
 }
 

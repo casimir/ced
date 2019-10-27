@@ -5,7 +5,7 @@ use crossbeam_channel::Receiver;
 
 use ced::editor::Editor;
 use ced::remote::jsonrpc::Notification;
-use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
+use ced::remote::protocol::notifications::ViewParams;
 use ced::server::{BroadcastMessage, Broadcaster};
 
 pub fn root() -> PathBuf {
@@ -88,12 +88,6 @@ impl DerefMut for SequentialEditor {
 }
 
 pub fn assert_buffers(view: &ViewParams, buffers: Vec<String>) {
-    let view_buffers: Vec<String> = view
-        .iter()
-        .filter_map(|item| match item {
-            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
-            _ => None,
-        })
-        .collect();
+    let view_buffers: Vec<String> = view.iter().map(|item| item.buffer.to_owned()).collect();
     assert_eq!(buffers, view_buffers);
 }

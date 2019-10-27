@@ -89,19 +89,6 @@ pub mod notifications {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub struct ViewParamsHeader {
-        pub buffer: String,
-        pub start: usize,
-        pub end: usize,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub struct ViewParamsLines {
-        pub lines: Vec<Text>,
-        pub first_line_num: usize,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct StatusParamsItem {
         pub index: isize,
         pub text: Text,
@@ -110,10 +97,17 @@ pub mod notifications {
     pub type StatusParams = Vec<StatusParamsItem>;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    #[serde(tag = "type")]
-    pub enum ViewParamsItem {
-        Header(ViewParamsHeader),
-        Lines(ViewParamsLines),
+    pub struct ViewParamsLens {
+        pub lines: Vec<Text>,
+        pub first_line_num: usize,
+    }
+
+    #[derive(Clone, Default, Debug, Serialize, Deserialize)]
+    pub struct ViewParamsItem {
+        pub buffer: String,
+        pub start: usize,
+        pub end: usize,
+        pub lenses: Vec<ViewParamsLens>,
     }
 
     pub type ViewParams = Vec<ViewParamsItem>;

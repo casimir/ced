@@ -5,7 +5,7 @@ use std::io;
 
 use ced::editor::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use ced::remote::jsonrpc::ClientEvent;
-use ced::remote::protocol::notifications::{ViewParams, ViewParamsItem};
+use ced::remote::protocol::notifications::ViewParams;
 use ced::remote::{start_daemon, Client, Events, Session};
 use itertools::Itertools;
 
@@ -19,13 +19,7 @@ fn starting_notifications() {
     editor.remove_client(CLIENT_ID);
 
     let view = &editor.state().view;
-    let buffers: Vec<String> = view
-        .iter()
-        .filter_map(|item| match item {
-            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
-            _ => None,
-        })
-        .collect();
+    let buffers: Vec<String> = view.iter().map(|item| item.buffer.to_owned()).collect();
     assert_eq!(
         buffers,
         vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
@@ -94,13 +88,7 @@ fn connect_socket() {
     client.drain_notifications();
 
     let view = client.state.view;
-    let buffers: Vec<String> = view
-        .iter()
-        .filter_map(|item| match item {
-            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
-            _ => None,
-        })
-        .collect();
+    let buffers: Vec<String> = view.iter().map(|item| item.buffer.to_owned()).collect();
     assert_eq!(
         buffers,
         vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]
@@ -114,13 +102,7 @@ fn connect_tcp() {
     client.drain_notifications();
 
     let view = client.state.view;
-    let buffers: Vec<String> = view
-        .iter()
-        .filter_map(|item| match item {
-            ViewParamsItem::Header(header) => Some(header.buffer.clone()),
-            _ => None,
-        })
-        .collect();
+    let buffers: Vec<String> = view.iter().map(|item| item.buffer.to_owned()).collect();
     assert_eq!(
         buffers,
         vec![BUFFER_DEBUG.to_owned(), BUFFER_SCRATCH.to_owned()]

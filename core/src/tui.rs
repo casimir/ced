@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel as channel;
-use remote::protocol::{notifications, Face, TextFragment};
+use remote::protocol::{Face, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 use termion;
 use termion::cursor::Goto;
@@ -134,29 +134,25 @@ impl Term {
             let mut i = 0;
             let mut content = Vec::new();
             'outer: for item in &state.view {
-                use notifications::ViewParamsItem::*;
-                match item {
-                    Header(header) => {
-                        let buffer = &header.buffer;
-                        let coords = format!("{}:{}", header.start, header.end);
-                        let padding = "-".repeat(width as usize - 5 - buffer.len() - coords.len());
-                        content.push(format!("-[{}][{}]{}", buffer, coords, padding));
-                        i += 1;
-                    }
-                    Lines(lines) => {
-                        for line in &lines.lines {
-                            if i == (height - 1) {
-                                break 'outer;
-                            }
-                            let rendered = line.render(format_text);
-                            let line_view = if line.text_len() > width as usize {
-                                &rendered[..width as usize]
-                            } else {
-                                &rendered
-                            };
-                            content.push(line_view.to_string());
-                            i += 1;
+                let buffer = &item.buffer;
+                let coords = format!("{}:{}", item.start, item.end);
+                let padding = "-".repeat(width as usize - 5 - buffer.len() - coords.len());
+                content.push(format!("-[{}][{}]{}", buffer, coords, padding));
+                i += 1;
+
+                for lens in &item.lenses {
+                    for line in &lens.lines {
+                        if i == (height - 1) {
+                            break 'outer;
                         }
+                        let rendered = line.render(format_text);
+                        let line_view = if line.text_len() > width as usize {
+                            &rendered[..width as usize]
+                        } else {
+                            &rendered
+                        };
+                        content.push(line_view.to_string());
+                        i += 1;
                     }
                 }
             }
