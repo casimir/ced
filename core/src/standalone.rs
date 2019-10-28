@@ -20,7 +20,7 @@ pub fn start_standalone(filenames: &[&str]) {
         };
         let _ = editor
             .command_edit(CLIENT_ID, &params)
-            .map_err(|err| error!("could not open file '{}': {}", fname, err));
+            .map_err(|err| log::error!("could not open file '{}': {}", fname, err));
     }
     let rx = broadcaster.rx.clone();
     thread::spawn(move || loop {

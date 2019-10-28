@@ -21,7 +21,6 @@ use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
-use crossbeam_channel as channel;
 use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
@@ -257,7 +256,7 @@ impl Editor {
                 return Ok(Response::invalid_request(Id::Null, line));
             }
         };
-        trace!("<- ({}) {}", client_id, msg);
+        log::trace!("<- ({}) {}", client_id, msg);
         match msg.method.as_str() {
             "edit" => response!(msg, |params| self.command_edit(client_id, params)),
             "quit" => Response::new(msg.id.clone(), self.command_quit(client_id)),

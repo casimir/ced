@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
-use crossbeam_channel::Receiver;
+use channel::Receiver;
 
 use ced::editor::Editor;
 use ced::remote::jsonrpc::Notification;

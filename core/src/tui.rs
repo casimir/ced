@@ -3,7 +3,7 @@ use std::ops::Drop;
 use std::thread;
 use std::time::Duration;
 
-use crossbeam_channel as channel;
+use channel::select;
 use crossterm::{
     execute, queue, style, AlternateScreen, Clear, ClearType, Colorize, Goto, Hide, InputEvent,
     KeyEvent, Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
@@ -74,7 +74,7 @@ impl Term {
                             current = size;
                         }
                     }
-                    Err(e) => error!("{}", e),
+                    Err(e) => log::error!("{}", e),
                 }
                 thread::sleep(Duration::from_millis(20));
             }

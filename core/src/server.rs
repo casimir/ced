@@ -8,7 +8,6 @@ use std::rc::Rc;
 use std::thread;
 
 use crate::editor::Editor;
-use crossbeam_channel as channel;
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, EventedStream, ServerListener, Session};
@@ -98,7 +97,7 @@ impl Server {
             fs::remove_file(path).expect("clean session");
             if Session::list().is_empty() {
                 fs::remove_dir(path.parent().unwrap())
-                    .unwrap_or_else(|e| warn!("could not clean session directory: {}", e));
+                    .unwrap_or_else(|e| log::warn!("could not clean session directory: {}", e));
             }
         }
     }
@@ -112,7 +111,7 @@ impl Server {
     where
         T: fmt::Display,
     {
-        trace!("-> ({}) {}", client_id, message);
+        log::trace!("-> ({}) {}", client_id, message);
         conn.handle.write_fmt(format_args!("{}\n", message))
     }
 
@@ -160,7 +159,7 @@ impl Server {
                         )
                         .unwrap();
 
-                        info!("client {} connected", next_client_id);
+                        log::info!("client {} connected", next_client_id);
                         let conn = Connection::new(stream);
                         // TODO check if ping or real client
                         connections.borrow_mut().insert(next_client_id, conn);
@@ -179,12 +178,12 @@ impl Server {
                                 .filter_map(Result::err)
                                 .collect();
                             for e in &errors {
-                                error!("{}", e)
+                                log::error!("{}", e)
                             }
                         }
                     }
                     Token(client_id) => {
-                        trace!("read event for {}", client_id);
+                        log::trace!("read event for {}", client_id);
                         let mut line = String::new();
                         {
                             {
@@ -196,7 +195,7 @@ impl Server {
                                     if e.kind() == WouldBlock {
                                         continue;
                                     } else {
-                                        error!("error while reading from connection: {:?}", e);
+                                        log::error!("error while reading from connection: {:?}", e);
                                     }
                                 };
                             }
@@ -208,7 +207,7 @@ impl Server {
                                         self.write_message(client_id, conn, &message)
                                             .expect("send response to client");
                                     }
-                                    Err(e) => error!("{}: {:?}", e, line),
+                                    Err(e) => log::error!("{}: {:?}", e, line),
                                 }
                             }
                         }
@@ -216,18 +215,18 @@ impl Server {
                             editor.remove_client(client_id);
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
                             poll.deregister(conn.handle.as_ref()).unwrap();
-                            info!("client {}: connection lost", client_id);
+                            log::info!("client {}: connection lost", client_id);
                         }
                         for client_id in editor.removed_clients() {
                             let conn = connections.borrow_mut().remove(&client_id).unwrap();
                             poll.deregister(conn.handle.as_ref()).unwrap();
-                            info!("client {}: quit", client_id);
+                            log::info!("client {}: quit", client_id);
                         }
                     }
                 }
             }
             if next_client_id > FIRST_CLIENT_ID && connections.borrow().len() == 0 {
-                info!("no more client, exiting...");
+                log::info!("no more client, exiting...");
                 break;
             }
         }
