@@ -11,8 +11,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["term"]
-
-term = ["termion"]
+term = ["crossterm"]
 
 [dependencies]
 ced-remote = { path = "../remote" }
@@ -28,8 +27,7 @@ rbtset = "1.0"
 regex = "1.2"
 rlua = "0.16"
 
-[target.'cfg(unix)'.dependencies]
-termion = { version = "1.5", optional = true }
+crossterm = { version = "0.12", optional = true }
 
 [dev-dependencies]
 itertools = "0.8"

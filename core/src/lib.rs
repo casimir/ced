@@ -15,8 +15,5 @@ pub mod stackmap;
 pub mod server;
 pub mod standalone;
 
-#[cfg(all(feature = "term", unix))]
-extern crate termion;
-
-#[cfg(all(feature = "term", unix))]
+#[cfg(feature = "term")]
 pub mod tui;

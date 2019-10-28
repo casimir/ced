@@ -1,40 +1,26 @@
-#![cfg(all(feature = "term", unix))]
-
 use std::io::{self, Write};
 use std::ops::Drop;
 use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel as channel;
+use crossterm::{
+    execute, queue, style, AlternateScreen, Clear, ClearType, Colorize, Goto, Hide, InputEvent,
+    KeyEvent, Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
+};
 use remote::protocol::{Face, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
-use termion;
-use termion::cursor::Goto;
-use termion::event::Key;
-use termion::input::TermRead;
-use termion::raw::{IntoRawMode, RawTerminal};
-use termion::screen::AlternateScreen;
 
 enum Event {
-    Input(Key),
+    Input(InputEvent),
     Resize(u16, u16),
 }
 
 fn format_text(tf: &TextFragment) -> String {
     match tf.face {
         Face::Default => tf.text.to_owned(),
-        Face::Error => format!(
-            "{}{}{}",
-            termion::color::Fg(termion::color::Red),
-            tf.text,
-            termion::color::Fg(termion::color::Reset)
-        ),
-        Face::Selection => format!(
-            "{}{}{}",
-            termion::style::Invert,
-            tf.text,
-            termion::style::NoInvert,
-        ),
+        Face::Error => style(&tf.text).red().to_string(),
+        Face::Selection => style(&tf.text).reverse().to_string(),
         _ => tf.text.to_owned(),
     }
 }
@@ -43,7 +29,7 @@ pub struct Term {
     connection: Connection,
     exit_pending: bool,
     last_size: (u16, u16),
-    screen: AlternateScreen<RawTerminal<io::Stdout>>,
+    _screen: AlternateScreen,
 }
 
 impl Term {
@@ -51,10 +37,11 @@ impl Term {
         let mut term = Term {
             connection: Connection::new(session)?,
             exit_pending: false,
-            screen: AlternateScreen::from(io::stdout().into_raw_mode()?),
-            last_size: termion::terminal_size()?,
+            last_size: Terminal::new().size().expect("get terminal"),
+            _screen: AlternateScreen::to_alternate(true)
+                .expect("enable raw mode and switch to alternate screen"),
         };
-        term.cursor_visible(false);
+        execute!(io::stdout(), Hide).expect("hide cursor");
         for fname in filenames {
             term.connection.edit(fname, false);
         }
@@ -65,19 +52,20 @@ impl Term {
         let (events_tx, events_rx) = channel::unbounded();
         let keys_tx = events_tx.clone();
         thread::spawn(move || {
-            for key in io::stdin().keys() {
-                match key {
-                    Ok(k) => keys_tx.send(Event::Input(k)).expect("send key event"),
-                    Err(e) => error!("{}", e),
-                }
+            let input = TerminalInput::new();
+            // input.enable_mouse_mode().expect("enable mouse events");
+            // TODO and_then?
+            for key in input.read_sync() {
+                keys_tx.send(Event::Input(key)).expect("send key event");
             }
         });
         let resize_tx = events_tx.clone();
         let starting_size = self.last_size;
         thread::spawn(move || {
+            let terminal = Terminal::new();
             let mut current = starting_size;
             loop {
-                match termion::terminal_size() {
+                match terminal.size() {
                     Ok(size) => {
                         if current != size {
                             resize_tx
@@ -88,48 +76,37 @@ impl Term {
                     }
                     Err(e) => error!("{}", e),
                 }
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(20));
             }
         });
+
         let messages = self.connection.connect();
         while !self.exit_pending {
             use ConnectionEvent::*;
             select! {
                 recv(messages) -> msg => match msg {
                     Ok(ev) => match ev {
-                        Menu(menu) => self.draw_menu(&menu),
-                        Echo(_)|Status(_)|View(_) => self.draw_view(),
+                        Menu(menu) => self.draw_menu(&menu).expect("draw menu"),
+                        Echo(_)|Status(_)|View(_) => self.draw_view().expect("draw view"),
                         Info(_, _) => {},
                     }
                     Err(_) => break,
                 },
                 recv(events_rx) -> event => match event {
-                    Ok(Event::Input(key)) => self.handle_key(key),
-                    Ok(Event::Resize(w, h)) => self.resize(w, h),
+                    Ok(Event::Input(input)) => self.handle_input(input).expect("handle input"),
+                    Ok(Event::Resize(w, h)) => self.resize(w, h).expect("resize"),
                     Err(_) => break,
                 }
             }
         }
     }
 
-    fn flush(&mut self) {
-        self.screen.flush().unwrap();
-    }
-
-    fn cursor_visible(&mut self, visible: bool) {
-        if visible {
-            write!(self.screen, "{}", termion::cursor::Show).unwrap();
-        } else {
-            write!(self.screen, "{}", termion::cursor::Hide).unwrap();
-        };
-        self.flush();
-    }
-
-    fn draw_view(&mut self) {
+    fn draw_view(&mut self) -> CTResult<()> {
+        let mut stdout = io::stdout();
         let (width, height) = self.last_size;
-        write!(self.screen, "{}", termion::clear::All).unwrap();
-
         let state = self.connection.state();
+
+        queue!(stdout, Clear(ClearType::All))?;
         {
             let mut i = 0;
             let mut content = Vec::new();
@@ -156,7 +133,7 @@ impl Term {
                     }
                 }
             }
-            write!(self.screen, "{}{}", Goto(1, 1), content.join("\r\n")).unwrap();
+            queue!(stdout, Goto(0, 0), Output(content.join("\r\n")))?;
         }
 
         let echo = state.echo.unwrap_or_default();
@@ -166,76 +143,50 @@ impl Term {
             .map(|item| item.text.plain())
             .collect::<Vec<String>>()
             .join("·");
-        if echo.text_len() >= width as usize {
-            write!(
-                self.screen,
-                "{}{}{}{}",
-                Goto(1, height),
-                termion::style::Invert,
-                echo.render(format_text),
-                termion::style::Reset
-            )
-            .unwrap();
+        let text = if echo.text_len() >= width as usize {
+            echo.render(format_text)
         } else if echo.text_len() + status.len() >= width as usize {
             let skip = echo.text_len() - width as usize + 1;
-            write!(
-                self.screen,
-                "{}{}{} {}{}",
-                Goto(1, height),
-                termion::style::Invert,
-                echo.render(format_text),
-                &status[skip..],
-                termion::style::Reset
-            )
-            .unwrap();
+            format!("{} {}", echo.render(format_text), &status[skip..])
         } else {
             let padding = width as usize - echo.text_len() - status.len();
-            write!(
-                self.screen,
-                "{}{}{}{}{}{}",
-                Goto(1, height),
-                termion::style::Invert,
+            format!(
+                "{}{}{}",
                 echo.render(format_text),
                 " ".repeat(padding),
-                status,
-                termion::style::Reset
+                status
             )
-            .unwrap();
-        }
-        self.flush();
+        };
+        queue!(
+            stdout,
+            Goto(0, height),
+            PrintStyledFont(style(text).reverse())
+        )?;
+        stdout.flush()?;
+        Ok(())
     }
 
-    fn draw_menu(&mut self, menu: &Menu) {
+    fn draw_menu(&mut self, menu: &Menu) -> CTResult<()> {
+        let mut stdout = io::stdout();
         let (width, height) = self.last_size;
-        write!(self.screen, "{}", termion::clear::All).unwrap();
-
         let title = format!("{}:{}", menu.title, menu.search);
         let padding = " ".repeat(width as usize - title.len());
-        write!(
-            self.screen,
-            "{}{}{}{}{}",
-            Goto(1, 1),
-            termion::style::Invert,
-            title,
-            padding,
-            termion::style::Reset
-        )
-        .unwrap();
 
+        queue!(
+            stdout,
+            Clear(ClearType::All),
+            Goto(0, 0),
+            PrintStyledFont(style(title + &padding).reverse())
+        )?;
         {
             let display_size = (height - 1) as usize;
             for i in 0..menu.entries.len() {
                 if i == display_size {
                     break;
                 }
-                let item = &menu.entries[i].text.render(|ft| match ft.face {
-                    Face::Match => format!(
-                        "{}{}{}",
-                        termion::style::Underline,
-                        ft.text,
-                        termion::style::NoUnderline,
-                    ),
-                    _ => ft.text.to_owned(),
+                let item = &menu.entries[i].text.render(|tf| match tf.face {
+                    Face::Match => style(&tf.text).underlined().to_string(),
+                    _ => tf.text.to_owned(),
                 });
 
                 let item_view = if item.len() > width as usize {
@@ -243,74 +194,68 @@ impl Term {
                 } else {
                     &item
                 };
-                if i == menu.selected {
-                    write!(
-                        self.screen,
-                        "{}{}{}{}{}",
-                        Goto(1, 2 + i as u16),
-                        termion::style::Invert,
-                        item_view,
-                        termion::style::Reset,
-                        termion::clear::UntilNewline
-                    )
-                    .unwrap();
+                let item_print = if i == menu.selected {
+                    PrintStyledFont(style(item_view).reverse())
                 } else {
-                    write!(
-                        self.screen,
-                        "{}{}{}",
-                        Goto(1, 2 + i as u16),
-                        item_view,
-                        termion::clear::UntilNewline
-                    )
-                    .unwrap();
-                }
+                    PrintStyledFont(style(item_view))
+                };
+                queue!(
+                    stdout,
+                    Goto(0, 1 + i as u16),
+                    item_print,
+                    Clear(ClearType::UntilNewLine)
+                )?;
             }
         }
-        self.flush();
+        stdout.flush()?;
+        Ok(())
     }
 
-    fn resize(&mut self, w: u16, h: u16) {
+    fn resize(&mut self, w: u16, h: u16) -> CTResult<()> {
         let current = (w, h);
         if self.last_size != current {
             self.last_size = current;
             match self.connection.state().menu {
-                Some(menu) => self.draw_menu(&menu),
-                None => self.draw_view(),
+                Some(menu) => self.draw_menu(&menu)?,
+                None => self.draw_view()?,
             }
         }
+        Ok(())
     }
 
     fn do_menu(&mut self, command: &str, search: &str) {
         self.connection.menu(command, search);
     }
 
-    fn handle_key(&mut self, key: Key) {
+    fn handle_input(&mut self, event: InputEvent) -> CTResult<()> {
+        use InputEvent::*;
+        use KeyEvent::*;
         if let Some(menu) = self.connection.state().menu {
-            match key {
-                Key::Esc => {
+            match event {
+                Keyboard(Esc) => {
                     self.connection.action_menu_cancel();
-                    self.draw_view();
+                    self.draw_view()?;
                 }
-                Key::Char('\n') => {
+                Keyboard(Enter) => {
                     self.connection.menu_select();
-                    self.draw_view();
+                    self.draw_view()?;
                 }
-                Key::Up => {
+                Keyboard(Up) => {
                     self.connection.action_menu_select_previous();
                     let new_menu = self.connection.state().menu.unwrap();
-                    self.draw_menu(&new_menu);
+                    self.draw_menu(&new_menu)?;
                 }
-                Key::Down => {
+                Keyboard(Down) => {
                     self.connection.action_menu_select_next();
                     let new_menu = self.connection.state().menu.unwrap();
-                    self.draw_menu(&new_menu);
+                    self.draw_menu(&new_menu)?;
                 }
-                Key::Char(c) => {
+                Keyboard(Char(c)) => {
                     let mut search = menu.search;
                     search.push(c);
                     self.do_menu(&menu.command, &search)
                 }
-                Key::Backspace => {
+                Keyboard(Backspace) => {
                     let mut search = menu.search;
                     search.pop();
                     self.do_menu(&menu.command, &search)
@@ -318,22 +263,23 @@ impl Term {
                 _ => {}
             }
         } else {
-            match key {
-                Key::Esc => self.exit_pending = true,
-                Key::Ctrl('f') => self.do_menu("open", ""),
-                Key::Ctrl('p') => self.do_menu("", ""),
-                Key::Ctrl('v') => self.do_menu("view_select", ""),
-                Key::Ctrl('x') => panic!("panic mode activated!"),
-                Key::Char(c) => self.connection.keys(vec![c.into()]),
+            match event {
+                Keyboard(Esc) => self.exit_pending = true,
+                Keyboard(Ctrl('f')) => self.do_menu("open", ""),
+                Keyboard(Ctrl('p')) => self.do_menu("", ""),
+                Keyboard(Ctrl('v')) => self.do_menu("view_select", ""),
+                Keyboard(Ctrl('x')) => panic!("panic mode activated!"),
+                Keyboard(Char(c)) => self.connection.keys(vec![c.into()]),
                 _ => {}
             }
         }
+        Ok(())
     }
 }
 
 impl Drop for Term {
     fn drop(&mut self) {
-        self.flush();
-        self.cursor_visible(true);
+        let _ = execute!(io::stdout(), Show)
+            .map_err(|e| eprintln!("could not revert cursor state: {}", e));
     }
 }

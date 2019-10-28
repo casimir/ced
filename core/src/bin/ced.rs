@@ -10,7 +10,7 @@ use ced::server::Server;
 use ced::standalone::start_standalone;
 use clap::{App, Arg};
 
-#[cfg(all(feature = "term", unix))]
+#[cfg(feature = "term")]
 arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
@@ -22,7 +22,7 @@ arg_enum! {
         term,
     }
 }
-#[cfg(not(all(feature = "term", unix)))]
+#[cfg(not(feature = "term"))]
 arg_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug)]
@@ -36,7 +36,7 @@ arg_enum! {
 
 impl Mode {
     fn default_value() -> &'static str {
-        if cfg!(all(feature = "term", unix)) {
+        if cfg!(feature = "term") {
             "term"
         } else {
             "json"
@@ -111,7 +111,7 @@ fn main() -> io::Result<()> {
                 start_standalone(&filenames);
                 Ok(())
             }
-            #[cfg(all(feature = "term", unix))]
+            #[cfg(feature = "term")]
             Mode::term => {
                 use ced::tui::Term;
                 ensure_session(&session)?;
