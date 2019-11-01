@@ -24,10 +24,9 @@ use crate::server::BroadcastMessage;
 use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
-    requests, Face, Text, TextFragment,
+    requests, Face, Key, Text, TextFragment,
 };
 use remote::response;
-use rlua;
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
@@ -117,6 +116,16 @@ impl<'lua> From<rlua::Table<'lua>> for LuaResultEvents {
             redraw_status: bool!(table, "redraw_status"),
         }
     }
+}
+
+fn key_to_lua<'a>(lua: rlua::Context<'a>, key: &Key) -> rlua::Result<rlua::Table<'a>> {
+    let table = lua.create_table()?;
+    table.set("ctrl", key.ctrl)?;
+    table.set("alt", key.alt)?;
+    table.set("shift", key.shift)?;
+    table.set("value", key.value.to_string())?;
+    table.set("display", key.to_string())?;
+    Ok(table)
 }
 
 pub struct Editor {
@@ -404,14 +413,12 @@ impl Editor {
     ) -> Result<<requests::Keys as requests::Request>::Result, Error> {
         for key in params {
             let result = self.lua.context(|lua: rlua::Context| {
-                // TODO pass object instead of string
-                let src = format!(
-                    "clients[{}].key_handler:handle('{}')",
-                    client_id,
-                    key.to_string()
-                );
-                lua.load(&src)
-                    .eval::<rlua::Table>()
+                let handler = lua
+                    .load(&format!("clients[{}].key_handler", client_id))
+                    .eval::<rlua::Table>()?;
+                let handle_func = handler.get::<_, rlua::Function>("handle")?;
+                handle_func
+                    .call::<_, rlua::Table>((handler, key_to_lua(lua, &key)))
                     .map(LuaResultEvents::from)
             });
             match result {

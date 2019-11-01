@@ -8,7 +8,7 @@ use crossterm::{
     execute, queue, style, AlternateScreen, Clear, ClearType, Colorize, Goto, Hide, InputEvent,
     KeyEvent, Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
 };
-use remote::protocol::{Face, TextFragment};
+use remote::protocol::{Face, Key, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
@@ -270,6 +270,16 @@ impl Term {
                 Keyboard(Ctrl('v')) => self.do_menu("view_select", ""),
                 Keyboard(Ctrl('x')) => panic!("panic mode activated!"),
                 Keyboard(Char(c)) => self.connection.keys(vec![c.into()]),
+                Keyboard(Ctrl(c)) => {
+                    let mut key = Key::from(c);
+                    key.ctrl = true;
+                    self.connection.keys(vec![key])
+                }
+                Keyboard(Alt(c)) => {
+                    let mut key = Key::from(c);
+                    key.alt = true;
+                    self.connection.keys(vec![key])
+                }
                 _ => {}
             }
         }

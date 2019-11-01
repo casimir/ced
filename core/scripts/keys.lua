@@ -1,38 +1,6 @@
-local keys = {}
+local M = {}
 
-local PrintHandler = {}
-PrintHandler.__index = PrintHandler
-
-setmetatable(
-    PrintHandler,
-    {
-        __call = function(cls, ...)
-            return cls.new(...)
-        end
-    }
-)
-
-function PrintHandler.new(client_id)
-    local self = setmetatable({}, PrintHandler)
-    self.client_id = client_id
-    return self
-end
-
-function PrintHandler:handle(key)
-    if key == "m" then
-        editor:message(self.client_id, "hello!")
-    elseif key == "e" then
-        editor:error(self.client_id, "oops!")
-    end
-    editor:debug("key (" .. self.client_id .. '): "' .. key .. '"')
-    clients[self.client_id].status_line.keys = {index = 90, text = key}
-    return {handled = true, redraw_status = true}
-end
-
-keys.PrintHandler = PrintHandler
-
-local ModalHandler = {}
-ModalHandler.__index = ModalHandler
+local ModalHandler = {}; ModalHandler.__index = ModalHandler
 
 ModalHandler.modes = {
     normal = "N",
@@ -52,24 +20,52 @@ function ModalHandler.new(client_id)
     local self = setmetatable({}, ModalHandler)
     self.client_id = client_id
     self.mode = ModalHandler.modes.normal
+    self.redraw_status = false
     return self
 end
 
-function ModalHandler:handle(key)
-    if key == "i" then
-        self.mode = ModalHandler.modes.insertion
-    elseif key == "n" then
-        self.mode = ModalHandler.modes.normal
-    elseif key == "m" then
-        editor:message(self.client_id, "hello!")
-    elseif key == "e" then
-        editor:error(self.client_id, "oops!")
-    else
-        return {handled = false, redraw_status = false}
+function ModalHandler:set_status(key)
+    local status_line = clients[self.client_id].status_line
+    if not status_line.keys then
+        status_line.keys = {index = 80}
     end
-    return {handled = true, redraw_status = false}
+    if not status_line.mode then
+        status_line.mode = {index = 90}
+    end
+    status_line.keys.text = key and key.display or ""
+    status_line.mode.text = self.mode
+    clients[self.client_id].status_line = status_line
+    self.redraw_status = true
 end
 
-keys.ModalHandler = ModalHandler
+function ModalHandler:handle_normal(key)
+    if key.value == "i" then
+        self.mode = ModalHandler.modes.insertion
+    elseif key.value == "m" then
+        editor:message(self.client_id, "hello!")
+    elseif key.value == "e" then
+        editor:error(self.client_id, "oops!")
+    end
+end
 
-return keys
+function ModalHandler:handle_insertion(key)
+    if key.value == "n" then
+        self.mode = ModalHandler.modes.normal
+    end
+end
+
+function ModalHandler:handle(key)
+    if self.mode == ModalHandler.modes.normal then
+        self:handle_normal(key)
+    elseif self.mode == ModalHandler.modes.insertion then
+        self:handle_insertion(key)
+    end
+    self:set_status(key)
+    local redraw_status = self.redraw_status
+    self.redraw_status = false
+    return {redraw_status = redraw_status}
+end
+
+M.ModalHandler = ModalHandler
+
+return M

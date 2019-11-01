@@ -32,7 +32,8 @@ impl From<&str> for Key {
 impl From<char> for Key {
     fn from(c: char) -> Key {
         Key {
-            value: c,
+            value: c.to_lowercase().next().unwrap(),
+            shift: c.is_uppercase(),
             ..Default::default()
         }
     }

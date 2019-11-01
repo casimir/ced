@@ -1,6 +1,6 @@
 -- http://lua-users.org/wiki/ObjectOrientationTutorial
 
-keys = require "keys"
+local keys = require "keys"
 
 clients = {
     new = function(id)
@@ -8,7 +8,7 @@ clients = {
             status_line = {
                 client = {index = 100}
             },
-            key_handler = keys.PrintHandler.new(id)
+            key_handler = keys.ModalHandler.new(id)
         }
     end
 }
