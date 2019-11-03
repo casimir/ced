@@ -16,8 +16,8 @@ term = ["crossterm"]
 [dependencies]
 channel = { version = "0.3", package = "crossbeam-channel" }
 clap = "2.33"
-dirs = "1.0"
-env_logger = "0.6"
+dirs = "2.0"
+env_logger = "0.7"
 ignore = "0.4"
 log = "0.4"
 mio = "0.6"
@@ -27,7 +27,7 @@ regex = "1.2"
 remote = { path = "../remote", package = "ced-remote" }
 rlua = "0.16"
 
-crossterm = { version = "0.12", optional = true }
+crossterm = { version = "0.13", optional = true }
 
 [dev-dependencies]
 itertools = "0.8"

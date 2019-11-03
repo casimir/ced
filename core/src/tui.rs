@@ -5,8 +5,14 @@ use std::time::Duration;
 
 use channel::select;
 use crossterm::{
-    execute, queue, style, AlternateScreen, Clear, ClearType, Colorize, Goto, Hide, InputEvent,
-    Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
+    cursor::{Hide, MoveTo, Show},
+    execute,
+    input::{InputEvent, TerminalInput},
+    queue,
+    screen::AlternateScreen,
+    style::{style, Colorize, PrintStyledContent, Styler},
+    terminal::{self, Clear, ClearType},
+    Output, Result as CTResult,
 };
 use remote::protocol::{Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
@@ -37,7 +43,7 @@ impl Term {
         let mut term = Term {
             connection: Connection::new(session)?,
             exit_pending: false,
-            last_size: Terminal::new().size().expect("get terminal"),
+            last_size: terminal::size().expect("get terminal"),
             _screen: AlternateScreen::to_alternate(true)
                 .expect("enable raw mode and switch to alternate screen"),
         };
@@ -62,10 +68,9 @@ impl Term {
         let resize_tx = events_tx.clone();
         let starting_size = self.last_size;
         thread::spawn(move || {
-            let terminal = Terminal::new();
             let mut current = starting_size;
             loop {
-                match terminal.size() {
+                match terminal::size() {
                     Ok(size) => {
                         if current != size {
                             resize_tx
@@ -133,7 +138,7 @@ impl Term {
                     }
                 }
             }
-            queue!(stdout, Goto(0, 0), Output(content.join("\r\n")))?;
+            queue!(stdout, MoveTo(0, 0), Output(content.join("\r\n")))?;
         }
 
         let echo = state.echo.unwrap_or_default();
@@ -159,8 +164,8 @@ impl Term {
         };
         queue!(
             stdout,
-            Goto(0, height),
-            PrintStyledFont(style(text).reverse())
+            MoveTo(0, height),
+            PrintStyledContent(style(text).reverse())
         )?;
         stdout.flush()?;
         Ok(())
@@ -175,8 +180,8 @@ impl Term {
         queue!(
             stdout,
             Clear(ClearType::All),
-            Goto(0, 0),
-            PrintStyledFont(style(title + &padding).reverse())
+            MoveTo(0, 0),
+            PrintStyledContent(style(title + &padding).reverse())
         )?;
         {
             let display_size = (height - 1) as usize;
@@ -195,13 +200,13 @@ impl Term {
                     &item
                 };
                 let item_print = if i == menu.selected {
-                    PrintStyledFont(style(item_view).reverse())
+                    PrintStyledContent(style(item_view).reverse())
                 } else {
-                    PrintStyledFont(style(item_view))
+                    PrintStyledContent(style(item_view))
                 };
                 queue!(
                     stdout,
-                    Goto(0, 1 + i as u16),
+                    MoveTo(0, 1 + i as u16),
                     item_print,
                     Clear(ClearType::UntilNewLine)
                 )?;
@@ -228,8 +233,7 @@ impl Term {
     }
 
     fn handle_input(&mut self, event: InputEvent) -> CTResult<()> {
-        use crossterm::InputEvent::*;
-        use crossterm::KeyEvent::*;
+        use crossterm::input::{InputEvent::*, KeyEvent::*};
         if let Some(menu) = self.connection.state().menu {
             match event {
                 Keyboard(Esc) => {
