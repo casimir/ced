@@ -1,6 +1,7 @@
 local M = {}
 
-local ModalHandler = {}; ModalHandler.__index = ModalHandler
+local ModalHandler = {}
+ModalHandler.__index = ModalHandler
 
 ModalHandler.modes = {
     normal = "N",
@@ -49,7 +50,7 @@ function ModalHandler:handle_normal(key)
 end
 
 function ModalHandler:handle_insertion(key)
-    if key.value == "n" then
+    if key.value == "esc" then
         self.mode = ModalHandler.modes.normal
     end
 end

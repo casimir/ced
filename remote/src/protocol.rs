@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub use crate::keys::Key;
+pub use crate::keys::{Key, KeyEvent};
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Face {
@@ -114,7 +114,7 @@ pub mod notifications {
 }
 
 pub mod requests {
-    use super::Key;
+    use super::KeyEvent;
     use crate::jsonrpc::{Id, Request as JRequest};
 
     pub trait Request {
@@ -154,7 +154,7 @@ pub mod requests {
     request!(ViewRemove, "view-remove", String, ());
     request!(Menu, "menu", MenuParams, ());
     request!(MenuSelect, "menu-select", MenuSelectParams, ());
-    request!(Keys, "keys", Vec<Key>, ());
+    request!(Keys, "keys", Vec<KeyEvent>, ());
 
     #[derive(Serialize, Deserialize)]
     pub struct EditParams {

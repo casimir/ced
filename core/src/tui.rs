@@ -6,9 +6,9 @@ use std::time::Duration;
 use channel::select;
 use crossterm::{
     execute, queue, style, AlternateScreen, Clear, ClearType, Colorize, Goto, Hide, InputEvent,
-    KeyEvent, Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
+    Output, PrintStyledFont, Result as CTResult, Show, Styler, Terminal, TerminalInput,
 };
-use remote::protocol::{Face, Key, TextFragment};
+use remote::protocol::{Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 
 enum Event {
@@ -228,8 +228,8 @@ impl Term {
     }
 
     fn handle_input(&mut self, event: InputEvent) -> CTResult<()> {
-        use InputEvent::*;
-        use KeyEvent::*;
+        use crossterm::InputEvent::*;
+        use crossterm::KeyEvent::*;
         if let Some(menu) = self.connection.state().menu {
             match event {
                 Keyboard(Esc) => {
@@ -264,22 +264,23 @@ impl Term {
             }
         } else {
             match event {
-                Keyboard(Esc) => self.exit_pending = true,
+                Keyboard(Alt('q')) => self.exit_pending = true,
                 Keyboard(Ctrl('f')) => self.do_menu("open", ""),
                 Keyboard(Ctrl('p')) => self.do_menu("", ""),
                 Keyboard(Ctrl('v')) => self.do_menu("view_select", ""),
                 Keyboard(Ctrl('x')) => panic!("panic mode activated!"),
-                Keyboard(Char(c)) => self.connection.keys(vec![c.into()]),
+                Keyboard(Char(c)) => self.connection.keys(KeyEvent::from(c)),
                 Keyboard(Ctrl(c)) => {
-                    let mut key = Key::from(c);
+                    let mut key = KeyEvent::from(c);
                     key.ctrl = true;
-                    self.connection.keys(vec![key])
+                    self.connection.keys(key)
                 }
                 Keyboard(Alt(c)) => {
-                    let mut key = Key::from(c);
+                    let mut key = KeyEvent::from(c);
                     key.alt = true;
-                    self.connection.keys(vec![key])
+                    self.connection.keys(key)
                 }
+                Keyboard(Esc) => self.connection.keys(KeyEvent::from(Key::Escape)),
                 _ => {}
             }
         }

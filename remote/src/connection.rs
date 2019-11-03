@@ -6,7 +6,7 @@ use crate::jsonrpc::{ClientEvent, Id, Request};
 use crate::protocol::{
     notifications,
     requests::{self, Request as _},
-    Key, Text,
+    KeyEvent, Text,
 };
 use crate::session::Session;
 use crossbeam_channel as channel;
@@ -224,7 +224,10 @@ impl Connection {
         self.state_lock.write().unwrap().menu = None;
     }
 
-    pub fn keys(&mut self, keys: Vec<Key>) {
+    pub fn keys<K>(&mut self, keys: K)
+    where
+        K: Into<Vec<KeyEvent>>,
+    {
         let id = self.request_id();
         self.request(requests::Keys::new(id, keys));
     }

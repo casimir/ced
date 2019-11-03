@@ -1,45 +1,104 @@
 use std::fmt;
+use std::str::FromStr;
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Key {
-    pub ctrl: bool,
-    pub alt: bool,
-    pub shift: bool,
-    pub value: char,
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub enum Key {
+    Char(char),
+    Escape,
 }
 
-impl From<&str> for Key {
-    fn from(s: &str) -> Key {
-        let mut key = Key::default();
-        let mut cursor = 0;
-        if s[cursor..].starts_with("c-") {
-            key.ctrl = true;
-            cursor += 2;
-        }
-        if s[cursor..].starts_with("a-") {
-            key.alt = true;
-            cursor += 2;
-        }
-        if s[cursor..].starts_with("s-") {
-            key.shift = true;
-            cursor += 2;
-        }
-        key.value = s.chars().nth(cursor).expect("extract key value");
-        key
+impl Default for Key {
+    fn default() -> Self {
+        Key::Char('\0')
     }
 }
 
-impl From<char> for Key {
-    fn from(c: char) -> Key {
-        Key {
-            value: c.to_lowercase().next().unwrap(),
-            shift: c.is_uppercase(),
+impl fmt::Display for Key {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Key::*;
+        match self {
+            Char(c) => write!(f, "{}", c),
+            Escape => f.write_str("esc"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseKeyError {
+    raw_source: String,
+}
+
+impl FromStr for Key {
+    type Err = ParseKeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.chars().count() == 1 {
+            return Ok(Key::Char(s.chars().next().unwrap()));
+        }
+
+        match s {
+            "esc" => Ok(Key::Escape),
+            _ => Err(ParseKeyError {
+                raw_source: s.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct KeyEvent {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub key: Key,
+}
+
+impl From<Key> for KeyEvent {
+    fn from(key: Key) -> KeyEvent {
+        KeyEvent {
+            key,
             ..Default::default()
         }
     }
 }
 
-impl fmt::Display for Key {
+impl From<&str> for KeyEvent {
+    fn from(s: &str) -> KeyEvent {
+        let mut event = KeyEvent::default();
+        let mut cursor = 0;
+        if s[cursor..].starts_with("c-") {
+            event.ctrl = true;
+            cursor += 2;
+        }
+        if s[cursor..].starts_with("a-") {
+            event.alt = true;
+            cursor += 2;
+        }
+        if s[cursor..].starts_with("s-") {
+            event.shift = true;
+            cursor += 2;
+        }
+        event.key = s
+            .chars()
+            .skip(cursor)
+            .collect::<String>()
+            .parse()
+            .expect("extract key value");
+        event
+    }
+}
+
+impl From<char> for KeyEvent {
+    fn from(c: char) -> KeyEvent {
+        KeyEvent {
+            key: Key::Char(c.to_ascii_lowercase()),
+            shift: c.is_ascii_uppercase(),
+            ..Default::default()
+        }
+    }
+}
+
+impl fmt::Display for KeyEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut s = String::new();
         if self.ctrl {
@@ -51,8 +110,13 @@ impl fmt::Display for Key {
         if self.shift {
             s += "s-";
         }
-        s.push(self.value);
-        write!(f, "{}", s)
+        write!(f, "{}{}", s, self.key)
+    }
+}
+
+impl From<KeyEvent> for Vec<KeyEvent> {
+    fn from(event: KeyEvent) -> Vec<KeyEvent> {
+        vec![event]
     }
 }
 
@@ -63,53 +127,53 @@ mod tests {
     #[test]
     fn convert() {
         assert_eq!(
-            Key::from("a"),
-            Key {
-                value: 'a',
+            KeyEvent::from("a"),
+            KeyEvent {
+                key: Key::Char('a'),
                 ..Default::default()
             }
         );
         assert_eq!(
-            Key::from("c-a"),
-            Key {
+            KeyEvent::from("c-a"),
+            KeyEvent {
                 ctrl: true,
-                value: 'a',
+                key: Key::Char('a'),
                 ..Default::default()
             }
         );
         assert_eq!(
-            Key::from("c-s-a"),
-            Key {
+            KeyEvent::from("c-s-a"),
+            KeyEvent {
                 ctrl: true,
                 shift: true,
-                value: 'a',
+                key: Key::Char('a'),
                 ..Default::default()
             }
         );
         assert_eq!(
-            Key::from('c'),
-            Key {
-                value: 'c',
+            KeyEvent::from('c'),
+            KeyEvent {
+                key: Key::Char('c'),
                 ..Default::default()
             }
         );
 
         {
-            let k = Key {
+            let k = KeyEvent {
                 alt: true,
-                value: 'é',
+                key: Key::Char('é'),
                 ..Default::default()
             };
-            assert_eq!(k, Key::from(k.to_string().as_str()));
+            assert_eq!(k, KeyEvent::from(k.to_string().as_str()));
         }
         {
-            let k = Key {
+            let k = KeyEvent {
                 ctrl: true,
                 alt: true,
-                value: ',',
+                key: Key::Char(','),
                 ..Default::default()
             };
-            assert_eq!(k, Key::from(k.to_string().as_str()));
+            assert_eq!(k, KeyEvent::from(k.to_string().as_str()));
         }
     }
 }

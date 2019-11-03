@@ -24,7 +24,7 @@ use crate::server::BroadcastMessage;
 use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
-    requests, Face, Key, Text, TextFragment,
+    requests, Face, KeyEvent, Text, TextFragment,
 };
 use remote::response;
 
@@ -118,13 +118,13 @@ impl<'lua> From<rlua::Table<'lua>> for LuaResultEvents {
     }
 }
 
-fn key_to_lua<'a>(lua: rlua::Context<'a>, key: &Key) -> rlua::Result<rlua::Table<'a>> {
+fn key_to_lua<'a>(lua: rlua::Context<'a>, event: &KeyEvent) -> rlua::Result<rlua::Table<'a>> {
     let table = lua.create_table()?;
-    table.set("ctrl", key.ctrl)?;
-    table.set("alt", key.alt)?;
-    table.set("shift", key.shift)?;
-    table.set("value", key.value.to_string())?;
-    table.set("display", key.to_string())?;
+    table.set("ctrl", event.ctrl)?;
+    table.set("alt", event.alt)?;
+    table.set("shift", event.shift)?;
+    table.set("value", event.key.to_string())?;
+    table.set("display", event.to_string())?;
     Ok(table)
 }
 
