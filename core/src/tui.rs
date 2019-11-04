@@ -58,11 +58,13 @@ impl Term {
         let (events_tx, events_rx) = channel::unbounded();
         let keys_tx = events_tx.clone();
         thread::spawn(move || {
-            let input = TerminalInput::new();
-            // input.enable_mouse_mode().expect("enable mouse events");
+            let mut input = TerminalInput::new().read_sync();
+            // input().enable_mouse_mode().expect("enable mouse events");
             // TODO and_then?
-            for key in input.read_sync() {
-                keys_tx.send(Event::Input(key)).expect("send key event");
+            loop {
+                if let Some(key) = input.next() {
+                    keys_tx.send(Event::Input(key)).expect("send key event");
+                }
             }
         });
         let resize_tx = events_tx.clone();
