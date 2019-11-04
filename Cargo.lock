@@ -239,9 +239,9 @@ dependencies = [
 
 [[package]]
 name = "crossterm"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f49c1d3b343c7a241afbfd0c19ace7dd2118c0df676ac5ea7fe0cce93d357df"
+checksum = "e4cea9d9bf97b80515798abbc886b737b4edd011284ca0b2ab291f4cdbfdb719"
 dependencies = [
  "crossterm_winapi",
  "lazy_static",
