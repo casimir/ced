@@ -155,6 +155,7 @@ pub mod requests {
     request!(Menu, "menu", MenuParams, ());
     request!(MenuSelect, "menu-select", MenuSelectParams, ());
     request!(Keys, "keys", Vec<KeyEvent>, ());
+    request!(Exec, "exec", String, ());
 
     #[derive(Serialize, Deserialize)]
     pub struct EditParams {

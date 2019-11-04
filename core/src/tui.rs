@@ -271,6 +271,8 @@ impl Term {
         } else {
             match event {
                 Keyboard(Alt('q')) => self.exit_pending = true,
+                Keyboard(Ctrl('d')) => self.connection.exec("editor:debug('coucou')"),
+                Keyboard(Ctrl('e')) => self.connection.exec("editor:debug(undefined)"),
                 Keyboard(Ctrl('f')) => self.do_menu("open", ""),
                 Keyboard(Ctrl('p')) => self.do_menu("", ""),
                 Keyboard(Ctrl('v')) => self.do_menu("view_select", ""),

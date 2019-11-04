@@ -49,6 +49,22 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+fn normalize_error_message(message: &str) -> String {
+    let mut skipping = None;
+    message
+        .replace("\n", "\\n")
+        .replace("\t", " ")
+        .chars()
+        .fold(String::new(), |acc, x| {
+            if Some(x) != skipping {
+                skipping = if x.is_whitespace() { Some(x) } else { None };
+                acc + &x.to_string()
+            } else {
+                acc
+            }
+        })
+}
+
 #[derive(Clone)]
 pub struct Core {
     state: Arc<Mutex<CoreState>>,
@@ -165,7 +181,8 @@ impl Core {
             format!("*|{}", text)
         };
         self.append_to("*errors*", &msg);
-        self.notifier.error(client_id, &text);
+        self.notifier
+            .error(client_id, &normalize_error_message(&text));
     }
 
     pub fn add_client(&mut self, id: usize, info: &EditorInfo) {
@@ -412,5 +429,22 @@ impl rlua::UserData for Core {
             this.error(client, "lua", &content);
             Ok(())
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_message_normalization() {
+        assert_eq!(
+            normalize_error_message("just a simple message"),
+            "just a simple message"
+        );
+        assert_eq!(
+            normalize_error_message("a complicated message\n\twith lines\n\t\tand lines"),
+            "a complicated message\\n with lines\\n and lines"
+        );
     }
 }

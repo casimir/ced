@@ -231,4 +231,9 @@ impl Connection {
         let id = self.request_id();
         self.request(requests::Keys::new(id, keys));
     }
+
+    pub fn exec(&mut self, source: &str) {
+        let id = self.request_id();
+        self.request(requests::Exec::new(id, source.to_owned()));
+    }
 }

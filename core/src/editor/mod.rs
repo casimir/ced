@@ -276,6 +276,7 @@ impl Editor {
             "menu" => response!(msg, |params| self.command_menu(client_id, params)),
             "menu-select" => response!(msg, |params| self.command_menu_select(client_id, params)),
             "keys" => response!(msg, |params| self.command_keys(client_id, params)),
+            "exec" => response!(msg, |params| self.command_exec(client_id, params)),
             method => {
                 self.core.error(
                     client_id,
@@ -430,5 +431,23 @@ impl Editor {
             }
         }
         Ok(())
+    }
+
+    pub fn command_exec(
+        &mut self,
+        client_id: usize,
+        params: &<requests::Exec as requests::Request>::Params,
+    ) -> Result<<requests::Exec as requests::Request>::Result, Error> {
+        self.lua
+            .context(|lua: rlua::Context| lua.load(params).exec())
+            .map_err(|e| {
+                let message = e.to_string();
+                self.core.debug(&format!(
+                    "client {}: exec error:\n<<<<<<<\n{}\n>>>>>>>",
+                    client_id, message
+                ));
+                self.core.error(client_id, "exec", &message);
+                Error::new(1, "exec error".to_string(), message).unwrap()
+            })
     }
 }
