@@ -108,6 +108,10 @@ impl Term {
         }
     }
 
+    fn debug(&mut self, message: &str) {
+        self.connection.exec(&format!("editor:debug({})", message));
+    }
+
     fn draw_view(&mut self) -> CTResult<()> {
         let mut stdout = io::stdout();
         let (width, height) = self.last_size;

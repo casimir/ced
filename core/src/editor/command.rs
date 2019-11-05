@@ -83,6 +83,12 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 description: Some("Remove a buffer from the current view.".to_string()),
                 action: submenu_action,
             });
+            entries.push(MenuEntry {
+                key: "exec".to_string(),
+                label: "Execute script.".to_string(),
+                description: Some("Execute the lua script source.".to_string()),
+                action: submenu_action,
+            });
             entries
         }),
     );
@@ -196,6 +202,19 @@ pub fn default_commands() -> HashMap<String, Menu> {
                 })
                 .collect()
         }),
+    );
+
+    commands.insert(
+        String::from("exec"),
+        Menu::prompt(
+            "exec",
+            "lua",
+            "Lua script source.",
+            |key, editor, client_id| {
+                editor.command_exec(client_id, &key.to_owned())?;
+                Ok(())
+            },
+        ),
     );
 
     commands
