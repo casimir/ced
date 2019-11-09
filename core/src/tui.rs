@@ -7,7 +7,7 @@ use channel::select;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     execute,
-    input::{InputEvent, TerminalInput},
+    input::{input, InputEvent},
     queue,
     screen::AlternateScreen,
     style::{style, Colorize, PrintStyledContent, Styler},
@@ -55,27 +55,17 @@ impl Term {
     }
 
     pub fn start(&mut self) {
-        let (events_tx, events_rx) = channel::unbounded();
-        let keys_tx = events_tx.clone();
-        thread::spawn(move || {
-            let mut input = TerminalInput::new().read_sync();
-            // input().enable_mouse_mode().expect("enable mouse events");
-            // TODO and_then?
-            loop {
-                if let Some(key) = input.next() {
-                    keys_tx.send(Event::Input(key)).expect("send key event");
-                }
-            }
-        });
-        let resize_tx = events_tx.clone();
         let starting_size = self.last_size;
+        let (events_tx, events_rx) = channel::unbounded();
+        let mut reader = input().read_async();
+        // input().enable_mouse_mode().expect("enable mouse events");
         thread::spawn(move || {
             let mut current = starting_size;
             loop {
                 match terminal::size() {
                     Ok(size) => {
                         if current != size {
-                            resize_tx
+                            events_tx
                                 .send(Event::Resize(size.0, size.1))
                                 .expect("send resize event");
                             current = size;
@@ -83,7 +73,10 @@ impl Term {
                     }
                     Err(e) => log::error!("{}", e),
                 }
-                thread::sleep(Duration::from_millis(20));
+                if let Some(key) = reader.next() {
+                    events_tx.send(Event::Input(key)).expect("send key event");
+                }
+                thread::sleep(Duration::from_millis(50));
             }
         });
 
