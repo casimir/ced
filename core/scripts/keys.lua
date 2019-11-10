@@ -26,7 +26,7 @@ function ModalHandler.new(client_id)
 end
 
 function ModalHandler:set_status(key)
-    local status_line = clients[self.client_id].status_line
+    local status_line = editor.clients[self.client_id].status_line
     if not status_line.keys then
         status_line.keys = {index = 80}
     end
@@ -35,7 +35,7 @@ function ModalHandler:set_status(key)
     end
     status_line.keys.text = key and key.display or ""
     status_line.mode.text = self.mode
-    clients[self.client_id].status_line = status_line
+    editor.clients[self.client_id].status_line = status_line
     self.redraw_status = true
 end
 

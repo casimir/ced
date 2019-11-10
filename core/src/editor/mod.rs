@@ -180,7 +180,7 @@ impl Editor {
                     rtp.join("?.lua").display().to_string().replace(r"\", "/")
                 ))
                 .exec()?;
-                lua.globals().set("editor", lua_pipe)?;
+                lua.globals().set("_CORE", lua_pipe)?;
                 lua.load("require 'prelude'").exec()
             })
             .expect("load prelude script");
@@ -188,10 +188,23 @@ impl Editor {
         editor
     }
 
+    fn exec_lua<F, R>(&self, client_id: usize, f: F) -> R
+    where
+        F: FnOnce(rlua::Context) -> R,
+    {
+        self.lua.context(|context| {
+            context
+                .load(&format!("env = {{client_id = {}}}", client_id))
+                .exec()
+                .expect("init lua env");
+            f(context)
+        })
+    }
+
     fn send_status_update(&mut self, client_id: usize) {
-        let items: rlua::Result<_> = self.lua.context(|lua: rlua::Context| {
+        let items: rlua::Result<_> = self.exec_lua(client_id, |lua| {
             let config = lua
-                .load(&format!("clients[{}].status_line", client_id))
+                .load(&format!("editor.clients[{}].status_line", client_id))
                 .eval::<HashMap<String, rlua::Table>>()?;
             let mut items = Vec::new();
             for (k, v) in config {
@@ -227,8 +240,8 @@ impl Editor {
             views: &[],
         };
         self.core.add_client(id, &info);
-        self.lua.context(|lua: rlua::Context| {
-            lua.load(&format!("clients[{0}] = clients.new({0})", id))
+        self.exec_lua(id, |lua| {
+            lua.load(&format!("editor:add_client({})", id))
                 .exec()
                 .expect("set client context");
         });
@@ -237,8 +250,8 @@ impl Editor {
 
     pub fn remove_client(&mut self, id: usize) {
         self.core.remove_client(id);
-        self.lua.context(|lua: rlua::Context| {
-            lua.load(&format!("clients[{}] = nil", id))
+        self.exec_lua(id, |lua| {
+            lua.load(&format!("editor:remove_client({})", id))
                 .exec()
                 .expect("unset client context");
         });
@@ -413,9 +426,9 @@ impl Editor {
         params: &<requests::Keys as requests::Request>::Params,
     ) -> Result<<requests::Keys as requests::Request>::Result, Error> {
         for key in params {
-            let result = self.lua.context(|lua: rlua::Context| {
+            let result = self.exec_lua(client_id, |lua| {
                 let handler = lua
-                    .load(&format!("clients[{}].key_handler", client_id))
+                    .load(&format!("editor.clients[{}].key_handler", client_id))
                     .eval::<rlua::Table>()?;
                 let handle_func = handler.get::<_, rlua::Function>("handle")?;
                 handle_func
@@ -438,8 +451,7 @@ impl Editor {
         client_id: usize,
         params: &<requests::Exec as requests::Request>::Params,
     ) -> Result<<requests::Exec as requests::Request>::Result, Error> {
-        self.lua
-            .context(|lua: rlua::Context| lua.load(params).exec())
+        self.exec_lua(client_id, |lua| lua.load(params).exec())
             .map_err(|e| {
                 let message = e.to_string();
                 self.core.debug(&format!(
