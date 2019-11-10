@@ -188,35 +188,46 @@ impl Editor {
         editor
     }
 
-    fn exec_lua<F, R>(&self, client_id: usize, f: F) -> R
+    fn exec_lua<F, R>(&mut self, client_id: usize, f: F) -> rlua::Result<R>
     where
-        F: FnOnce(rlua::Context) -> R,
+        F: FnOnce(rlua::Context) -> rlua::Result<R>,
     {
-        self.lua.context(|context| {
-            context
-                .load(&format!("env = {{client_id = {}}}", client_id))
-                .exec()
-                .expect("init lua env");
-            f(context)
-        })
+        self.lua
+            .context(|context| {
+                let env_source = format!(
+                    r#"
+                    env = {{
+                        session = {session},
+                        client = {client},
+                    }}
+                    "#,
+                    session = self.session_name,
+                    client = client_id,
+                );
+                context.load(&env_source).exec()?;
+                f(context)
+            })
+            .map_err(|e| {
+                let message = e.to_string();
+                self.core.debug(&format!(
+                    "client {}: exec error:\n<<<<<<<\n{}\n>>>>>>>",
+                    client_id, message
+                ));
+                self.core.error(client_id, "exec", &message);
+                e
+            })
     }
 
     fn send_status_update(&mut self, client_id: usize) {
         let items: rlua::Result<_> = self.exec_lua(client_id, |lua| {
             let config = lua
-                .load(&format!("editor.clients[{}].status_line", client_id))
+                .load(&format!("editor:get_status_line({})", client_id))
                 .eval::<HashMap<String, rlua::Table>>()?;
             let mut items = Vec::new();
-            for (k, v) in config {
-                items.push(match k.as_str() {
-                    "client" => notifications::StatusParamsItem {
-                        index: v.get("index")?,
-                        text: format!("[{}@{}]", client_id, self.session_name).into(),
-                    },
-                    _ => notifications::StatusParamsItem {
-                        index: v.get("index")?,
-                        text: v.get::<_, String>("text")?.into(),
-                    },
+            for v in config.values() {
+                items.push(notifications::StatusParamsItem {
+                    index: v.get("index")?,
+                    text: v.get::<_, String>("text")?.into(),
                 })
             }
             Ok(items)
@@ -240,20 +251,16 @@ impl Editor {
             views: &[],
         };
         self.core.add_client(id, &info);
-        self.exec_lua(id, |lua| {
-            lua.load(&format!("editor:add_client({})", id))
-                .exec()
-                .expect("set client context");
+        let _ = self.exec_lua(id, |lua| {
+            lua.load(&format!("editor:add_client({})", id)).exec()
         });
         self.send_status_update(id);
     }
 
     pub fn remove_client(&mut self, id: usize) {
         self.core.remove_client(id);
-        self.exec_lua(id, |lua| {
-            lua.load(&format!("editor:remove_client({})", id))
-                .exec()
-                .expect("unset client context");
+        let _ = self.exec_lua(id, |lua| {
+            lua.load(&format!("editor:remove_client({})", id)).exec()
         });
     }
 
@@ -452,14 +459,6 @@ impl Editor {
         params: &<requests::Exec as requests::Request>::Params,
     ) -> Result<<requests::Exec as requests::Request>::Result, Error> {
         self.exec_lua(client_id, |lua| lua.load(params).exec())
-            .map_err(|e| {
-                let message = e.to_string();
-                self.core.debug(&format!(
-                    "client {}: exec error:\n<<<<<<<\n{}\n>>>>>>>",
-                    client_id, message
-                ));
-                self.core.error(client_id, "exec", &message);
-                Error::new(1, "exec error".to_string(), message).unwrap()
-            })
+            .map_err(|e| Error::new(1, "exec error".to_string(), e.to_string()).unwrap())
     }
 }

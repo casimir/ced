@@ -35,7 +35,6 @@ function ModalHandler:set_status(key)
     end
     status_line.keys.text = key and key.display or ""
     status_line.mode.text = self.mode
-    editor.clients[self.client_id].status_line = status_line
     self.redraw_status = true
 end
 
