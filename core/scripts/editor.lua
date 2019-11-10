@@ -5,15 +5,8 @@ local M = {}
 
 local Editor = {}
 Editor.__index = Editor
-setmetatable(
-    Editor,
-    {
-        __call = function(cls, ...)
-            return cls.new(...)
-        end
-    }
-)
 
+---@return Editor
 function Editor.new()
     local self = setmetatable({}, Editor)
     self.core = _CORE
@@ -69,6 +62,7 @@ function Editor:get_status_line(client_id)
     return status_line
 end
 
+---@class Editor
 M.Editor = Editor
 
 return M
