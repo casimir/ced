@@ -188,7 +188,7 @@ impl Editor {
         editor
     }
 
-    fn exec_lua<F, R>(&mut self, client_id: usize, f: F) -> rlua::Result<R>
+    pub fn exec_lua<F, R>(&mut self, source: &str, client_id: usize, f: F) -> rlua::Result<R>
     where
         F: FnOnce(rlua::Context) -> rlua::Result<R>,
     {
@@ -197,8 +197,8 @@ impl Editor {
                 let env_source = format!(
                     r#"
                     env = {{
-                        session = {session},
-                        client = {client},
+                        session = "{session}",
+                        client = "{client}",
                     }}
                     "#,
                     session = self.session_name,
@@ -210,8 +210,8 @@ impl Editor {
             .map_err(|e| {
                 let message = e.to_string();
                 self.core.debug(&format!(
-                    "client {}: exec error:\n<<<<<<<\n{}\n>>>>>>>",
-                    client_id, message
+                    "client {}: exec error: {}\n<<<<<<<\n{}\n>>>>>>>",
+                    client_id, source, message
                 ));
                 self.core.error(client_id, "exec", &message);
                 e
@@ -219,7 +219,7 @@ impl Editor {
     }
 
     fn send_status_update(&mut self, client_id: usize) {
-        let items: rlua::Result<_> = self.exec_lua(client_id, |lua| {
+        let items: rlua::Result<_> = self.exec_lua("status_line", client_id, |lua| {
             let config = lua
                 .load(&format!("editor:get_status_line({})", client_id))
                 .eval::<HashMap<String, rlua::Table>>()?;
@@ -251,7 +251,7 @@ impl Editor {
             views: &[],
         };
         self.core.add_client(id, &info);
-        let _ = self.exec_lua(id, |lua| {
+        let _ = self.exec_lua("add_client", id, |lua| {
             lua.load(&format!("editor:add_client({})", id)).exec()
         });
         self.send_status_update(id);
@@ -259,7 +259,7 @@ impl Editor {
 
     pub fn remove_client(&mut self, id: usize) {
         self.core.remove_client(id);
-        let _ = self.exec_lua(id, |lua| {
+        let _ = self.exec_lua("remove_client", id, |lua| {
             lua.load(&format!("editor:remove_client({})", id)).exec()
         });
     }
@@ -433,7 +433,7 @@ impl Editor {
         params: &<requests::Keys as requests::Request>::Params,
     ) -> Result<<requests::Keys as requests::Request>::Result, Error> {
         for key in params {
-            let result = self.exec_lua(client_id, |lua| {
+            let result = self.exec_lua("keys", client_id, |lua| {
                 let handler = lua
                     .load(&format!("editor.clients[{}].key_handler", client_id))
                     .eval::<rlua::Table>()?;
@@ -458,7 +458,7 @@ impl Editor {
         client_id: usize,
         params: &<requests::Exec as requests::Request>::Params,
     ) -> Result<<requests::Exec as requests::Request>::Result, Error> {
-        self.exec_lua(client_id, |lua| lua.load(params).exec())
+        self.exec_lua("exec", client_id, |lua| lua.load(params).exec())
             .map_err(|e| Error::new(1, "exec error".to_string(), e.to_string()).unwrap())
     }
 }
