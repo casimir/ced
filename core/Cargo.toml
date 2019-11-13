@@ -30,4 +30,5 @@ rlua = "0.16"
 crossterm = { version = "0.13", optional = true }
 
 [dev-dependencies]
+async-std = "1.0"
 itertools = "0.8"

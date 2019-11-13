@@ -1,14 +1,10 @@
-extern crate ced;
-#[macro_use]
-extern crate clap;
-extern crate env_logger;
-
 use std::io;
 
 use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
+use ced::script::exec_scripts;
 use ced::server::Server;
 use ced::standalone::start_standalone;
-use clap::{App, Arg};
+use clap::{arg_enum, crate_authors, crate_description, crate_version, value_t, App, Arg};
 
 #[cfg(feature = "term")]
 arg_enum! {
@@ -17,6 +13,7 @@ arg_enum! {
     pub enum Mode {
         daemon,
         json,
+        script,
         server,
         standalone,
         term,
@@ -29,6 +26,7 @@ arg_enum! {
     pub enum Mode {
         daemon,
         json,
+        script,
         server,
         standalone,
     }
@@ -103,6 +101,7 @@ fn main() -> io::Result<()> {
                 StdioClient::new(&session)?.run();
                 Ok(())
             }
+            Mode::script => exec_scripts(&filenames),
             Mode::server => {
                 eprintln!("starting server: {0} {0:?}", &session.mode);
                 Server::new(session).run()
