@@ -16,7 +16,8 @@ fn run_all_scripts() {
         .collect::<Vec<PathBuf>>();
     scripts.sort_unstable();
 
-    task::block_on(async {
+    let fails = task::block_on(async {
+        let mut err_count = 0;
         let mut handles = Vec::new();
         for script in scripts {
             handles.push(task::spawn(async move {
@@ -26,7 +27,12 @@ fn run_all_scripts() {
 
         for handle in handles {
             let (path, res) = handle.await;
-            assert!(res.is_ok(), "{}\n> {}", path.display(), res.err().unwrap());
+            if let Err(e) = res {
+                println!("file: {}\n{}\n", path.display(), e);
+                err_count += 1;
+            }
         }
+        err_count
     });
+    assert!(fails == 0, "some tests are failing");
 }
