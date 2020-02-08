@@ -1,9 +1,15 @@
+mod position;
+
 use std::cmp::{max, min, Ordering};
 use std::collections::BTreeSet;
+use std::iter::FromIterator;
 
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::{OffsetRange, Range};
+use bstr::decode_utf8;
+pub use position::PositionIterator;
 use rbtset::{Consecutive, Node, RBTreeSet};
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct Piece {
@@ -145,14 +151,14 @@ enum Action {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Coord {
+pub struct Coords {
     pub l: usize,
     pub c: usize,
 }
 
-impl From<(usize, usize)> for Coord {
-    fn from(tuple: (usize, usize)) -> Coord {
-        Coord {
+impl From<(usize, usize)> for Coords {
+    fn from(tuple: (usize, usize)) -> Coords {
+        Coords {
             l: tuple.0,
             c: tuple.1,
         }
@@ -305,38 +311,111 @@ impl PieceTable {
         self.newlines.len() + 1
     }
 
-    pub fn offset_to_coord(&self, offset: usize) -> Coord {
-        let offset = min(offset, self.len());
-        let preceding_lines = self.newlines.range(..offset).collect::<Vec<_>>();
-        let line_offset = preceding_lines.last().map_or(0, |&&i| i);
-        Coord {
-            l: preceding_lines.len() + 1,
-            c: max(offset - line_offset, 1),
+    pub fn line(&self, n: usize) -> Option<String> {
+        if n == 0 || self.line_count() < n {
+            None
+        } else if n == 1 {
+            let max_len = self.len();
+            self.text_range(OffsetRange::new(
+                0,
+                *self.newlines.iter().nth(0).unwrap_or(&max_len),
+            ))
+        } else {
+            let start = self.newlines.iter().nth(n - 2).unwrap();
+            let end = match self.newlines.iter().nth(n - 1) {
+                Some(&v) => v - 1,
+                None => self.len(),
+            };
+            self.text_range(OffsetRange::new(start + 1, end - start))
         }
     }
 
-    pub fn coord_to_offset(&self, coord: Coord) -> usize {
-        if coord.l == 1 {
-            min(coord.c - 1, self.line_length(1))
-        } else if coord.l - 2 <= self.newlines.len() {
-            let mut nls = self.newlines.iter().collect::<Vec<_>>();
-            nls.sort_unstable();
-            let max_col = if coord.l <= nls.len() {
-                *nls[coord.l - 1]
-            } else {
-                self.len()
-            };
-            min(*nls[coord.l - 2] + coord.c, max_col)
-        } else {
-            self.len()
+    pub fn offset_to_coord(&self, offset: usize) -> Coords {
+        // start
+        if offset == 0 {
+            return Coords { c: 1, l: 1 };
         }
+
+        // bigger that total length
+        if self.len() <= offset {
+            let lineno = self.newlines.len() + 1;
+            return Coords {
+                l: lineno,
+                c: self.line_length(lineno) + 1,
+            };
+        }
+
+        // points to a newline
+        if let Some(idx) = self.newlines.iter().position(|&x| x == offset) {
+            let lineno = idx + 1;
+            return Coords {
+                l: lineno,
+                c: self.line_length(lineno) + 1,
+            };
+        }
+
+        let preceding_lines = self.newlines.range(..offset).collect::<Vec<_>>();
+        let lineno = preceding_lines.len() + 1;
+        match preceding_lines.last() {
+            Some(&nli) => {
+                let line = self.line(lineno).unwrap();
+                let indices = BTreeSet::from_iter(line.grapheme_indices(true).map(|(i, _)| i));
+                let col = indices.range(..offset - nli).count();
+                Coords { l: lineno, c: col }
+            }
+            None => Coords {
+                l: lineno,
+                c: offset + 1,
+            },
+        }
+    }
+
+    pub fn coord_to_offset(&self, coords: Coords) -> usize {
+        if coords.l == 0 {
+            0
+        } else if self.line_count() < coords.l {
+            self.len()
+        } else {
+            let line_offset = if coords.l > 1 {
+                self.newlines
+                    .iter()
+                    .nth(coords.l - 2)
+                    .map_or(0, |nl| nl + 1)
+            } else {
+                0
+            };
+            let col_offset = self
+                .line(coords.l)
+                .and_then(|l| l.grapheme_indices(true).nth(coords.c - 1).map(|(o, _)| o))
+                .unwrap_or_else(|| self.line_length(coords.l));
+            line_offset + col_offset
+        }
+    }
+
+    pub fn char_at_offset(&self, offset: usize) -> Option<String> {
+        // TODO the closest new line is used but this can be optimized using the next boundary
+        // TODO self.bytes_range()
+        // let (ch, _) = decode_utf8(self.bytes_range(OffsetRange::new(offset, 4)));
+        // ch
+
+        let end = self
+            .newlines
+            .range(offset..)
+            .nth(0)
+            .map_or_else(|| self.len(), |&nl| nl);
+        self.text_range(OffsetRange::new(offset, max(end - offset, 1)))
+            .and_then(|l| l.graphemes(true).nth(0).map(ToOwned::to_owned))
+    }
+
+    pub fn char_at<C: Into<Coords>>(&self, coords: C) -> Option<String> {
+        self.char_at_offset(self.coord_to_offset(coords.into()))
     }
 
     pub fn line_length(&self, index: usize) -> usize {
         let mut nls = self.newlines.iter().collect::<Vec<_>>();
         nls.sort_unstable();
         if nls.is_empty() {
-            0
+            self.len()
         } else if index == 1 {
             *nls[0]
         } else if index - 1 < nls.len() {
@@ -359,10 +438,7 @@ impl PieceTable {
         longest
     }
 
-    pub fn lines_range<C>(&self, from: C, to: C) -> Vec<String>
-    where
-        C: Into<Coord>,
-    {
+    pub fn lines_range<C: Into<Coords>>(&self, from: C, to: C) -> Vec<String> {
         let offset = self.coord_to_offset(from.into());
         let length = self.coord_to_offset(to.into()) - offset;
         let range = OffsetRange::new(offset, length);
@@ -510,6 +586,12 @@ impl PieceTable {
     }
 }
 
+impl Default for PieceTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,10 +635,7 @@ mod tests {
         pieces.delete(OffsetRange::new(28, 5)); // "|lazy |"
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
-        assert_eq!(
-            pieces.text(),
-            "🦊 the fox jumps over the dog 🐶, so quick"
-        );
+        assert_eq!(pieces.text(), "🦊 the fox jumps over the dog 🐶, so quick");
     }
 
     #[test]
@@ -699,6 +778,17 @@ mod tests {
     }
 
     #[test]
+    fn line() {
+        let pieces =
+            PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.\nA real mystery.");
+        assert_eq!(pieces.line(0), None);
+        assert_eq!(pieces.line(1), Some("What does the 🦊 says?".into()));
+        assert_eq!(pieces.line(2), Some("❓ It's a mystery.".into()));
+        assert_eq!(pieces.line(3), Some("A real mystery.".into()));
+        assert_eq!(pieces.line(10), None);
+    }
+
+    #[test]
     fn coordinates() {
         let text = r#"Vous qui venez ici
 dans une humble posture
@@ -741,18 +831,58 @@ doit servir de tombeau"#;
             ]
         );
         assert_eq!(
-            pieces.lines_range((7, 10), (8, 9)),
+            pieces.lines_range((7, 10), (8, 8)),
             vec!["quand vous aurez".to_owned(), "Soulagé".to_owned()]
         );
 
-        let coord = (5, 5).into();
+        let coord = (4, 15).into(); // after only 1-len chars
+        assert_eq!(pieces.offset_to_coord(pieces.coord_to_offset(coord)), coord);
+        let coord = (5, 5).into(); // after 2-len char (é)
         assert_eq!(pieces.offset_to_coord(pieces.coord_to_offset(coord)), coord);
 
         assert_eq!(
             pieces.offset_to_coord(pieces.coord_to_offset((3, 999).into())),
-            Coord { l: 3, c: 1 }
+            Coords { l: 3, c: 1 }
         );
 
         assert_eq!(pieces.coord_to_offset((9999, 9999).into()), pieces.len());
+    }
+
+    #[test]
+    fn coordinates_one_line() {
+        let pieces = PieceTable::with_text("What does the fox says?");
+        assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
+        assert_eq!(pieces.coord_to_offset((1, 15).into()), 14);
+    }
+
+    #[test]
+    fn coordinates_unicode() {
+        let pieces = PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.");
+        assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
+        assert_eq!(pieces.coord_to_offset((1, 15).into()), 14); // 🦊 offset
+        assert_eq!(pieces.coord_to_offset((1, 16).into()), 18); // after 🦊
+        assert_eq!(pieces.coord_to_offset((2, 3).into()), 29);
+        assert_eq!(pieces.coord_to_offset((3, 14).into()), pieces.len());
+    }
+
+    #[test]
+    fn char_at() {
+        let text = r#"Natoque.
+Ullamcorper ultrices 💘🐬🌜👤🎑🍶🔃 eget accumsan ipsum nunc est eget 🔔🏇💡🔈👝🐚👓🔯🎦👯🍭 🍪🐯🍵 feugiat eget enim, 💉🎽🐂🎂 mauris nisi, non at 🔬👨🔀 odio.
+Volutpat massa, et sit aliquam vestibulum, eu nisl rhoncus, commodo, at ac tempor, neque, congue aliquam quam nulla sit nisl sed.
+Dolor."#;
+
+        let pieces = PieceTable::with_text(text);
+        assert_eq!(pieces.char_at((1, 3)), Some("t".into()));
+        assert_eq!(pieces.char_at((2, 20)), Some("s".into()));
+        assert_eq!(pieces.char_at((2, 22)), Some("💘".into()));
+        assert_eq!(pieces.char_at((2, 24)), Some("🌜".into()));
+        assert_eq!(pieces.char_at((3, 20)), Some("s".into()));
+        assert_eq!(pieces.char_at((4, 2)), Some("o".into()));
+
+        assert_eq!(pieces.char_at((1, 9999)), Some("\n".into()));
+        assert_eq!(pieces.char_at((4, 9999)), None);
+        assert_eq!(pieces.char_at((5, 1)), None);
+        assert_eq!(pieces.char_at_offset(pieces.len()), None);
     }
 }
