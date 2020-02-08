@@ -1,12 +1,11 @@
 mod position;
 
-use std::cmp::{max, min, Ordering};
+use std::cmp::{max, Ordering};
 use std::collections::BTreeSet;
 use std::iter::FromIterator;
 
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::{OffsetRange, Range};
-use bstr::decode_utf8;
 pub use position::PositionIterator;
 use rbtset::{Consecutive, Node, RBTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
@@ -399,12 +398,7 @@ impl PieceTable {
     }
 
     pub fn char_at_offset(&self, offset: usize) -> Option<String> {
-        // TODO the closest new line is used but this can be optimized using the next boundary
-        // self.range(OffsetRange::new(offset, 4)).and_then(|raw| {
-        //     let (ch, _) = decode_utf8(raw);
-        //     ch.map(|c| c.to_string())
-        // })
-
+        // TODO the closest new line is used but this could be optimized using the next boundary
         let end = self
             .newlines
             .range(offset..)
