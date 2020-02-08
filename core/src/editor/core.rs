@@ -141,7 +141,7 @@ impl Core {
             self.open_scratch(buffer);
         }
         if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
-            buf.append(&format!("{}\n", content));
+            buf.append(format!("{}\n", content));
         }
         self.notify_view_update(self.clients_with_buffer(buffer));
     }

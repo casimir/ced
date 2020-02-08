@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn positions() {
-        let table = PieceTable::with_text("line 1\n2 line");
+        let table = PieceTable::with_text("line 1\n2 line".to_owned());
         let positions = vec![
             (1, 1),
             (1, 2),
@@ -84,7 +84,7 @@ mod tests {
     fn ascii() {
         let text = "line 1\n2 line";
         let chars: Vec<char> = text.chars().collect();
-        let table = PieceTable::with_text(text);
+        let table = PieceTable::with_text(text.to_owned());
         for (i, p) in PositionIterator::from(&table).enumerate() {
             if i < chars.len() {
                 assert_eq!(p.char, Some(chars[i].to_string()));
@@ -99,7 +99,7 @@ mod tests {
     fn unicode() {
         let text = "🚀∂⏰ØⓏ 1️⃣\n2 line";
         let chars: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
-        let table = PieceTable::with_text(text);
+        let table = PieceTable::with_text(text.to_owned());
         for (i, p) in PositionIterator::from(&table).enumerate() {
             if i < chars.len() {
                 assert_eq!(p.char, Some(chars[i].1.to_string()));

@@ -89,7 +89,7 @@ impl Buffer {
 
         Buffer {
             source: BufferSource::File(absolute_path),
-            content: PieceTable::with_text(&file_content),
+            content: PieceTable::with_text(file_content),
             last_sync,
             modified: false,
         }
@@ -150,7 +150,7 @@ impl Buffer {
         }
     }
 
-    pub fn append(&mut self, text: &str) {
+    pub fn append(&mut self, text: String) {
         self.content.append(text);
         self.modified = true;
     }

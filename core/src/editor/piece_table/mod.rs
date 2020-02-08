@@ -166,8 +166,8 @@ impl From<(usize, usize)> for Coords {
 }
 
 pub struct PieceTable {
-    original: String,
-    added: String,
+    original: Vec<u8>,
+    added: Vec<u8>,
     pieces: RBTreeSet<Piece>,
     newlines: BTreeSet<usize>,
     last_action: Option<Action>,
@@ -176,7 +176,7 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
-    pub fn with_text(text: &str) -> PieceTable {
+    pub fn with_text(text: String) -> PieceTable {
         let mut pieces = RBTreeSet::new();
         let newlines = text.match_indices('\n').map(|(i, _)| i).collect();
         pieces.insert(Piece {
@@ -186,8 +186,8 @@ impl PieceTable {
             original: true,
         });
         PieceTable {
-            original: String::from(text),
-            added: String::new(),
+            original: text.into_bytes(),
+            added: Vec::new(),
             pieces,
             newlines,
             last_action: None,
@@ -198,8 +198,8 @@ impl PieceTable {
 
     pub fn new() -> PieceTable {
         PieceTable {
-            original: String::new(),
-            added: String::new(),
+            original: Vec::new(),
+            added: Vec::new(),
             pieces: RBTreeSet::new(),
             newlines: BTreeSet::new(),
             last_action: None,
@@ -263,26 +263,7 @@ impl PieceTable {
         }
     }
 
-    fn join(&self, sep: &str) -> String {
-        self.pieces
-            .values()
-            .map(|p| {
-                let buffer = if p.original {
-                    &self.original
-                } else {
-                    &self.added
-                };
-                String::from(&buffer[p.start..p.end()])
-            })
-            .collect::<Vec<String>>()
-            .join(sep)
-    }
-
-    pub fn text(&self) -> String {
-        self.join("")
-    }
-
-    pub fn text_range(&self, range: OffsetRange) -> Option<String> {
+    fn range(&self, range: OffsetRange) -> Option<Vec<u8>> {
         self.pieces
             .get_node(&Piece::offset(range.start()))
             .map(|start_piece| {
@@ -296,11 +277,36 @@ impl PieceTable {
                             &self.added
                         };
                         let ranged_piece = p.ranged(range);
-                        String::from(&buffer[ranged_piece.start..ranged_piece.end()])
+                        &buffer[ranged_piece.start..ranged_piece.end()]
                     })
-                    .collect::<Vec<String>>()
-                    .join("")
+                    .collect::<Vec<&[u8]>>()
+                    .concat()
             })
+    }
+
+    fn join(&self, sep: &str) -> String {
+        self.pieces
+            .values()
+            .map(|p| {
+                let buffer = if p.original {
+                    &self.original
+                } else {
+                    &self.added
+                };
+                String::from_utf8_lossy(&buffer[p.start..p.end()]).into()
+            })
+            .collect::<Vec<String>>()
+            .join(sep)
+    }
+
+    pub fn text(&self) -> String {
+        self.join("")
+    }
+
+    pub fn text_range(&self, range: OffsetRange) -> Option<String> {
+        // TODO handle decoding error
+        self.range(range)
+            .map(|bs| String::from_utf8_lossy(&bs).into())
     }
 
     pub fn lines(&self) -> Vec<String> {
@@ -394,9 +400,10 @@ impl PieceTable {
 
     pub fn char_at_offset(&self, offset: usize) -> Option<String> {
         // TODO the closest new line is used but this can be optimized using the next boundary
-        // TODO self.bytes_range()
-        // let (ch, _) = decode_utf8(self.bytes_range(OffsetRange::new(offset, 4)));
-        // ch
+        // self.range(OffsetRange::new(offset, 4)).and_then(|raw| {
+        //     let (ch, _) = decode_utf8(raw);
+        //     ch.map(|c| c.to_string())
+        // })
 
         let end = self
             .newlines
@@ -449,7 +456,7 @@ impl PieceTable {
             .collect()
     }
 
-    pub fn append(&mut self, text: &str) {
+    pub fn append(&mut self, text: String) {
         self.action(Action::Insert);
         let offset = if let Some(last) = self.pieces.last() {
             let data = last.data();
@@ -458,7 +465,6 @@ impl PieceTable {
             0
         };
         let index = self.added.len();
-        self.added.push_str(text);
         self.pieces.insert(Piece {
             offset,
             start: index,
@@ -466,7 +472,8 @@ impl PieceTable {
             original: false,
         });
         self.newlines
-            .extend(text.match_indices('\n').map(|(i, _)| offset + i))
+            .extend(text.match_indices('\n').map(|(i, _)| offset + i));
+        self.added.extend(text.into_bytes());
     }
 
     fn shift_offset_after(&mut self, node: &Node<Piece>, value: i64) {
@@ -477,11 +484,11 @@ impl PieceTable {
         }
     }
 
-    pub fn insert(&mut self, offset: usize, text: &str) {
+    pub fn insert(&mut self, offset: usize, text: String) {
         self.action(Action::Insert);
         if let Some(ref mut node) = self.pieces.get_node(&Piece::offset(offset)) {
             let added_start = self.added.len();
-            self.added.push_str(text);
+            self.added.extend(text.as_bytes());
             let new = Piece {
                 offset,
                 start: added_start,
@@ -553,7 +560,7 @@ impl PieceTable {
         }
     }
 
-    pub fn replace(&mut self, range: OffsetRange, text: &str) {
+    pub fn replace(&mut self, range: OffsetRange, text: String) {
         self.start_bulk();
         self.delete(range);
         self.insert(range.start(), text);
@@ -572,7 +579,7 @@ impl PieceTable {
             match diff {
                 Diff::Left(len) => self.delete(OffsetRange::new(loffset, len)),
                 Diff::Right(len) => {
-                    self.insert(loffset, &text[roffset..roffset + len]);
+                    self.insert(loffset, text[roffset..roffset + len].to_owned());
                     loffset += len;
                     roffset += len;
                 }
@@ -599,12 +606,12 @@ mod tests {
     #[test]
     fn insert() {
         let mut pieces = PieceTable::new();
-        pieces.insert(0, "the fox jumps over the dog");
-        pieces.insert(4, "quick brown ");
-        pieces.insert(35, "lazy ");
-        pieces.append(" 🐶");
-        pieces.insert(0, "🦊 ");
-        pieces.insert(56, ", so quick");
+        pieces.insert(0, "the fox jumps over the dog".to_owned());
+        pieces.insert(4, "quick brown ".to_owned());
+        pieces.insert(35, "lazy ".to_owned());
+        pieces.append(" 🐶".to_owned());
+        pieces.insert(0, "🦊 ".to_owned());
+        pieces.insert(56, ", so quick".to_owned());
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
@@ -616,12 +623,12 @@ mod tests {
     #[test]
     fn delete() {
         let mut pieces = PieceTable::new();
-        pieces.insert(0, "the fox jumps over the dog");
-        pieces.insert(3, " quick brown");
-        pieces.insert(35, "lazy ");
-        pieces.append(" 🐶");
-        pieces.insert(0, "🦊 ");
-        pieces.insert(56, ", so quick");
+        pieces.insert(0, "the fox jumps over the dog".to_owned());
+        pieces.insert(3, " quick brown".to_owned());
+        pieces.insert(35, "lazy ".to_owned());
+        pieces.append(" 🐶".to_owned());
+        pieces.insert(0, "🦊 ".to_owned());
+        pieces.insert(56, ", so quick".to_owned());
 
         assert_eq!(
             pieces.text_range(OffsetRange::new(9, 12)),
@@ -641,15 +648,15 @@ mod tests {
     #[test]
     fn replace() {
         let mut pieces = PieceTable::new();
-        pieces.insert(0, "the fox jumps over the dog");
-        pieces.insert(4, "quick brown ");
-        pieces.insert(35, "lazy ");
-        pieces.append(" 🐶");
-        pieces.insert(0, "🦊 ");
-        pieces.insert(56, ", so quick");
+        pieces.insert(0, "the fox jumps over the dog".to_owned());
+        pieces.insert(4, "quick brown ".to_owned());
+        pieces.insert(35, "lazy ".to_owned());
+        pieces.append(" 🐶".to_owned());
+        pieces.insert(0, "🦊 ".to_owned());
+        pieces.insert(56, ", so quick".to_owned());
 
-        pieces.replace(OffsetRange::new(9, 11), "sneaky"); // "quick brown| "
-        pieces.replace(OffsetRange::new(35, 8), "mighty bear"); // "|lazy |dog|"
+        pieces.replace(OffsetRange::new(9, 11), "sneaky".to_owned()); // "quick brown| "
+        pieces.replace(OffsetRange::new(35, 8), "mighty bear".to_owned()); // "|lazy |dog|"
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(
@@ -661,12 +668,12 @@ mod tests {
     #[test]
     fn apply_diff() {
         let mut pieces = PieceTable::new();
-        pieces.insert(0, "the fox jumps over the dog");
-        pieces.insert(4, "quick brown ");
-        pieces.insert(35, "lazy ");
-        pieces.append(" 🐶");
-        pieces.insert(0, "🦊 ");
-        pieces.insert(56, ", so quick");
+        pieces.insert(0, "the fox jumps over the dog".to_owned());
+        pieces.insert(4, "quick brown ".to_owned());
+        pieces.insert(35, "lazy ".to_owned());
+        pieces.append(" 🐶".to_owned());
+        pieces.insert(0, "🦊 ".to_owned());
+        pieces.insert(56, ", so quick".to_owned());
 
         let new_text = "🦊 the sneaky fox jumps over the mighty bear 🐶, so quick";
         pieces.apply_diff(new_text);
@@ -678,10 +685,10 @@ mod tests {
     #[test]
     fn consecutive() {
         let mut pieces = PieceTable::new();
-        pieces.append("Where is");
-        pieces.append(" ");
-        pieces.append("my mind");
-        pieces.append("?");
+        pieces.append("Where is".to_owned());
+        pieces.append(" ".to_owned());
+        pieces.append("my mind".to_owned());
+        pieces.append("?".to_owned());
         assert_eq!(pieces.text(), "Where is my mind?");
         assert_eq!(pieces.pieces.len(), 4);
 
@@ -689,7 +696,7 @@ mod tests {
         assert_eq!(pieces.text(), "Where is my mind?");
         assert_eq!(pieces.pieces.len(), 1);
 
-        pieces.insert(0, "Hey. ");
+        pieces.insert(0, "Hey. ".to_owned());
         pieces.pieces.repack();
         assert_eq!(pieces.text(), "Hey. Where is my mind?");
         assert_eq!(pieces.pieces.len(), 2);
@@ -698,7 +705,7 @@ mod tests {
     #[test]
     fn undo_redo() {
         let text = "🦊 the quick brown fox jumps over the lazy dog 🐶, so quick";
-        let mut pieces = PieceTable::with_text(text);
+        let mut pieces = PieceTable::with_text(text.to_owned());
 
         // empty undo stack
         assert!(!pieces.undo());
@@ -716,8 +723,8 @@ mod tests {
 
         // insert + insert + delete + undo/redo
         let inserted = "🦊 the really quick brown fox jumps over the lazy dog 🐶, so fast";
-        pieces.append(", so fast");
-        pieces.insert(9, "really ");
+        pieces.append(", so fast".to_owned());
+        pieces.insert(9, "really ".to_owned());
         assert_eq!(pieces.text(), inserted);
         let redeleted = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
         pieces.delete(OffsetRange::new(0, 5));
@@ -744,17 +751,17 @@ mod tests {
     fn newline_caching() {
         let mut pieces = PieceTable::new();
         assert!(pieces.newlines.is_empty());
-        pieces.append("first line\nsecond line\nthe end");
+        pieces.append("first line\nsecond line\nthe end".to_owned());
         assert_eq!(
             pieces.newlines,
             [10, 22].iter().map(|&i| i as usize).collect()
         );
-        pieces.insert(11, "surprise line\n");
+        pieces.insert(11, "surprise line\n".to_owned());
         assert_eq!(
             pieces.newlines,
             [10, 24, 36].iter().map(|&i| i as usize).collect()
         );
-        pieces.replace(OffsetRange::new(11, 8), "another");
+        pieces.replace(OffsetRange::new(11, 8), "another".to_owned());
         assert_eq!(
             pieces.newlines,
             [10, 23, 35].iter().map(|&i| i as usize).collect()
@@ -768,7 +775,7 @@ mod tests {
 
     #[test]
     fn line_length() {
-        let pieces = PieceTable::with_text("first line\nsecond line\nthe end");
+        let pieces = PieceTable::with_text("first line\nsecond line\nthe end".to_owned());
         assert_eq!(pieces.line_length(1), 10);
         assert_eq!(pieces.line_length(2), 11);
         assert_eq!(pieces.line_length(3), 7);
@@ -779,8 +786,9 @@ mod tests {
 
     #[test]
     fn line() {
-        let pieces =
-            PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.\nA real mystery.");
+        let pieces = PieceTable::with_text(
+            "What does the 🦊 says?\n❓ It's a mystery.\nA real mystery.".to_owned(),
+        );
         assert_eq!(pieces.line(0), None);
         assert_eq!(pieces.line(1), Some("What does the 🦊 says?".into()));
         assert_eq!(pieces.line(2), Some("❓ It's a mystery.".into()));
@@ -814,7 +822,7 @@ dont l'auguste jointure
 Aux parfums indiscrets
 doit servir de tombeau"#;
 
-        let pieces = PieceTable::with_text(text);
+        let pieces = PieceTable::with_text(text.to_owned());
         assert_eq!(
             pieces.lines_range((1, 6), (1, 15)),
             vec!["qui venez".to_owned()]
@@ -850,14 +858,14 @@ doit servir de tombeau"#;
 
     #[test]
     fn coordinates_one_line() {
-        let pieces = PieceTable::with_text("What does the fox says?");
+        let pieces = PieceTable::with_text("What does the fox says?".to_owned());
         assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
         assert_eq!(pieces.coord_to_offset((1, 15).into()), 14);
     }
 
     #[test]
     fn coordinates_unicode() {
-        let pieces = PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.");
+        let pieces = PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.".to_owned());
         assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
         assert_eq!(pieces.coord_to_offset((1, 15).into()), 14); // 🦊 offset
         assert_eq!(pieces.coord_to_offset((1, 16).into()), 18); // after 🦊
@@ -872,7 +880,7 @@ Ullamcorper ultrices 💘🐬🌜👤🎑🍶🔃 eget accumsan ipsum nunc est e
 Volutpat massa, et sit aliquam vestibulum, eu nisl rhoncus, commodo, at ac tempor, neque, congue aliquam quam nulla sit nisl sed.
 Dolor."#;
 
-        let pieces = PieceTable::with_text(text);
+        let pieces = PieceTable::with_text(text.to_owned());
         assert_eq!(pieces.char_at((1, 3)), Some("t".into()));
         assert_eq!(pieces.char_at((2, 20)), Some("s".into()));
         assert_eq!(pieces.char_at((2, 22)), Some("💘".into()));
