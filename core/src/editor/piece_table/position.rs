@@ -4,7 +4,7 @@ use crate::editor::piece_table::{Coords, PieceTable};
 pub struct Position {
     pub offset: usize,
     pub coords: Coords,
-    pub char: Option<String>,
+    pub grapheme: Option<String>,
 }
 
 pub struct PositionIterator<'a> {
@@ -18,7 +18,7 @@ impl PositionIterator<'_> {
         Position {
             offset: self.offset,
             coords: self.table.offset_to_coord(self.offset),
-            char: self.table.char_at_offset(self.offset),
+            grapheme: self.table.char_at_offset(self.offset),
         }
     }
 }
@@ -87,9 +87,9 @@ mod tests {
         let table = PieceTable::with_text(text.to_owned());
         for (i, p) in PositionIterator::from(&table).enumerate() {
             if i < chars.len() {
-                assert_eq!(p.char, Some(chars[i].to_string()));
+                assert_eq!(p.grapheme, Some(chars[i].to_string()));
             } else {
-                assert_eq!(p.char, None);
+                assert_eq!(p.grapheme, None);
             }
             assert_eq!(p.offset, i);
         }
@@ -106,10 +106,10 @@ mod tests {
         let table = PieceTable::with_text(text.to_owned());
         for (i, p) in PositionIterator::from(&table).enumerate() {
             if i < chars.len() {
-                assert_eq!(p.char, Some(chars[i].1.to_string()));
+                assert_eq!(p.grapheme, Some(chars[i].1.to_string()));
                 assert_eq!(p.offset, chars[i].0);
             } else {
-                assert_eq!(p.char, None);
+                assert_eq!(p.grapheme, None);
                 assert_eq!(p.offset, text.len());
             }
         }
