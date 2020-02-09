@@ -54,7 +54,7 @@ impl<'a> From<&'a PieceTable> for PositionIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unicode_segmentation::UnicodeSegmentation;
+    use bstr::ByteSlice;
 
     #[test]
     fn positions() {
@@ -98,7 +98,11 @@ mod tests {
     #[test]
     fn unicode() {
         let text = "🚀∂⏰ØⓏ 1️⃣\n2 line";
-        let chars: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
+        let chars: Vec<(usize, &str)> = text
+            .as_bytes()
+            .grapheme_indices()
+            .map(|(i, _, g)| (i, g))
+            .collect();
         let table = PieceTable::with_text(text.to_owned());
         for (i, p) in PositionIterator::from(&table).enumerate() {
             if i < chars.len() {

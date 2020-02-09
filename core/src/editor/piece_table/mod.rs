@@ -6,9 +6,9 @@ use std::iter::FromIterator;
 
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::{OffsetRange, Range};
+use bstr::ByteSlice;
 pub use position::PositionIterator;
 use rbtset::{Consecutive, Node, RBTreeSet};
-use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct Piece {
@@ -292,6 +292,7 @@ impl PieceTable {
                 } else {
                     &self.added
                 };
+                // TODO handle decoding error
                 String::from_utf8_lossy(&buffer[p.start..p.end()]).into()
             })
             .collect::<Vec<String>>()
@@ -316,12 +317,12 @@ impl PieceTable {
         self.newlines.len() + 1
     }
 
-    pub fn line(&self, n: usize) -> Option<String> {
+    pub fn line_bytes(&self, n: usize) -> Option<Vec<u8>> {
         if n == 0 || self.line_count() < n {
             None
         } else if n == 1 {
             let max_len = self.len();
-            self.text_range(OffsetRange::new(
+            self.range(OffsetRange::new(
                 0,
                 *self.newlines.iter().nth(0).unwrap_or(&max_len),
             ))
@@ -331,8 +332,14 @@ impl PieceTable {
                 Some(&v) => v - 1,
                 None => self.len(),
             };
-            self.text_range(OffsetRange::new(start + 1, end - start))
+            self.range(OffsetRange::new(start + 1, end - start))
         }
+    }
+
+    pub fn line_text(&self, n: usize) -> Option<String> {
+        // TODO handle decoding error
+        self.line_bytes(n)
+            .map(|l| String::from_utf8_lossy(&l).into())
     }
 
     pub fn offset_to_coord(&self, offset: usize) -> Coords {
@@ -363,8 +370,8 @@ impl PieceTable {
         let lineno = preceding_lines.len() + 1;
         match preceding_lines.last() {
             Some(&nli) => {
-                let line = self.line(lineno).unwrap();
-                let indices = BTreeSet::from_iter(line.grapheme_indices(true).map(|(i, _)| i));
+                let line = self.line_bytes(lineno).unwrap();
+                let indices = BTreeSet::from_iter(line.grapheme_indices().map(|(i, _, _)| i));
                 let col = indices.range(..offset - nli).count();
                 Coords { l: lineno, c: col }
             }
@@ -390,8 +397,8 @@ impl PieceTable {
                 0
             };
             let col_offset = self
-                .line(coords.l)
-                .and_then(|l| l.grapheme_indices(true).nth(coords.c - 1).map(|(o, _)| o))
+                .line_bytes(coords.l)
+                .and_then(|l| l.grapheme_indices().nth(coords.c - 1).map(|(i, _, _)| i))
                 .unwrap_or_else(|| self.line_length(coords.l));
             line_offset + col_offset
         }
@@ -404,8 +411,8 @@ impl PieceTable {
             .range(offset..)
             .nth(0)
             .map_or_else(|| self.len(), |&nl| nl);
-        self.text_range(OffsetRange::new(offset, max(end - offset, 1)))
-            .and_then(|l| l.graphemes(true).nth(0).map(ToOwned::to_owned))
+        self.range(OffsetRange::new(offset, max(end - offset, 1)))
+            .and_then(|l| l.graphemes().nth(0).map(ToOwned::to_owned))
     }
 
     pub fn char_at<C: Into<Coords>>(&self, coords: C) -> Option<String> {
@@ -783,11 +790,11 @@ mod tests {
         let pieces = PieceTable::with_text(
             "What does the 🦊 says?\n❓ It's a mystery.\nA real mystery.".to_owned(),
         );
-        assert_eq!(pieces.line(0), None);
-        assert_eq!(pieces.line(1), Some("What does the 🦊 says?".into()));
-        assert_eq!(pieces.line(2), Some("❓ It's a mystery.".into()));
-        assert_eq!(pieces.line(3), Some("A real mystery.".into()));
-        assert_eq!(pieces.line(10), None);
+        assert_eq!(pieces.line_text(0), None);
+        assert_eq!(pieces.line_text(1), Some("What does the 🦊 says?".into()));
+        assert_eq!(pieces.line_text(2), Some("❓ It's a mystery.".into()));
+        assert_eq!(pieces.line_text(3), Some("A real mystery.".into()));
+        assert_eq!(pieces.line_text(10), None);
     }
 
     #[test]
