@@ -13,10 +13,39 @@ use crate::stackmap::StackMap;
 pub const BUFFER_DEBUG: &str = "*debug*";
 pub const BUFFER_SCRATCH: &str = "*scratch*";
 
+#[derive(Debug)]
+pub enum CursorTarget {
+    Left,
+    Right,
+    Up,
+    Down,
+    Begin,
+    End,
+    LineBegin,
+    LineEnd,
+}
+
 #[derive(Clone, Debug)]
 struct ClientContext {
     view: Rc<RefCell<View>>,
     selections: HashMap<String, HashMap<String, Vec<Selection>>>,
+}
+
+impl ClientContext {
+    // TODO implement ToLua directly
+    fn to_lua_table<'a>(&self, lua: rlua::Context<'a>) -> rlua::Result<rlua::Table<'a>> {
+        let view = lua.create_table()?;
+        for (i, _it) in self.view.borrow().as_vec().iter().enumerate() {
+            view.set(i + 1, "")?;
+        }
+
+        let selections = lua.create_table()?;
+
+        let t = lua.create_table()?;
+        t.set("view", view)?;
+        t.set("selections", selections)?;
+        Ok(t)
+    }
 }
 
 struct CoreState {
@@ -411,6 +440,35 @@ impl Core {
         });
         Ok(())
     }
+
+    pub fn move_cursor(&mut self, client_id: usize, direction: CursorTarget, extend: bool) {
+        self.debug(&format!("MOVE {:?}", direction));
+        let mut selections = lock!(self).clients[&client_id].selections.clone();
+        for (_, ss) in selections.iter_mut() {
+            for (b, bss) in ss {
+                let buffer = &lock!(self).buffers[b];
+                for s in bss.iter_mut() {
+                    let coord = buffer.content.offset_to_coord(s.cursor);
+                    let mut nv = buffer.content.navigate(coord);
+                    match direction {
+                        CursorTarget::Left => nv.previous(),
+                        CursorTarget::Right => nv.next(),
+                        CursorTarget::Up => nv.previous_line(),
+                        CursorTarget::Down => nv.next_line(),
+                        CursorTarget::LineBegin => nv.line_begin(),
+                        CursorTarget::LineEnd => nv.line_end(),
+                        _ => todo!(),
+                    };
+                    if extend {
+                        s.cursor = nv.pos().offset;
+                    } else {
+                        s.anchor = nv.pos().offset;
+                    }
+                }
+            }
+        }
+        lock!(self).clients.get_mut(&client_id).unwrap().selections = selections;
+    }
 }
 
 unsafe impl Send for Core {}
@@ -428,6 +486,35 @@ impl rlua::UserData for Core {
         methods.add_method_mut("error", |_, this, (client, content): (usize, String)| {
             this.error(client, "lua", &content);
             Ok(())
+        });
+
+        methods.add_method_mut("get_context", |lua, this, client: usize| {
+            Ok(lock!(this).clients[&client].to_lua_table(lua))
+        });
+
+        methods.add_method_mut("move_left", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::Left, false))
+        });
+        methods.add_method_mut("move_right", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::Right, false))
+        });
+        methods.add_method_mut("move_up", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::Up, false))
+        });
+        methods.add_method_mut("move_down", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::Down, false))
+        });
+        methods.add_method_mut("line_begin", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::LineBegin, false))
+        });
+        methods.add_method_mut("line_end", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::LineEnd, false))
+        });
+        methods.add_method_mut("begin", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::Begin, false))
+        });
+        methods.add_method_mut("end", |_, this, client: usize| {
+            Ok(this.move_cursor(client, CursorTarget::End, false))
         });
     }
 }

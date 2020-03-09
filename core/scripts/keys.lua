@@ -41,6 +41,15 @@ end
 function ModalHandler:handle_normal(key)
     if key.value == "i" then
         self.mode = ModalHandler.modes.insertion
+        self.redraw_status = true
+    elseif key.value == "h" then
+        self.redraw_status = editor:move_left(self.client_id)
+    elseif key.value == "l" then
+        self.redraw_status = editor:move_right(self.client_id)
+    elseif key.value == "k" then
+        self.redraw_status = editor:move_up(self.client_id)
+    elseif key.value == "j" then
+        self.redraw_status = editor:move_down(self.client_id)
     elseif key.value == "m" then
         editor:message(self.client_id, "hello!")
     elseif key.value == "e" then
@@ -51,6 +60,7 @@ end
 function ModalHandler:handle_insertion(key)
     if key.value == "esc" then
         self.mode = ModalHandler.modes.normal
+        self.redraw_status = true
     end
 end
 

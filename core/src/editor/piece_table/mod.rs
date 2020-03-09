@@ -1,3 +1,4 @@
+mod navigator;
 mod position;
 
 use std::cmp::{max, Ordering};
@@ -7,7 +8,8 @@ use std::iter::FromIterator;
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::{OffsetRange, Range};
 use bstr::ByteSlice;
-pub use position::PositionIterator;
+pub use navigator::Navigator;
+pub use position::{Position, PositionIterator};
 use rbtset::{Consecutive, Node, RBTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq)]
@@ -591,6 +593,13 @@ impl PieceTable {
             }
         }
         self.end_bulk();
+    }
+
+    pub fn navigate(&self, from: impl Into<Option<Coords>>) -> Navigator<'_> {
+        match from.into() {
+            Some(c) => Navigator::from_position(self, c),
+            None => Navigator::new(self),
+        }
     }
 }
 
