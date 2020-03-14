@@ -10,6 +10,7 @@ use crate::protocol::{
 };
 use crate::session::Session;
 use crossbeam_channel as channel;
+use futures::channel::mpsc;
 
 #[derive(Clone, Debug, Default)]
 pub struct Menu {
@@ -135,9 +136,9 @@ impl Connection {
         self.state_lock.read().unwrap().clone()
     }
 
-    pub fn connect(&self) -> channel::Receiver<ConnectionEvent> {
+    pub fn connect(&self) -> mpsc::UnboundedReceiver<ConnectionEvent> {
         let events = self.client.run();
-        let (tx, rx) = channel::unbounded();
+        let (tx, rx) = mpsc::unbounded();
         let ctx_lock = self.state_lock.clone();
         std::thread::spawn(move || {
             for ev in events {
@@ -145,7 +146,7 @@ impl Connection {
                     Ok(e) => {
                         let mut ctx = ctx_lock.write().unwrap();
                         ctx.event_update(&e)
-                            .map(|ev| tx.send(ev).expect("send event"));
+                            .map(|ev| tx.unbounded_send(ev).expect("send event"));
                     }
                     Err(e) => error!("{}", e),
                 }

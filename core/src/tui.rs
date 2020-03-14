@@ -1,25 +1,47 @@
 use std::io::{self, Write};
 use std::ops::Drop;
-use std::thread;
-use std::time::Duration;
 
-use channel::select;
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    execute,
-    input::{input, InputEvent},
-    queue,
-    screen::AlternateScreen,
-    style::{style, Colorize, PrintStyledContent, Styler},
+    cursor,
+    event::{Event, EventStream, KeyCode as CKeyCode, KeyModifiers as CKeyModifiers},
+    execute, queue,
+    style::{style, Colorize, Print, PrintStyledContent, Styler},
     terminal::{self, Clear, ClearType},
-    Output, Result as CTResult,
+    Result as CTResult,
 };
+use futures::{select, FutureExt, StreamExt};
 use remote::protocol::{Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 
-enum Event {
-    Input(InputEvent),
-    Resize(u16, u16),
+struct ToKey(Option<KeyEvent>);
+
+impl From<Event> for ToKey {
+    fn from(ev: Event) -> ToKey {
+        if let Event::Key(ke) = ev {
+            let key = match ke.code {
+                CKeyCode::Char(c) => Some(Key::Char(c)),
+
+                CKeyCode::Backspace => Some(Key::Backspace),
+                CKeyCode::Enter => Some(Key::Enter),
+                CKeyCode::Esc => Some(Key::Escape),
+
+                CKeyCode::Up => Some(Key::Up),
+                CKeyCode::Down => Some(Key::Down),
+                CKeyCode::Left => Some(Key::Left),
+                CKeyCode::Right => Some(Key::Right),
+
+                _ => None,
+            };
+            ToKey(key.map(|k| KeyEvent {
+                ctrl: ke.modifiers.contains(CKeyModifiers::CONTROL),
+                alt: ke.modifiers.contains(CKeyModifiers::ALT),
+                shift: ke.modifiers.contains(CKeyModifiers::SHIFT),
+                key: k,
+            }))
+        } else {
+            ToKey(None)
+        }
+    }
 }
 
 fn format_text(tf: &TextFragment) -> String {
@@ -35,7 +57,6 @@ pub struct Term {
     connection: Connection,
     exit_pending: bool,
     last_size: (u16, u16),
-    _screen: AlternateScreen,
 }
 
 impl Term {
@@ -44,10 +65,10 @@ impl Term {
             connection: Connection::new(session)?,
             exit_pending: false,
             last_size: terminal::size().expect("get terminal"),
-            _screen: AlternateScreen::to_alternate(true)
-                .expect("enable raw mode and switch to alternate screen"),
         };
-        execute!(io::stdout(), Hide).expect("hide cursor");
+        terminal::enable_raw_mode().expect("enable terminal raw mode");
+        execute!(io::stdout(), terminal::EnterAlternateScreen, cursor::Hide)
+            .expect("prepare terminal state");
         for fname in filenames {
             term.connection.edit(fname, false);
         }
@@ -55,54 +76,43 @@ impl Term {
     }
 
     pub fn start(&mut self) {
-        let starting_size = self.last_size;
-        let (events_tx, events_rx) = channel::unbounded();
-        let mut reader = input().read_async();
-        // input().enable_mouse_mode().expect("enable mouse events");
-        thread::spawn(move || {
-            let mut current = starting_size;
-            loop {
-                match terminal::size() {
-                    Ok(size) => {
-                        if current != size {
-                            events_tx
-                                .send(Event::Resize(size.0, size.1))
-                                .expect("send resize event");
-                            current = size;
+        futures::executor::block_on(async {
+            let mut reader = EventStream::new();
+            let mut messages = self.connection.connect().fuse();
+            while !self.exit_pending {
+                select! {
+                    msg_opt = messages.next() => {
+                        use ConnectionEvent::*;
+                        match msg_opt {
+                            Some(ev) => match ev {
+                                Menu(menu) => self.draw_menu(&menu).expect("draw menu"),
+                                Echo(_)|Status(_)|View(_) => self.draw_view().expect("draw view"),
+                                Info(_, _) => {},
+                            }
+                            None => break,
+                        }
+                    },
+                    event = reader.next().fuse() => {
+                        match event {
+                            Some(Ok(ev @ Event::Key(_))) => self.handle_input(ev).expect("handle input"),
+                            Some(Ok(Event::Mouse(_))) => {},
+                            Some(Ok(Event::Resize(w, h))) => self.resize(w, h).expect("resize"),
+                            Some(Err(e)) => self.error(&format!("event read: {}", e)),
+                            None => break,
                         }
                     }
-                    Err(e) => log::error!("{}", e),
-                }
-                if let Some(key) = reader.next() {
-                    events_tx.send(Event::Input(key)).expect("send key event");
-                }
-                thread::sleep(Duration::from_millis(50));
+                    // complete => break,
+                };
             }
         });
-
-        let messages = self.connection.connect();
-        while !self.exit_pending {
-            use ConnectionEvent::*;
-            select! {
-                recv(messages) -> msg => match msg {
-                    Ok(ev) => match ev {
-                        Menu(menu) => self.draw_menu(&menu).expect("draw menu"),
-                        Echo(_)|Status(_)|View(_) => self.draw_view().expect("draw view"),
-                        Info(_, _) => {},
-                    }
-                    Err(_) => break,
-                },
-                recv(events_rx) -> event => match event {
-                    Ok(Event::Input(input)) => self.handle_input(input).expect("handle input"),
-                    Ok(Event::Resize(w, h)) => self.resize(w, h).expect("resize"),
-                    Err(_) => break,
-                }
-            }
-        }
     }
 
     fn debug(&mut self, message: &str) {
         self.connection.exec(&format!("editor:debug({})", message));
+    }
+
+    fn error(&mut self, message: &str) {
+        self.connection.exec(&format!("editor:error({})", message));
     }
 
     fn draw_view(&mut self) -> CTResult<()> {
@@ -137,7 +147,7 @@ impl Term {
                     }
                 }
             }
-            queue!(stdout, MoveTo(0, 0), Output(content.join("\r\n")))?;
+            queue!(stdout, cursor::MoveTo(0, 0), Print(content.join("\r\n")))?;
         }
 
         let echo = state.echo.unwrap_or_default();
@@ -163,7 +173,7 @@ impl Term {
         };
         queue!(
             stdout,
-            MoveTo(0, height),
+            cursor::MoveTo(0, height),
             PrintStyledContent(style(text).reverse())
         )?;
         stdout.flush()?;
@@ -179,7 +189,7 @@ impl Term {
         queue!(
             stdout,
             Clear(ClearType::All),
-            MoveTo(0, 0),
+            cursor::MoveTo(0, 0),
             PrintStyledContent(style(title + &padding).reverse())
         )?;
         {
@@ -205,7 +215,7 @@ impl Term {
                 };
                 queue!(
                     stdout,
-                    MoveTo(0, 1 + i as u16),
+                    cursor::MoveTo(0, 1 + i as u16),
                     item_print,
                     Clear(ClearType::UntilNewLine)
                 )?;
@@ -231,34 +241,46 @@ impl Term {
         self.connection.menu(command, search);
     }
 
-    fn handle_input(&mut self, event: InputEvent) -> CTResult<()> {
-        use crossterm::input::{InputEvent::*, KeyEvent::*};
+    fn handle_input(&mut self, value: impl Into<ToKey>) -> CTResult<()> {
+        let key = match value.into().0 {
+            Some(k) => k,
+            None => return Ok(()),
+        };
         if let Some(menu) = self.connection.state().menu {
-            match event {
-                Keyboard(Esc) => {
+            match key {
+                KeyEvent {
+                    key: Key::Escape, ..
+                } => {
                     self.connection.action_menu_cancel();
                     self.draw_view()?;
                 }
-                Keyboard(Enter) => {
+                KeyEvent {
+                    key: Key::Enter, ..
+                } => {
                     self.connection.menu_select();
                     self.draw_view()?;
                 }
-                Keyboard(Up) => {
+                KeyEvent { key: Key::Up, .. } => {
                     self.connection.action_menu_select_previous();
                     let new_menu = self.connection.state().menu.unwrap();
                     self.draw_menu(&new_menu)?;
                 }
-                Keyboard(Down) => {
+                KeyEvent { key: Key::Down, .. } => {
                     self.connection.action_menu_select_next();
                     let new_menu = self.connection.state().menu.unwrap();
                     self.draw_menu(&new_menu)?;
                 }
-                Keyboard(Char(c)) => {
+                KeyEvent {
+                    key: Key::Char(c), ..
+                } => {
                     let mut search = menu.search;
                     search.push(c);
                     self.do_menu(&menu.command, &search)
                 }
-                Keyboard(Backspace) => {
+                KeyEvent {
+                    key: Key::Backspace,
+                    ..
+                } => {
                     let mut search = menu.search;
                     search.pop();
                     self.do_menu(&menu.command, &search)
@@ -266,26 +288,48 @@ impl Term {
                 _ => {}
             }
         } else {
-            match event {
-                Keyboard(Alt('q')) => self.exit_pending = true,
-                Keyboard(Ctrl('d')) => self.connection.exec("editor:debug('coucou')"),
-                Keyboard(Ctrl('e')) => self.connection.exec("editor:debug(undefined)"),
-                Keyboard(Ctrl('f')) => self.do_menu("open", ""),
-                Keyboard(Ctrl('p')) => self.do_menu("", ""),
-                Keyboard(Ctrl('v')) => self.do_menu("view_select", ""),
-                Keyboard(Ctrl('x')) => panic!("panic mode activated!"),
-                Keyboard(Char(c)) => self.connection.keys(KeyEvent::from(c)),
-                Keyboard(Ctrl(c)) => {
-                    let mut key = KeyEvent::from(c);
-                    key.ctrl = true;
-                    self.connection.keys(key)
-                }
-                Keyboard(Alt(c)) => {
-                    let mut key = KeyEvent::from(c);
-                    key.alt = true;
-                    self.connection.keys(key)
-                }
-                Keyboard(Esc) => self.connection.keys(KeyEvent::from(Key::Escape)),
+            match key {
+                KeyEvent {
+                    key: Key::Char('q'),
+                    alt: true,
+                    ..
+                } => self.exit_pending = true,
+                KeyEvent {
+                    key: Key::Char('d'),
+                    ctrl: true,
+                    ..
+                } => self.connection.exec("editor:debug('coucou')"),
+                KeyEvent {
+                    key: Key::Char('e'),
+                    ctrl: true,
+                    ..
+                } => self.connection.exec("editor:debug(undefined)"),
+                KeyEvent {
+                    key: Key::Char('f'),
+                    ctrl: true,
+                    ..
+                } => self.do_menu("open", ""),
+                KeyEvent {
+                    key: Key::Char('p'),
+                    ctrl: true,
+                    ..
+                } => self.do_menu("", ""),
+                KeyEvent {
+                    key: Key::Char('v'),
+                    ctrl: true,
+                    ..
+                } => self.do_menu("view_select", ""),
+                KeyEvent {
+                    key: Key::Char('x'),
+                    ctrl: true,
+                    ..
+                } => panic!("panic mode activated!"),
+                k @ KeyEvent {
+                    key: Key::Char(_), ..
+                } => self.connection.keys(k),
+                k @ KeyEvent {
+                    key: Key::Escape, ..
+                } => self.connection.keys(k),
                 _ => {}
             }
         }
@@ -295,7 +339,8 @@ impl Term {
 
 impl Drop for Term {
     fn drop(&mut self) {
-        let _ = execute!(io::stdout(), Show)
-            .map_err(|e| eprintln!("could not revert cursor state: {}", e));
+        terminal::disable_raw_mode().expect("disable terminal raw mode");
+        let _ = execute!(io::stdout(), terminal::LeaveAlternateScreen, cursor::Show)
+            .map_err(|e| eprintln!("could not revert terminal state: {}", e));
     }
 }

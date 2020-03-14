@@ -9,6 +9,7 @@ name = "ced_remote"
 crate-type = ["cdylib"]
 
 [dependencies]
+futures = "0.3"
 remote = { path = "../remote", package = "ced-remote" }
 
 [build-dependencies]

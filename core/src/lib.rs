@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+#![recursion_limit = "256"]
 
 pub use remote;
 

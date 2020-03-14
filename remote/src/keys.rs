@@ -4,7 +4,15 @@ use std::str::FromStr;
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Key {
     Char(char),
+
+    Backspace,
+    Enter,
     Escape,
+
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 impl Default for Key {
@@ -18,7 +26,15 @@ impl fmt::Display for Key {
         use Key::*;
         match self {
             Char(c) => write!(f, "{}", c),
+
+            Backspace => f.write_str("bkspc"),
+            Enter => f.write_str("ret"),
             Escape => f.write_str("esc"),
+
+            Up => f.write_str("up"),
+            Down => f.write_str("down"),
+            Left => f.write_str("left"),
+            Right => f.write_str("right"),
         }
     }
 }

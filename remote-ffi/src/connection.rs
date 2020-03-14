@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::event::CedEvent;
 use crate::{raw, set_last_error};
+use futures::executor::block_on_stream;
 use remote::{ensure_session, Connection, ConnectionEvent, Session};
 
 pub struct CedConnection {
@@ -35,7 +36,8 @@ pub unsafe extern "C" fn ced_connection_create(session: *const c_char) -> *mut C
     let events = connection.connect();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        for ev in events {
+        let sync_events = block_on_stream(events);
+        for ev in sync_events {
             if let Err(err) = tx.send(ev) {
                 dbg!(&err.0);
             }
