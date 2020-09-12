@@ -1,21 +1,7 @@
-extern crate crossbeam_channel;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
-extern crate log;
-extern crate mio;
-extern crate regex;
-#[macro_use]
 extern crate serde;
-#[cfg(windows)]
-extern crate mio_named_pipes;
-#[cfg(unix)]
-extern crate mio_uds;
-#[cfg(windows)]
-extern crate mio_uds_windows;
-extern crate serde_json;
-#[cfg(windows)]
-extern crate winapi;
 
 mod client;
 mod connection;
@@ -29,11 +15,11 @@ use std::env;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-pub use self::client::{Client, Events, StdioClient};
+pub use self::client::{Client, ClientEventResult, ClientEventStream};
 pub use self::connection::{Connection, ConnectionEvent, ConnectionState, Menu};
 pub use self::jsonrpc::{ClientEvent, Id, Request};
 pub use self::session::{ConnectionMode, Session};
-pub use self::transport::{EventedStream, ServerListener, ServerStream, Stream};
+pub use self::transport::{ServerListener, ServerStream};
 
 pub fn find_bin() -> String {
     env::var("CED_BIN").unwrap_or(
@@ -73,7 +59,7 @@ pub fn start_daemon(session: &Session) -> io::Result<u32> {
             let should_stop = match line {
                 Ok(l) => l.is_empty(),
                 Err(err) => {
-                    error!("failed to read stdout: {}", err);
+                    log::error!("failed to read stdout: {}", err);
                     true
                 }
             };
@@ -82,10 +68,10 @@ pub fn start_daemon(session: &Session) -> io::Result<u32> {
             }
         }
     } else {
-        error!("could not capture stdout");
+        log::error!("could not capture stdout");
     }
 
-    info!("server command: {} {:?}", bin, args);
+    log::info!("server command: {} {:?}", bin, args);
     Ok(pid)
 }
 

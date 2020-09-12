@@ -4,13 +4,13 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use crate::editor::Editor;
-use crate::server::Broadcaster;
+use smol::channel::unbounded;
 
 const CLIENT_ID: usize = 1;
 
 pub fn exec_scripts(filenames: &[&str]) -> io::Result<()> {
-    let broadcaster = Broadcaster::default();
-    let mut editor = Editor::new("", broadcaster.tx);
+    let (tx, _rx) = unbounded();
+    let mut editor = Editor::new("", tx);
 
     editor.add_client(CLIENT_ID);
 
@@ -52,8 +52,8 @@ impl fmt::Display for LuaIOError {
 }
 
 pub fn exec_script_oneshot<P: AsRef<Path>>(path: P) -> Result<(), LuaIOError> {
-    let broadcaster = Broadcaster::default();
-    let mut editor = Editor::new("", broadcaster.tx);
+    let (tx, _rx) = unbounded();
+    let mut editor = Editor::new("", tx);
 
     editor.add_client(CLIENT_ID);
 

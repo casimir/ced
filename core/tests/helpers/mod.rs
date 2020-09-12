@@ -1,12 +1,12 @@
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
-use channel::Receiver;
-
 use ced::editor::Editor;
 use ced::remote::jsonrpc::Notification;
 use ced::remote::protocol::notifications::ViewParams;
-use ced::server::{BroadcastMessage, Broadcaster};
+use ced::server::BroadcastMessage;
+use futures_lite::*;
+use smol::channel::{bounded, Receiver};
 
 pub fn root() -> PathBuf {
     let mut root = std::env::current_exe().unwrap();
@@ -38,9 +38,11 @@ impl State {
     }
 
     pub fn step(&mut self) -> usize {
-        if let Ok(bm) = self.rx.recv() {
-            self.update(&bm.message);
-        }
+        future::block_on(async {
+            if let Ok(bm) = self.rx.recv().await {
+                self.update(&bm.message);
+            }
+        });
         let mut count = 1;
         while let Ok(bm) = self.rx.try_recv() {
             self.update(&bm.message);
@@ -57,10 +59,10 @@ pub struct SequentialEditor {
 
 impl SequentialEditor {
     pub fn new() -> SequentialEditor {
-        let broadcaster = Broadcaster::default();
+        let (tx, rx) = bounded(100);
         SequentialEditor {
-            editor: Editor::new("", broadcaster.tx),
-            state: State::new(broadcaster.rx),
+            editor: Editor::new("", tx),
+            state: State::new(rx),
         }
     }
 

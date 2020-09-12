@@ -1,7 +1,7 @@
 use std::io;
 use std::sync::{Arc, RwLock};
 
-use crate::client::Client;
+use crate::client::{Client, ClientEventResult, ClientEventStream};
 use crate::jsonrpc::{ClientEvent, Id, Request};
 use crate::protocol::{
     notifications,
@@ -9,8 +9,8 @@ use crate::protocol::{
     KeyEvent, Text,
 };
 use crate::session::Session;
-use crossbeam_channel as channel;
-use futures::channel::mpsc;
+use async_channel::Sender;
+use futures_lite::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct Menu {
@@ -41,12 +41,16 @@ impl Menu {
 
 #[derive(Debug)]
 pub enum ConnectionEvent {
+    ConnErr(String),
+    Noop,
     Echo(Text),
     Info(String, String),
     Menu(Menu),
     Status(notifications::StatusParams),
     View(notifications::ViewParams),
 }
+
+pub type ConnectionEventStream<F> = stream::Map<ClientEventStream, F>;
 
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionState {
@@ -117,16 +121,16 @@ impl ConnectionState {
 pub struct Connection {
     client: Client,
     state_lock: Arc<RwLock<ConnectionState>>,
-    requests: channel::Sender<Request>,
+    requests: Sender<Request>,
     next_request_id: i32,
 }
 
 impl Connection {
-    pub fn new(session: &Session) -> io::Result<Connection> {
+    pub fn new(session: Session) -> io::Result<Connection> {
         let (client, requests) = Client::new(session)?;
         Ok(Connection {
             client,
-            state_lock: Arc::new(RwLock::new(ConnectionState::default())),
+            state_lock: Default::default(),
             requests,
             next_request_id: 0,
         })
@@ -136,23 +140,24 @@ impl Connection {
         self.state_lock.read().unwrap().clone()
     }
 
-    pub fn connect(&self) -> mpsc::UnboundedReceiver<ConnectionEvent> {
-        let events = self.client.run();
-        let (tx, rx) = mpsc::unbounded();
+    pub async fn connect(
+        &self,
+    ) -> (
+        ConnectionEventStream<impl FnMut(ClientEventResult) -> ConnectionEvent>,
+        impl Future<Output = ()>,
+    ) {
         let ctx_lock = self.state_lock.clone();
-        std::thread::spawn(move || {
-            for ev in events {
-                match ev {
-                    Ok(e) => {
-                        let mut ctx = ctx_lock.write().unwrap();
-                        ctx.event_update(&e)
-                            .map(|ev| tx.unbounded_send(ev).expect("send event"));
-                    }
-                    Err(e) => error!("{}", e),
+        let (events, request_loop) = self.client.run().await.unwrap();
+        (
+            events.map(move |ev| match ev {
+                Ok(e) => {
+                    let mut ctx = ctx_lock.write().unwrap();
+                    ctx.event_update(&e).unwrap_or(ConnectionEvent::Noop)
                 }
-            }
-        });
-        rx
+                Err(e) => ConnectionEvent::ConnErr(e.to_string()),
+            }),
+            request_loop,
+        )
     }
 
     fn request_id(&mut self) -> Id {
@@ -162,7 +167,7 @@ impl Connection {
     }
 
     fn request(&mut self, message: Request) {
-        self.requests.send(message).expect("send request");
+        future::block_on(self.requests.send(message)).expect("send request");
     }
 
     pub fn quit(&mut self) {
@@ -205,7 +210,7 @@ impl Connection {
             self.request(requests::MenuSelect::new(id, params));
             self.action_menu_cancel();
         } else {
-            warn!("menu_select without active menu");
+            log::warn!("menu_select without active menu");
         }
     }
 

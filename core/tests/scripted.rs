@@ -2,7 +2,6 @@ mod helpers;
 
 use std::path::PathBuf;
 
-use async_std::task;
 use ced::script::exec_script_oneshot;
 use ignore::Walk;
 
@@ -16,23 +15,13 @@ fn run_all_scripts() {
         .collect::<Vec<PathBuf>>();
     scripts.sort_unstable();
 
-    let fails = task::block_on(async {
-        let mut err_count = 0;
-        let mut handles = Vec::new();
-        for script in scripts {
-            handles.push(task::spawn(async move {
-                (script.clone(), exec_script_oneshot(&script))
-            }));
+    let mut fails = 0;
+    for script in scripts {
+        let res = exec_script_oneshot(&script);
+        if let Err(e) = res {
+            println!("file: {}\n{}\n", script.display(), e);
+            fails += 1;
         }
-
-        for handle in handles {
-            let (path, res) = handle.await;
-            if let Err(e) = res {
-                println!("file: {}\n{}\n", path.display(), e);
-                err_count += 1;
-            }
-        }
-        err_count
-    });
+    }
     assert!(fails == 0, "some tests are failing");
 }

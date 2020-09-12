@@ -21,12 +21,14 @@ use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
 use crate::server::BroadcastMessage;
+use futures_lite::*;
 use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
     requests, Face, KeyEvent, Text, TextFragment,
 };
 use remote::response;
+use smol::channel::Sender;
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
@@ -37,7 +39,7 @@ pub struct EditorInfo<'a> {
 
 #[derive(Clone)]
 pub struct Notifier {
-    sender: channel::Sender<BroadcastMessage>,
+    sender: Sender<BroadcastMessage>,
 }
 
 impl Notifier {
@@ -49,7 +51,7 @@ impl Notifier {
             Some(cs) => BroadcastMessage::for_clients(cs, message),
             None => BroadcastMessage::new(message),
         };
-        self.sender.send(bm).expect("broadcast message");
+        future::block_on(self.sender.send(bm)).expect("broadcast message");
     }
 
     pub fn notify(&self, client_id: usize, message: Notification) {
@@ -101,6 +103,12 @@ impl Notifier {
     }
 }
 
+impl From<Sender<BroadcastMessage>> for Notifier {
+    fn from(sender: Sender<BroadcastMessage>) -> Self {
+        Notifier { sender }
+    }
+}
+
 struct LuaResultEvents {
     redraw_status: bool,
 }
@@ -138,16 +146,13 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new(session: &str, broadcaster: channel::Sender<BroadcastMessage>) -> Editor {
-        let notifier = Notifier {
-            sender: broadcaster,
-        };
+    pub fn new(session: &str, notifier: impl Into<Notifier>) -> Editor {
         let mut editor = Editor {
             session_name: session.into(),
             cwd: env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
             command_map: default_commands(),
             stopped_clients: HashSet::new(),
-            core: Core::new(notifier),
+            core: Core::new(notifier.into()),
             lua: rlua::Lua::new(),
         };
 

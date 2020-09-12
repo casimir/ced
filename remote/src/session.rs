@@ -17,7 +17,7 @@ const USER_ENV_VAR: &'static str = "LOGNAME";
 #[cfg(windows)]
 const USER_ENV_VAR: &'static str = "USERNAME";
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionMode {
     Socket(PathBuf),
     Tcp(SocketAddr),
@@ -60,6 +60,7 @@ impl FromStr for ConnectionMode {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Session {
     pub mode: ConnectionMode,
 }

@@ -1,83 +1,44 @@
-use std::io::{self, BufRead, BufReader, Lines};
-use std::thread;
-
 use crate::jsonrpc::{ClientEvent, JsonCodingError, Request};
 use crate::session::Session;
-use crate::transport::{ServerStream, Stream};
-use crossbeam_channel as channel;
+use crate::transport::ServerStream;
+use async_channel::{unbounded, Receiver, Sender};
+use futures_lite::*;
 
-pub struct Events {
-    lines: Lines<BufReader<Box<dyn Stream>>>,
-}
+pub type ClientEventResult = Result<ClientEvent, JsonCodingError>;
 
-impl Iterator for Events {
-    type Item = Result<ClientEvent, JsonCodingError>;
-
-    fn next(&mut self) -> Option<Result<ClientEvent, JsonCodingError>> {
-        self.lines.next().map(|l| l.unwrap().parse())
-    }
-}
+pub type ClientEventStream = stream::Map<
+    io::Lines<io::BufReader<ServerStream>>,
+    fn(io::Result<String>) -> ClientEventResult,
+>;
 
 pub struct Client {
-    stream: ServerStream,
-    requests: channel::Receiver<Request>,
+    session: Session,
+    requests: Receiver<Request>,
 }
 
 impl Client {
-    pub fn new(session: &Session) -> io::Result<(Client, channel::Sender<Request>)> {
-        let (requests_tx, requests) = channel::unbounded();
-        let client = Client {
-            stream: ServerStream::new(&session.mode)?,
-            requests,
-        };
+    pub fn new(session: Session) -> io::Result<(Client, Sender<Request>)> {
+        let (requests_tx, requests) = unbounded();
+        let client = Client { session, requests };
         Ok((client, requests_tx))
     }
 
-    pub fn run(&self) -> Events {
-        let requests_rx = self.requests.clone();
-        let mut writer = self.stream.inner_clone().expect("clone server stream");
-        thread::spawn(move || {
-            for message in requests_rx {
-                writer.write_fmt(format_args!("{}\n", message)).unwrap();
+    pub async fn run(&self) -> io::Result<(ClientEventStream, impl Future<Output = ()>)> {
+        let mut requests_rx = self.requests.clone();
+        let stream = ServerStream::new(&self.session.mode).await?;
+        let mut writer = stream.clone();
+        let request_loop = async move {
+            while let Some(message) = requests_rx.next().await {
+                // TODO error
+                let _ = writer.write_all(format!("{}\n", message).as_bytes()).await;
             }
-        });
-        let reader = BufReader::new(self.stream.inner_clone().expect("clone server stream"));
-        Events {
-            lines: reader.lines(),
+        };
+        fn parse_line(x: io::Result<String>) -> Result<ClientEvent, JsonCodingError> {
+            x.unwrap().parse()
         }
-    }
-}
-
-pub struct StdioClient {
-    client: Client,
-    requests: channel::Sender<Request>,
-}
-
-impl StdioClient {
-    pub fn new(session: &Session) -> io::Result<StdioClient> {
-        let (client, requests) = Client::new(session)?;
-        Ok(StdioClient { client, requests })
-    }
-
-    pub fn run(&self) {
-        let requests_tx = self.requests.clone();
-        thread::spawn(move || {
-            let stdin = io::stdin();
-            for maybe_line in stdin.lock().lines() {
-                match maybe_line {
-                    Ok(line) => match line.parse() {
-                        Ok(msg) => requests_tx.send(msg).expect("send request"),
-                        Err(e) => error!("invalid message: {}: {}", e, line),
-                    },
-                    Err(e) => error!("failed to read line from stdin: {}", e),
-                }
-            }
-        });
-        for event in self.client.run() {
-            match event {
-                Ok(msg) => println!("{}", msg),
-                Err(e) => error!("invalid event: {}", e),
-            }
-        }
+        Ok((
+            io::BufReader::new(stream).lines().map(parse_line),
+            request_loop,
+        ))
     }
 }

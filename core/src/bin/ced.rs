@@ -1,9 +1,9 @@
 use std::io;
 
-use ced::remote::{ensure_session, start_daemon, Session, StdioClient};
+use ced::clients::{start_standalone, StdioClient};
+use ced::remote::{ensure_session, start_daemon, Session};
 use ced::script::exec_scripts;
 use ced::server::Server;
-use ced::standalone::start_standalone;
 use clap::{arg_enum, crate_authors, crate_description, crate_version, value_t, App, Arg};
 
 #[cfg(feature = "term")]
@@ -98,8 +98,7 @@ fn main() -> io::Result<()> {
             }
             Mode::json => {
                 ensure_session(&session)?;
-                StdioClient::new(&session)?.run();
-                Ok(())
+                StdioClient::new(session)?.run()
             }
             Mode::script => exec_scripts(&filenames),
             Mode::server => {
@@ -114,7 +113,7 @@ fn main() -> io::Result<()> {
             Mode::term => {
                 use ced::tui::Term;
                 ensure_session(&session)?;
-                Term::new(&session, &filenames)?.start();
+                Term::new(session, &filenames)?.start();
                 Ok(())
             }
         }

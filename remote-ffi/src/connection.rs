@@ -1,16 +1,15 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use crate::event::CedEvent;
 use crate::{raw, set_last_error};
-use futures::executor::block_on_stream;
+use futures_lite::*;
 use remote::{ensure_session, Connection, ConnectionEvent, Session};
 
 pub struct CedConnection {
-    connection: Connection,
     events: Receiver<ConnectionEvent>,
 }
 
@@ -26,17 +25,18 @@ pub unsafe extern "C" fn ced_connection_create(session: *const c_char) -> *mut C
         return ptr::null_mut();
     }
 
-    let connection = match Connection::new(&session) {
+    let connection = match Connection::new(session) {
         Ok(c) => c,
         Err(e) => {
             set_last_error(e);
             return ptr::null_mut();
         }
     };
-    let events = connection.connect();
+    let (events, request_loop) = future::block_on(connection.connect());
+    std::thread::spawn(|| future::block_on(request_loop));
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let sync_events = block_on_stream(events);
+        let sync_events = stream::block_on(events);
         for ev in sync_events {
             if let Err(err) = tx.send(ev) {
                 dbg!(&err.0);
@@ -44,10 +44,7 @@ pub unsafe extern "C" fn ced_connection_create(session: *const c_char) -> *mut C
         }
     });
 
-    let handle = CedConnection {
-        connection,
-        events: rx,
-    };
+    let handle = CedConnection { events: rx };
     raw!(handle)
 }
 

@@ -57,6 +57,8 @@ impl From<ConnectionEvent> for CedEvent {
             ConnectionEvent::View(view) => CedEvent::View {
                 items: raw!(ViewIterator::from(&view)),
             },
+            ConnectionEvent::ConnErr(msg) => todo!(),
+            ConnectionEvent::Noop => todo!(),
         }
     }
 }

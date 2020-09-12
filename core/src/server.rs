@@ -1,16 +1,13 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::io::ErrorKind::WouldBlock;
-use std::io::{self, BufRead, BufReader, Write};
-use std::rc::Rc;
-use std::thread;
+use std::sync::{Arc, RwLock};
 
 use crate::editor::Editor;
-use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
+use futures_lite::*;
 use remote::jsonrpc::Notification;
-use remote::{ConnectionMode, EventedStream, ServerListener, Session};
+use remote::{ConnectionMode, ServerListener, ServerStream, Session};
+use smol::channel::{bounded, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct BroadcastMessage {
@@ -42,46 +39,13 @@ impl BroadcastMessage {
     }
 }
 
-pub struct Broadcaster {
-    registration: Registration,
-    pub tx: channel::Sender<BroadcastMessage>,
-    pub rx: channel::Receiver<BroadcastMessage>,
-}
+const FIRST_CLIENT_ID: usize = 1;
 
-impl Default for Broadcaster {
-    fn default() -> Self {
-        let (registration, set_readiness) = Registration::new2();
-        let (tx, inner_rx) = channel::unbounded();
-        let (inner_tx, rx) = channel::unbounded();
-        thread::spawn(move || loop {
-            if let Ok(message) = inner_rx.recv() {
-                inner_tx.send(message).expect("send message");
-                set_readiness
-                    .set_readiness(Ready::readable())
-                    .expect("set broadcast queue readable")
-            }
-        });
-        Broadcaster {
-            registration,
-            tx,
-            rx,
-        }
-    }
+enum Event {
+    Join((usize, ServerStream)),
+    Leave(usize),
+    Message((usize, String)),
 }
-
-struct Connection<'a> {
-    handle: Box<dyn EventedStream + 'a>,
-}
-
-impl<'a> Connection<'a> {
-    fn new(handle: Box<dyn EventedStream>) -> Connection<'a> {
-        Connection { handle }
-    }
-}
-
-const SERVER: Token = Token(0);
-const BROADCAST: Token = Token(1);
-const FIRST_CLIENT_ID: usize = 2;
 
 pub struct Server {
     session: Session,
@@ -92,145 +56,135 @@ impl Server {
         Server { session }
     }
 
-    fn cleanup(&self) {
-        if let ConnectionMode::Socket(path) = &self.session.mode {
-            fs::remove_file(path).expect("clean session");
-            if Session::list().is_empty() {
-                fs::remove_dir(path.parent().unwrap())
-                    .unwrap_or_else(|e| log::warn!("could not clean session directory: {}", e));
-            }
-        }
-    }
-
-    fn write_message<T>(
-        &self,
-        client_id: usize,
-        conn: &mut Connection,
-        message: &T,
-    ) -> io::Result<()>
+    fn write_client<T>(client_id: usize, stream: &mut ServerStream, message: &T) -> io::Result<()>
     where
         T: fmt::Display,
     {
         log::trace!("-> ({}) {}", client_id, message);
-        conn.handle.write_fmt(format_args!("{}\n", message))
+        future::block_on(stream.write_all(format!("{}\n", message).as_bytes()))
     }
 
-    pub fn run(&self) -> io::Result<()> {
-        let broadcaster = Broadcaster::default();
-        let mut editor = Editor::new(&self.session.to_string(), broadcaster.tx);
-        let listener = ServerListener::new(&self.session)?;
-        let poll = Poll::new()?;
-        let mut next_client_id = FIRST_CLIENT_ID;
-        let connections = Rc::new(RefCell::new(HashMap::new()));
-        let mut events = Events::with_capacity(1024);
+    async fn handle_events(session: String, receiver: Receiver<Event>) {
+        let (bsender, breceiver) = bounded(100);
+        let mut editor = Editor::new(&session, bsender);
+        let clients = Arc::new(RwLock::new(HashMap::<usize, ServerStream>::new()));
 
-        // TODO remove `.inner()`
-        poll.register(listener.inner(), SERVER, Ready::readable(), PollOpt::edge())
-            .unwrap();
-        poll.register(
-            &broadcaster.registration,
-            BROADCAST,
-            Ready::readable(),
-            PollOpt::edge(),
-        )
-        .unwrap();
-        // notify readiness to a potential awaiting client
-        println!();
-        loop {
-            poll.poll(&mut events, None).unwrap();
-            for event in events.iter() {
-                match event.token() {
-                    SERVER => {
-                        let stream = match listener.accept() {
-                            Ok(s) => s,
-                            Err(e) => {
-                                if e.kind() == WouldBlock {
-                                    continue;
-                                } else {
-                                    panic!("error while accepting a connection: {}", e)
-                                }
-                            }
-                        };
-                        poll.register(
-                            stream.as_ref(),
-                            Token(next_client_id),
-                            Ready::readable(),
-                            PollOpt::edge(),
-                        )
-                        .unwrap();
-
-                        log::info!("client {} connected", next_client_id);
-                        let conn = Connection::new(stream);
-                        // TODO check if ping or real client
-                        connections.borrow_mut().insert(next_client_id, conn);
-                        editor.add_client(next_client_id);
-                        next_client_id += 1;
-                    }
-                    BROADCAST => {
-                        while let Ok(bm) = broadcaster.rx.try_recv() {
-                            let mut conns = connections.borrow_mut();
-                            let errors: Vec<io::Error> = conns
-                                .iter_mut()
-                                .filter(|(&client_id, _)| bm.should_notify(client_id))
-                                .map(|(&client_id, c)| {
-                                    self.write_message(client_id, c, &bm.message)
-                                })
-                                .filter_map(Result::err)
-                                .collect();
-                            for e in &errors {
-                                log::error!("{}", e)
-                            }
-                        }
-                    }
-                    Token(client_id) => {
-                        log::trace!("read event for {}", client_id);
-                        let mut line = String::new();
-                        {
-                            {
-                                let mut conns = connections.borrow_mut();
-                                let conn = conns.get_mut(&client_id).unwrap();
-                                let stream = conn.handle.as_mut();
-                                let mut reader = BufReader::new(stream);
-                                if let Err(e) = reader.read_line(&mut line) {
-                                    if e.kind() == WouldBlock {
-                                        continue;
-                                    } else {
-                                        log::error!("error while reading from connection: {:?}", e);
-                                    }
-                                };
-                            }
-                            if !line.is_empty() {
-                                match editor.handle(client_id, &line) {
-                                    Ok(message) => {
-                                        let mut conns = connections.borrow_mut();
-                                        let conn = conns.get_mut(&client_id).unwrap();
-                                        self.write_message(client_id, conn, &message)
-                                            .expect("send response to client");
-                                    }
-                                    Err(e) => log::error!("{}: {:?}", e, line),
-                                }
-                            }
-                        }
-                        if line.is_empty() {
-                            editor.remove_client(client_id);
-                            let conn = connections.borrow_mut().remove(&client_id).unwrap();
-                            poll.deregister(conn.handle.as_ref()).unwrap();
-                            log::info!("client {}: connection lost", client_id);
-                        }
-                        for client_id in editor.removed_clients() {
-                            let conn = connections.borrow_mut().remove(&client_id).unwrap();
-                            poll.deregister(conn.handle.as_ref()).unwrap();
-                            log::info!("client {}: quit", client_id);
+        let bclients = Arc::clone(&clients);
+        smol::spawn(async move {
+            while let Ok(bm) = breceiver.recv().await {
+                let mut index = bclients.write().expect("lock client index");
+                for (client_id, stream) in index.iter_mut() {
+                    if bm.should_notify(*client_id) {
+                        let res = Self::write_client(*client_id, stream, &bm.message);
+                        if let Err(e) = res {
+                            log::error!("{}", e);
                         }
                     }
                 }
             }
-            if next_client_id > FIRST_CLIENT_ID && connections.borrow().len() == 0 {
-                log::info!("no more client, exiting...");
+        })
+        .detach();
+
+        while let Ok(event) = receiver.recv().await {
+            let mut is_leave_event = false;
+            match event {
+                Event::Join((client_id, stream)) => {
+                    clients
+                        .write()
+                        .expect("lock client index")
+                        .insert(client_id, stream);
+                    log::info!("client {} connected", client_id);
+                    // TODO check if ping or real client
+                    editor.add_client(client_id);
+                }
+                Event::Leave(client_id) => {
+                    editor.remove_client(client_id);
+                    clients
+                        .write()
+                        .expect("lock client index")
+                        .remove(&client_id)
+                        .expect("remove client from index");
+                    log::info!("client {}: connection closed", client_id);
+                    is_leave_event = true;
+                }
+                Event::Message((client_id, raw)) => match editor.handle(client_id, &raw) {
+                    Ok(message) => {
+                        let mut index = clients.write().expect("lock client index");
+                        let stream = index.get_mut(&client_id).unwrap();
+                        Self::write_client(client_id, stream, &message)
+                            .expect("send response to client");
+                    }
+                    Err(e) => log::error!("{}: {:?}", e, raw),
+                },
+            }
+            for client_id in editor.removed_clients() {
+                clients
+                    .write()
+                    .expect("lock client index")
+                    .remove(&client_id)
+                    .expect("remove client from index");
+                log::info!("client {}: quit", client_id);
+            }
+            if clients.read().expect("lock client index").len() == 0 && is_leave_event {
                 break;
             }
         }
-        self.cleanup();
+    }
+
+    async fn read_client(
+        client_id: usize,
+        stream: ServerStream,
+        sender: Sender<Event>,
+    ) -> io::Result<()> {
+        let mut lines = io::BufReader::new(stream).lines();
+        while let Some(line) = lines.next().await {
+            if let Err(_) = line {
+                // connection reset
+                break;
+            }
+            log::trace!("read event for {}: {:?}", client_id, line);
+            sender
+                .send(Event::Message((client_id, line.unwrap())))
+                .await;
+        }
+        sender.send(Event::Leave(client_id)).await;
         Ok(())
+    }
+
+    async fn serve(session: Session, sender: Sender<Event>) -> io::Result<()> {
+        let mut next_client_id = FIRST_CLIENT_ID;
+        let listener = ServerListener::bind(&session).await?;
+        let mut incoming = listener.incoming();
+        // notify readiness to a potential awaiting client
+        println!();
+        while let Some(stream) = incoming.next().await {
+            let stream = stream.expect("error while accepting a new client");
+            let sender = sender.clone();
+            sender
+                .send(Event::Join((next_client_id, stream.clone())))
+                .await;
+            smol::spawn(Self::read_client(next_client_id, stream, sender)).detach();
+            next_client_id += 1;
+        }
+        Ok(())
+    }
+
+    pub fn run(&self) -> io::Result<()> {
+        smol::block_on(async {
+            let (sender, receiver) = bounded(100);
+            smol::spawn(Self::serve(self.session.clone(), sender)).detach();
+            Self::handle_events(self.session.to_string(), receiver).await;
+
+            log::info!("no more client, exiting...");
+            if let ConnectionMode::Socket(path) = &self.session.mode {
+                log::trace!("cleaning session device: {}", path.display());
+                fs::remove_file(path).expect("clean session");
+                if Session::list().is_empty() {
+                    fs::remove_dir(path.parent().unwrap())
+                        .unwrap_or_else(|e| log::warn!("could not clean session directory: {}", e));
+                }
+            }
+            Ok(())
+        })
     }
 }

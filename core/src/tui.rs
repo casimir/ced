@@ -1,23 +1,37 @@
 use std::io::{self, Write};
-use std::ops::Drop;
 
 use crossterm::{
     cursor,
-    event::{Event, EventStream, KeyCode as CKeyCode, KeyModifiers as CKeyModifiers},
+    event::{Event as CEvent, EventStream, KeyCode as CKeyCode, KeyModifiers as CKeyModifiers},
     execute, queue,
     style::{style, Colorize, Print, PrintStyledContent, Styler},
     terminal::{self, Clear, ClearType},
     Result as CTResult,
 };
-use futures::{select, FutureExt, StreamExt};
+use futures_lite::*;
 use remote::protocol::{Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
+use smol::channel::bounded;
+
+fn logline(msg: impl std::fmt::Display) {
+    use std::fs::OpenOptions;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("log.txt")
+        .expect("open file");
+
+    if let Err(e) = writeln!(file, "{}", msg) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
+}
 
 struct ToKey(Option<KeyEvent>);
 
-impl From<Event> for ToKey {
-    fn from(ev: Event) -> ToKey {
-        if let Event::Key(ke) = ev {
+impl From<CEvent> for ToKey {
+    fn from(ev: CEvent) -> ToKey {
+        if let CEvent::Key(ke) = ev {
             let key = match ke.code {
                 CKeyCode::Char(c) => Some(Key::Char(c)),
 
@@ -53,6 +67,15 @@ fn format_text(tf: &TextFragment) -> String {
     }
 }
 
+#[derive(Debug)]
+enum Event {
+    Input(CEvent),
+    Resize((u16, u16)),
+    DrawMenu(Menu),
+    DrawView,
+    Error(String),
+}
+
 pub struct Term {
     connection: Connection,
     exit_pending: bool,
@@ -60,15 +83,14 @@ pub struct Term {
 }
 
 impl Term {
-    pub fn new(session: &Session, filenames: &[&str]) -> io::Result<Term> {
+    pub fn new(session: Session, filenames: &[&str]) -> io::Result<Term> {
+        logline("----------");
         let mut term = Term {
             connection: Connection::new(session)?,
             exit_pending: false,
             last_size: terminal::size().expect("get terminal"),
         };
-        terminal::enable_raw_mode().expect("enable terminal raw mode");
-        execute!(io::stdout(), terminal::EnterAlternateScreen, cursor::Hide)
-            .expect("prepare terminal state");
+        logline("new connection");
         for fname in filenames {
             term.connection.edit(fname, false);
         }
@@ -76,33 +98,72 @@ impl Term {
     }
 
     pub fn start(&mut self) {
-        futures::executor::block_on(async {
-            let mut reader = EventStream::new();
-            let mut messages = self.connection.connect().fuse();
-            while !self.exit_pending {
-                select! {
-                    msg_opt = messages.next() => {
-                        use ConnectionEvent::*;
-                        match msg_opt {
-                            Some(ev) => match ev {
-                                Menu(menu) => self.draw_menu(&menu).expect("draw menu"),
-                                Echo(_)|Status(_)|View(_) => self.draw_view().expect("draw view"),
-                                Info(_, _) => {},
-                            }
-                            None => break,
+        terminal::enable_raw_mode().expect("enable terminal raw mode");
+        execute!(io::stdout(), terminal::EnterAlternateScreen, cursor::Hide)
+            .expect("prepare terminal state");
+
+        smol::block_on(async {
+            let (tx, rx) = bounded(100);
+
+            let events_tx = tx.clone();
+            smol::spawn(async move {
+                let tx = events_tx;
+                let mut reader = EventStream::new();
+                while let Some(event) = reader.next().await {
+                    logline(format!("new input: {:?}", event));
+                    match event {
+                        Ok(ev @ CEvent::Key(_)) => {
+                            tx.send(Event::Input(ev)).await.expect("send event")
                         }
-                    },
-                    event = reader.next().fuse() => {
-                        match event {
-                            Some(Ok(ev @ Event::Key(_))) => self.handle_input(ev).expect("handle input"),
-                            Some(Ok(Event::Mouse(_))) => {},
-                            Some(Ok(Event::Resize(w, h))) => self.resize(w, h).expect("resize"),
-                            Some(Err(e)) => self.error(&format!("event read: {}", e)),
-                            None => break,
+                        Ok(CEvent::Mouse(_)) => {}
+                        Ok(CEvent::Resize(w, h)) => {
+                            tx.send(Event::Resize((w, h))).await.expect("send event")
                         }
+                        Err(e) => tx
+                            .send(Event::Error(format!("\"event read: {}\"", e)))
+                            .await
+                            .expect("send event"),
                     }
-                    // complete => break,
-                };
+                }
+            })
+            .detach();
+
+            let (mut messages, request_loop) = self.connection.connect().await;
+            smol::spawn(request_loop).detach();
+            let messages_tx = tx.clone();
+            smol::spawn(async move {
+                let tx = messages_tx;
+                while let Some(msg) = messages.next().await {
+                    logline(format!("new message: {:?}", msg));
+                    use ConnectionEvent::*;
+                    match msg {
+                        Menu(menu) => tx.send(Event::DrawMenu(menu)).await.expect("send event"),
+                        Echo(_) | Status(_) | View(_) => {
+                            tx.send(Event::DrawView).await.expect("send event")
+                        }
+                        Info(_, _) => {}
+                        ConnErr(msg) => tx.send(Event::Error(msg)).await.expect("send event"),
+                        Noop => {}
+                    }
+                }
+                logline("connection lost");
+                tx.close();
+            })
+            .detach();
+
+            while let Ok(event) = rx.recv().await {
+                logline(format!("new event: {:?}", event));
+                use Event::*;
+                match event {
+                    Input(ev) => self.handle_input(ev).expect("handle input"),
+                    Resize((w, h)) => self.resize(w, h).expect("resize"),
+                    DrawMenu(menu) => self.draw_menu(&menu).expect("draw menu"),
+                    DrawView => self.draw_view().expect("draw view"),
+                    Error(msg) => self.error(&msg),
+                }
+                if self.exit_pending {
+                    break;
+                }
             }
         });
     }
@@ -341,6 +402,6 @@ impl Drop for Term {
     fn drop(&mut self) {
         terminal::disable_raw_mode().expect("disable terminal raw mode");
         let _ = execute!(io::stdout(), terminal::LeaveAlternateScreen, cursor::Show)
-            .map_err(|e| eprintln!("could not revert terminal state: {}", e));
+            .map_err(|e| eprintln!("revert terminal state: {}", e));
     }
 }
