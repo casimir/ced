@@ -92,7 +92,7 @@ impl Term {
         };
         logline("new connection");
         for fname in filenames {
-            term.connection.edit(fname, false);
+            term.connection.edit(fname.to_string(), false);
         }
         Ok(term)
     }

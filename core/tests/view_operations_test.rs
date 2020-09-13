@@ -1,23 +1,19 @@
-use std::path::PathBuf;
-
 mod helpers;
 
 use ced::remote::protocol::requests;
 
 const CLIENT_ID: usize = 1;
 
-fn p_file(name: &str, path: &PathBuf) -> requests::EditParams {
+fn p_file(name: &str) -> requests::EditParams {
     requests::EditParams {
-        file: String::from(name),
-        path: Some(path.display().to_string()),
+        name: name.to_owned(),
         scratch: false,
     }
 }
 
 fn p_scratch(name: &str) -> requests::EditParams {
     requests::EditParams {
-        file: String::from(name),
-        path: None,
+        name: name.to_owned(),
         scratch: true,
     }
 }
@@ -32,10 +28,8 @@ fn add_and_remove() {
         .command_edit(CLIENT_ID, &p_scratch("oh hi!"))
         .unwrap();
     editor.step();
-    let mut file = helpers::root();
-    file.push("Cargo.toml");
     editor
-        .command_edit(CLIENT_ID, &p_file("Cargo.toml", &file))
+        .command_edit(CLIENT_ID, &p_file("Cargo.toml"))
         .unwrap();
     editor.step();
 
@@ -65,10 +59,8 @@ fn delete() {
         .command_edit(CLIENT_ID, &p_scratch("oh hi!"))
         .unwrap();
     editor.step();
-    let mut file = helpers::root();
-    file.push("Cargo.toml");
     editor
-        .command_edit(CLIENT_ID, &p_file("Cargo.toml", &file))
+        .command_edit(CLIENT_ID, &p_file("Cargo.toml"))
         .unwrap();
     editor.step();
 
@@ -90,10 +82,8 @@ fn remove_and_delete() {
         .command_edit(CLIENT_ID, &p_scratch("oh hi!"))
         .unwrap();
     editor.step();
-    let mut file = helpers::root();
-    file.push("Cargo.toml");
     editor
-        .command_edit(CLIENT_ID, &p_file("Cargo.toml", &file))
+        .command_edit(CLIENT_ID, &p_file("Cargo.toml"))
         .unwrap();
     editor.step();
 

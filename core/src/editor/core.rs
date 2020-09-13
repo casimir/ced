@@ -1,9 +1,9 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::{cell::RefCell, env::current_dir};
+use std::{collections::HashMap, path::Path};
 
 use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
@@ -32,23 +32,28 @@ struct ClientContext {
 }
 
 impl ClientContext {
-    // TODO implement ToLua directly
     fn to_lua_table<'a>(&self, lua: rlua::Context<'a>) -> rlua::Result<rlua::Table<'a>> {
-        let view = lua.create_table()?;
-        for (i, _it) in self.view.borrow().as_vec().iter().enumerate() {
-            view.set(i + 1, "")?;
+        let view_key = self.view.borrow().key();
+        let sels = &self.selections[&view_key];
+
+        let view_t = lua.create_table()?;
+        view_t.set("key", view_key)?;
+
+        let selections_t = lua.create_table()?;
+        for (k, v) in sels {
+            let ss: Vec<Selection> = v.into_iter().cloned().collect();
+            selections_t.set(k.as_str(), ss)?;
         }
 
-        let selections = lua.create_table()?;
-
         let t = lua.create_table()?;
-        t.set("view", view)?;
-        t.set("selections", selections)?;
+        t.set("view", view_t)?;
+        t.set("selections", selections_t)?;
         Ok(t)
     }
 }
 
 struct CoreState {
+    cwd: PathBuf,
     clients: StackMap<usize, ClientContext>,
     buffers: HashMap<String, Buffer>,
     views: StackMap<String, Rc<RefCell<View>>>,
@@ -105,6 +110,7 @@ impl Core {
     pub fn new(notifier: Notifier) -> Core {
         Core {
             state: Arc::new(Mutex::new(CoreState {
+                cwd: current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
                 clients: StackMap::new(),
                 buffers: HashMap::new(),
                 views: StackMap::new(),
@@ -116,6 +122,10 @@ impl Core {
 
     pub fn get_notifier(&self) -> &Notifier {
         &self.notifier
+    }
+
+    pub fn cwd(&self) -> PathBuf {
+        lock!(self).cwd.to_owned()
     }
 
     fn buffer_exists(&self, name: &str) -> bool {
@@ -338,7 +348,8 @@ impl Core {
         }
     }
 
-    pub fn edit(&mut self, client_id: usize, name: &str, path: Option<&PathBuf>, scratch: bool) {
+    pub fn edit(&mut self, client_id: usize, name: &str, scratch: bool) {
+        // TODO check for same file but different name
         let exists = self.buffer_exists(name);
         let notify_change = if scratch {
             if !exists {
@@ -352,7 +363,12 @@ impl Core {
             }
             reloaded
         } else {
-            self.open_file(name, path.expect("target file path"));
+            let path = {
+                let mut absolute = self.cwd();
+                absolute.push(name);
+                absolute
+            };
+            self.open_file(name, &path);
             true
         };
 
@@ -488,9 +504,17 @@ impl rlua::UserData for Core {
             Ok(())
         });
 
-        methods.add_method_mut("get_context", |lua, this, client: usize| {
+        methods.add_method("get_context", |lua, this, client: usize| {
             Ok(lock!(this).clients[&client].to_lua_table(lua))
         });
+
+        methods.add_method_mut(
+            "edit",
+            |_, this, (client, name, scratch): (usize, String, bool)| {
+                this.edit(client, &name, scratch);
+                Ok(())
+            },
+        );
 
         methods.add_method_mut("move_left", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::Left, false))

@@ -11,10 +11,11 @@ use remote::protocol::{
 
 fn submenu_action(key: &str, editor: &mut Editor, client_id: usize) -> Result<(), jsonrpc::Error> {
     {
+        let cwd = editor.cwd();
         let menu = editor.command_map.get_mut(key).unwrap();
         let info = EditorInfo {
             session: &editor.session_name,
-            cwd: &editor.cwd,
+            cwd: &cwd,
             buffers: &editor.core.buffers(),
             views: &editor.core.views(),
         };
@@ -111,11 +112,8 @@ pub fn default_commands() -> HashMap<String, Menu> {
                     label: fpath.to_string(),
                     description: None,
                     action: |key, editor, client_id| {
-                        let mut path = editor.cwd.clone();
-                        path.push(key);
                         let params = requests::EditParams {
-                            file: key.to_owned(),
-                            path: Some(path.into_os_string().into_string().unwrap()),
+                            name: key.to_owned(),
                             scratch: false,
                         };
                         editor.command_edit(client_id, &params)?;
@@ -134,8 +132,7 @@ pub fn default_commands() -> HashMap<String, Menu> {
             "New scratch buffer name.",
             |key, editor, client_id| {
                 let params = requests::EditParams {
-                    file: key.to_owned(),
-                    path: None,
+                    name: key.to_owned(),
                     scratch: true,
                 };
                 editor.command_edit(client_id, &params)?;

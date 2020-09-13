@@ -159,8 +159,7 @@ pub mod requests {
 
     #[derive(Serialize, Deserialize)]
     pub struct EditParams {
-        pub file: String,
-        pub path: Option<String>,
+        pub name: String,
         pub scratch: bool,
     }
 

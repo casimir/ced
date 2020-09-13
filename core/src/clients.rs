@@ -18,8 +18,7 @@ pub fn start_standalone(filenames: &[&str]) {
     editor.add_client(CLIENT_ID);
     for fname in filenames {
         let params = EditParams {
-            file: fname.to_string(),
-            path: None,
+            name: fname.to_string(),
             scratch: false,
         };
         let _ = editor

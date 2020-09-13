@@ -175,13 +175,9 @@ impl Connection {
         self.request(requests::Quit::new_noarg(id));
     }
 
-    pub fn edit(&mut self, file: &str, scratch: bool) {
+    pub fn edit(&mut self, name: String, scratch: bool) {
         let id = self.request_id();
-        let params = requests::EditParams {
-            file: file.to_owned(),
-            path: None,
-            scratch,
-        };
+        let params = requests::EditParams { name, scratch };
         self.request(requests::Edit::new(id, params));
     }
 

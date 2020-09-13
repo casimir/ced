@@ -138,7 +138,6 @@ fn key_to_lua<'a>(lua: rlua::Context<'a>, event: &KeyEvent) -> rlua::Result<rlua
 
 pub struct Editor {
     session_name: String,
-    cwd: PathBuf,
     command_map: HashMap<String, Menu>,
     stopped_clients: HashSet<usize>,
     core: Core,
@@ -149,7 +148,6 @@ impl Editor {
     pub fn new(session: &str, notifier: impl Into<Notifier>) -> Editor {
         let mut editor = Editor {
             session_name: session.into(),
-            cwd: env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
             command_map: default_commands(),
             stopped_clients: HashSet::new(),
             core: Core::new(notifier.into()),
@@ -162,7 +160,9 @@ impl Editor {
             "command: {}",
             env::args().collect::<Vec<_>>().join(" ")
         ));
-        editor.core.debug(&format!("cwd: {}", editor.cwd.display()));
+        editor
+            .core
+            .debug(&format!("cwd: {}", editor.cwd().display()));
         view.add_lens(Lens {
             buffer: BUFFER_DEBUG.to_owned(),
             focus: Focus::Whole,
@@ -191,6 +191,10 @@ impl Editor {
             .expect("load prelude script");
 
         editor
+    }
+
+    pub fn cwd(&self) -> PathBuf {
+        self.core.cwd()
     }
 
     pub fn exec_lua<F, R>(&mut self, source: &str, client_id: usize, f: F) -> rlua::Result<R>
@@ -251,7 +255,7 @@ impl Editor {
     pub fn add_client(&mut self, id: usize) {
         let info = EditorInfo {
             session: &self.session_name,
-            cwd: &self.cwd,
+            cwd: &self.cwd(),
             buffers: &[],
             views: &[],
         };
@@ -318,21 +322,7 @@ impl Editor {
         client_id: usize,
         params: &<requests::Edit as requests::Request>::Params,
     ) -> Result<<requests::Edit as requests::Request>::Result, Error> {
-        if params.scratch {
-            self.core
-                .edit(client_id, &params.file, None, params.scratch);
-        } else {
-            let path = match params.path.as_ref() {
-                Some(path) => PathBuf::from(path),
-                None => {
-                    let mut absolute = self.cwd.clone();
-                    absolute.push(&params.file);
-                    absolute
-                }
-            };
-            self.core
-                .edit(client_id, &params.file, Some(&path), params.scratch);
-        }
+        self.core.edit(client_id, &params.name, params.scratch);
         Ok(())
     }
 
@@ -389,13 +379,14 @@ impl Editor {
         params: &<requests::Menu as requests::Request>::Params,
     ) -> Result<<requests::Menu as requests::Request>::Result, Error> {
         {
+            let cwd = self.cwd();
             let menu = self.command_map.get_mut(&params.command).ok_or({
                 Error::invalid_params(&format!("unknown command: {}", &params.command))
             })?;
             if params.search.is_empty() {
                 let info = EditorInfo {
                     session: &self.session_name,
-                    cwd: &self.cwd,
+                    cwd: &cwd,
                     buffers: &self.core.buffers(),
                     views: &self.core.views(),
                 };
