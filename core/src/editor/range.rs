@@ -2,6 +2,7 @@
 pub trait Range {
     fn start(&self) -> usize;
     fn end(&self) -> usize;
+    fn len(&self) -> usize;
 
     fn overlap(&self, other: &dyn Range) -> bool {
         (self.start() <= other.start() && other.start() < self.end())
@@ -19,6 +20,12 @@ pub struct OffsetRange {
     length: usize,
 }
 
+impl OffsetRange {
+    pub fn new(offset: usize, length: usize) -> OffsetRange {
+        OffsetRange { offset, length }
+    }
+}
+
 impl Range for OffsetRange {
     fn start(&self) -> usize {
         self.offset
@@ -27,15 +34,8 @@ impl Range for OffsetRange {
     fn end(&self) -> usize {
         self.offset + self.length
     }
-}
 
-impl OffsetRange {
-    pub fn new(offset: usize, length: usize) -> OffsetRange {
-        OffsetRange { offset, length }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.length
     }
 }

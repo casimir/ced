@@ -85,7 +85,7 @@ impl Piece {
         (p1, p2)
     }
 
-    fn ranged(self, range: OffsetRange) -> Piece {
+    fn ranged(self, range: &dyn Range) -> Piece {
         if self.contains(range.start()) && self.contains(range.end()) {
             Piece {
                 offset: range.start(),
@@ -264,7 +264,7 @@ impl PieceTable {
         }
     }
 
-    fn range(&self, range: OffsetRange) -> Option<Vec<u8>> {
+    fn range(&self, range: &dyn Range) -> Option<Vec<u8>> {
         self.pieces
             .get_node(&Piece::offset(range.start()))
             .map(|start_piece| {
@@ -305,7 +305,7 @@ impl PieceTable {
         self.join("")
     }
 
-    pub fn text_range(&self, range: OffsetRange) -> Option<String> {
+    pub fn text_range(&self, range: &dyn Range) -> Option<String> {
         // TODO handle decoding error
         self.range(range)
             .map(|bs| String::from_utf8_lossy(&bs).into())
@@ -324,7 +324,7 @@ impl PieceTable {
             None
         } else if n == 1 {
             let max_len = self.len();
-            self.range(OffsetRange::new(
+            self.range(&OffsetRange::new(
                 0,
                 *self.newlines.iter().nth(0).unwrap_or(&max_len),
             ))
@@ -334,7 +334,7 @@ impl PieceTable {
                 Some(&v) => v - 1,
                 None => self.len(),
             };
-            self.range(OffsetRange::new(start + 1, end - start))
+            self.range(&OffsetRange::new(start + 1, end - start))
         }
     }
 
@@ -413,7 +413,7 @@ impl PieceTable {
             .range(offset..)
             .nth(0)
             .map_or_else(|| self.len(), |&nl| nl);
-        self.range(OffsetRange::new(offset, max(end - offset, 1)))
+        self.range(&OffsetRange::new(offset, max(end - offset, 1)))
             .and_then(|l| l.graphemes().nth(0).map(ToOwned::to_owned))
     }
 
@@ -451,8 +451,7 @@ impl PieceTable {
     pub fn lines_range<C: Into<Coords>>(&self, from: C, to: C) -> Vec<String> {
         let offset = self.coord_to_offset(from.into());
         let length = self.coord_to_offset(to.into()) - offset;
-        let range = OffsetRange::new(offset, length);
-        self.text_range(range)
+        self.text_range(&OffsetRange::new(offset, length))
             .unwrap_or_default()
             .lines()
             .map(ToOwned::to_owned)
@@ -521,7 +520,7 @@ impl PieceTable {
         }
     }
 
-    pub fn delete(&mut self, range: OffsetRange) {
+    pub fn delete(&mut self, range: &dyn Range) {
         self.action(Action::Delete);
         if let Some(start_node) = self.pieces.get_node(&Piece::offset(range.start())) {
             let pieces = self
@@ -565,7 +564,7 @@ impl PieceTable {
 
     pub fn replace(&mut self, range: OffsetRange, text: String) {
         self.start_bulk();
-        self.delete(range);
+        self.delete(&range);
         self.insert(range.start(), text);
         self.end_bulk();
     }
@@ -580,7 +579,7 @@ impl PieceTable {
         self.start_bulk();
         for diff in diffs {
             match diff {
-                Diff::Left(len) => self.delete(OffsetRange::new(loffset, len)),
+                Diff::Left(len) => self.delete(&OffsetRange::new(loffset, len)),
                 Diff::Right(len) => {
                     self.insert(loffset, text[roffset..roffset + len].to_owned());
                     loffset += len;
@@ -641,15 +640,15 @@ mod tests {
         pieces.insert(56, ", so quick".to_owned());
 
         assert_eq!(
-            pieces.text_range(OffsetRange::new(9, 12)),
+            pieces.text_range(&OffsetRange::new(9, 12)),
             Some(String::from("quick brown "))
         );
-        pieces.delete(OffsetRange::new(9, 12)); // "quick brown| "
+        pieces.delete(&OffsetRange::new(9, 12)); // "quick brown| "
         assert_eq!(
-            pieces.text_range(OffsetRange::new(28, 5)),
+            pieces.text_range(&OffsetRange::new(28, 5)),
             Some(String::from("lazy "))
         );
-        pieces.delete(OffsetRange::new(28, 5)); // "|lazy |"
+        pieces.delete(&OffsetRange::new(28, 5)); // "|lazy |"
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(pieces.text(), "🦊 the fox jumps over the dog 🐶, so quick");
@@ -721,7 +720,7 @@ mod tests {
         assert!(!pieces.undo());
 
         // delete + undo/redo
-        pieces.delete(OffsetRange::new(53, 10));
+        pieces.delete(&OffsetRange::new(53, 10));
         let deleted = "🦊 the quick brown fox jumps over the lazy dog 🐶";
         assert_eq!(pieces.text(), deleted);
         assert!(pieces.undo());
@@ -737,7 +736,7 @@ mod tests {
         pieces.insert(9, "really ".to_owned());
         assert_eq!(pieces.text(), inserted);
         let redeleted = "the really quick brown fox jumps over the lazy dog 🐶, so fast";
-        pieces.delete(OffsetRange::new(0, 5));
+        pieces.delete(&OffsetRange::new(0, 5));
         assert_eq!(pieces.text(), redeleted);
         assert!(pieces.undo());
         assert_eq!(pieces.text(), inserted);
@@ -776,7 +775,7 @@ mod tests {
             pieces.newlines,
             [10, 23, 35].iter().map(|&i| i as usize).collect()
         );
-        pieces.delete(OffsetRange::new(11, 24));
+        pieces.delete(&OffsetRange::new(11, 24));
         assert_eq!(
             pieces.newlines,
             [10, 11].iter().map(|&i| i as usize).collect()
