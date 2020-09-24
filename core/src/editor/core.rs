@@ -175,12 +175,12 @@ impl Core {
         self.notifier.view_update(params);
     }
 
-    fn append_to(&mut self, buffer: &str, content: &str) {
+    fn append_to(&mut self, buffer: &str, text: String) {
         if !self.buffer_exists(buffer) {
             self.open_scratch(buffer);
         }
         if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
-            buf.append(format!("{}\n", content));
+            buf.append(text);
         }
         self.notify_view_update(self.clients_with_buffer(buffer));
     }
@@ -189,7 +189,7 @@ impl Core {
         log::debug!("{}", content);
 
         if self.debug_mode {
-            self.append_to(BUFFER_DEBUG, content);
+            self.append_to(BUFFER_DEBUG, format!("{}\n", content));
         }
     }
 
@@ -203,7 +203,7 @@ impl Core {
         } else {
             format!("*|{}", content)
         };
-        self.append_to("*messages*", &msg);
+        self.append_to("*messages*", msg + "\n");
         self.notifier.message(client_id, content);
     }
 
@@ -219,7 +219,7 @@ impl Core {
         } else {
             format!("*|{}", text)
         };
-        self.append_to("*errors*", &msg);
+        self.append_to("*errors*", msg + "\n");
         self.notifier
             .error(client_id, &normalize_error_message(&text));
     }
