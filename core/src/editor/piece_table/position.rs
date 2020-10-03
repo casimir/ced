@@ -1,4 +1,4 @@
-use crate::editor::piece_table::{Coords, PieceTable};
+use crate::editor::piece_table::{Coords, Navigator, PieceTable};
 
 #[derive(Debug)]
 pub struct Position {
@@ -9,6 +9,7 @@ pub struct Position {
 
 pub struct PositionIterator<'a> {
     table: &'a PieceTable,
+    nv: Navigator<'a>,
     offset: usize,
     started: bool,
 }
@@ -17,7 +18,7 @@ impl PositionIterator<'_> {
     fn pos(&self) -> Position {
         Position {
             offset: self.offset,
-            coords: self.table.offset_to_coord(self.offset),
+            coords: self.table.offset_to_coord(self.offset).unwrap(),
             grapheme: self.table.char_at_offset(self.offset),
         }
     }
@@ -32,9 +33,9 @@ impl<'a> Iterator for PositionIterator<'a> {
             return Some(self.pos());
         }
 
-        if let Some(c) = self.table.char_at_offset(self.offset) {
-            self.offset += c.len();
-            Some(self.pos())
+        self.nv.next();
+        if self.nv.is_at_end() {
+            Some(self.nv.pos())
         } else {
             None
         }
@@ -45,6 +46,7 @@ impl<'a> From<&'a PieceTable> for PositionIterator<'a> {
     fn from(table: &'a PieceTable) -> PositionIterator<'a> {
         PositionIterator {
             table,
+            nv: table.navigate(None).unwrap(),
             offset: 0,
             started: false,
         }
@@ -73,7 +75,6 @@ mod tests {
             (2, 4),
             (2, 5),
             (2, 6),
-            (2, 7),
         ];
         for (i, p) in PositionIterator::from(&table).enumerate() {
             assert_eq!(p.coords, Coords::from(positions[i]));

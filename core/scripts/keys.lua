@@ -3,19 +3,9 @@ local M = {}
 local ModalHandler = {}
 ModalHandler.__index = ModalHandler
 
-ModalHandler.modes = {
-    normal = "N",
-    insertion = "I"
-}
+ModalHandler.modes = {normal = "N", insertion = "I"}
 
-setmetatable(
-    ModalHandler,
-    {
-        __call = function(cls, ...)
-            return cls.new(...)
-        end
-    }
-)
+setmetatable(ModalHandler, {__call = function(cls, ...) return cls.new(...) end})
 
 function ModalHandler.new(client_id)
     local self = setmetatable({}, ModalHandler)
@@ -27,12 +17,8 @@ end
 
 function ModalHandler:set_status(key)
     local status_line = editor.clients[self.client_id].status_line
-    if not status_line.keys then
-        status_line.keys = {index = 80}
-    end
-    if not status_line.mode then
-        status_line.mode = {index = 90}
-    end
+    if not status_line.keys then status_line.keys = {index = 80} end
+    if not status_line.mode then status_line.mode = {index = 90} end
     status_line.keys.text = key and key.display or ""
     status_line.mode.text = self.mode
     self.redraw_status = true
@@ -43,13 +29,21 @@ function ModalHandler:handle_normal(key)
         self.mode = ModalHandler.modes.insertion
         self.redraw_status = true
     elseif key.value == "h" then
-        self.redraw_status = editor:move_left(self.client_id)
-    elseif key.value == "l" then
-        self.redraw_status = editor:move_right(self.client_id)
-    elseif key.value == "k" then
-        self.redraw_status = editor:move_up(self.client_id)
+        self.redraw_status = editor:move_left(self.client_id, false)
     elseif key.value == "j" then
-        self.redraw_status = editor:move_down(self.client_id)
+        self.redraw_status = editor:move_down(self.client_id, false)
+    elseif key.value == "k" then
+        self.redraw_status = editor:move_up(self.client_id, false)
+    elseif key.value == "l" then
+        self.redraw_status = editor:move_right(self.client_id, false)
+    elseif key.value == "H" then
+        self.redraw_status = editor:move_left(self.client_id, true)
+    elseif key.value == "J" then
+        self.redraw_status = editor:move_down(self.client_id, true)
+    elseif key.value == "K" then
+        self.redraw_status = editor:move_up(self.client_id, true)
+    elseif key.value == "L" then
+        self.redraw_status = editor:move_right(self.client_id, true)
     elseif key.value == "m" then
         editor:message(self.client_id, "hello!")
     elseif key.value == "e" then

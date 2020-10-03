@@ -344,33 +344,29 @@ impl PieceTable {
             .map(|l| String::from_utf8_lossy(&l).into())
     }
 
-    pub fn offset_to_coord(&self, offset: usize) -> Coords {
+    pub fn offset_to_coord(&self, offset: usize) -> Option<Coords> {
         // start
         if offset == 0 {
-            return Coords { c: 1, l: 1 };
+            return Some(Coords { c: 1, l: 1 });
         }
 
         // bigger that total length
-        if self.len() <= offset {
-            let lineno = self.newlines.len() + 1;
-            return Coords {
-                l: lineno,
-                c: self.line_length(lineno) + 1,
-            };
+        if offset > self.max_offset() {
+            return None;
         }
 
         // points to a newline
         if let Some(idx) = self.newlines.iter().position(|&x| x == offset) {
             let lineno = idx + 1;
-            return Coords {
+            return Some(Coords {
                 l: lineno,
                 c: self.line_length(lineno) + 1,
-            };
+            });
         }
 
         let preceding_lines = self.newlines.range(..offset).collect::<Vec<_>>();
         let lineno = preceding_lines.len() + 1;
-        match preceding_lines.last() {
+        Some(match preceding_lines.last() {
             Some(&nli) => {
                 let line = self.line_bytes(lineno).unwrap();
                 let indices = BTreeSet::from_iter(line.grapheme_indices().map(|(i, _, _)| i));
@@ -381,14 +377,15 @@ impl PieceTable {
                 l: lineno,
                 c: offset + 1,
             },
-        }
+        })
     }
 
-    pub fn coord_to_offset(&self, coords: Coords) -> usize {
+    pub fn coord_to_offset(&self, coords: Coords) -> Option<usize> {
         if coords.l == 0 {
-            0
-        } else if self.line_count() < coords.l {
-            self.len()
+            // FIXME this is weird
+            Some(0)
+        } else if coords.l > self.line_count() {
+            None
         } else {
             let line_offset = if coords.l > 1 {
                 self.newlines
@@ -398,12 +395,29 @@ impl PieceTable {
             } else {
                 0
             };
-            let col_offset = self
-                .line_bytes(coords.l)
-                .and_then(|l| l.grapheme_indices().nth(coords.c - 1).map(|(i, _, _)| i))
-                .unwrap_or_else(|| self.line_length(coords.l));
-            line_offset + col_offset
+            let lbs = self.line_bytes(coords.l).unwrap();
+            if coords.c == lbs.graphemes().count() + 1 {
+                // this is the newline character for this line
+                Some(line_offset + lbs.len())
+            } else {
+                lbs.grapheme_indices()
+                    .nth(coords.c - 1)
+                    .map(|(i, _, _)| i)
+                    .map(|col| line_offset + col)
+            }
         }
+    }
+
+    pub fn max_offset(&self) -> usize {
+        if self.len() > 0 {
+            self.len() - 1
+        } else {
+            0
+        }
+    }
+
+    pub fn max_coord(&self) -> Coords {
+        self.offset_to_coord(self.max_offset()).unwrap()
     }
 
     pub fn char_at_offset(&self, offset: usize) -> Option<String> {
@@ -417,8 +431,9 @@ impl PieceTable {
             .and_then(|l| l.graphemes().nth(0).map(ToOwned::to_owned))
     }
 
-    pub fn char_at<C: Into<Coords>>(&self, coords: C) -> Option<String> {
-        self.char_at_offset(self.coord_to_offset(coords.into()))
+    pub fn char_at(&self, coords: impl Into<Coords>) -> Option<String> {
+        self.coord_to_offset(coords.into())
+            .map(|offset| self.char_at_offset(offset).unwrap())
     }
 
     pub fn line_length(&self, index: usize) -> usize {
@@ -449,9 +464,16 @@ impl PieceTable {
     }
 
     pub fn lines_range<C: Into<Coords>>(&self, from: C, to: C) -> Vec<String> {
-        let offset = self.coord_to_offset(from.into());
-        let length = self.coord_to_offset(to.into()) - offset;
-        self.text_range(&OffsetRange::new(offset, length))
+        let begin = match self.coord_to_offset(from.into()) {
+            Some(o) => o,
+            None => return Vec::new(),
+        };
+        let end = match self.coord_to_offset(to.into()) {
+            Some(o) => o,
+            None => return Vec::new(),
+        };
+        let length = end - begin;
+        self.text_range(&OffsetRange::new(begin, length))
             .unwrap_or_default()
             .lines()
             .map(ToOwned::to_owned)
@@ -594,10 +616,10 @@ impl PieceTable {
         self.end_bulk();
     }
 
-    pub fn navigate(&self, from: impl Into<Option<Coords>>) -> Navigator<'_> {
+    pub fn navigate(&self, from: impl Into<Option<Coords>>) -> Option<Navigator<'_>> {
         match from.into() {
             Some(c) => Navigator::from_position(self, c),
-            None => Navigator::new(self),
+            None => Some(Navigator::new(self)),
         }
     }
 }
@@ -853,33 +875,35 @@ doit servir de tombeau"#;
         );
 
         let coord = (4, 15).into(); // after only 1-len chars
-        assert_eq!(pieces.offset_to_coord(pieces.coord_to_offset(coord)), coord);
-        let coord = (5, 5).into(); // after 2-len char (é)
-        assert_eq!(pieces.offset_to_coord(pieces.coord_to_offset(coord)), coord);
-
         assert_eq!(
-            pieces.offset_to_coord(pieces.coord_to_offset((3, 999).into())),
-            Coords { l: 3, c: 1 }
+            pieces.offset_to_coord(pieces.coord_to_offset(coord).unwrap()),
+            Some(coord)
+        );
+        let coord = (5, 5).into(); // after 2-len char (é)
+        assert_eq!(
+            pieces.offset_to_coord(pieces.coord_to_offset(coord).unwrap()),
+            Some(coord)
         );
 
-        assert_eq!(pieces.coord_to_offset((9999, 9999).into()), pieces.len());
+        assert_eq!(pieces.coord_to_offset((3, 999).into()), None);
+        assert_eq!(pieces.coord_to_offset((9999, 9999).into()), None);
     }
 
     #[test]
     fn coordinates_one_line() {
         let pieces = PieceTable::with_text("What does the fox says?".to_owned());
-        assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
-        assert_eq!(pieces.coord_to_offset((1, 15).into()), 14);
+        assert_eq!(pieces.coord_to_offset((1, 5).into()), Some(4));
+        assert_eq!(pieces.coord_to_offset((1, 15).into()), Some(14));
     }
 
     #[test]
     fn coordinates_unicode() {
         let pieces = PieceTable::with_text("What does the 🦊 says?\n❓ It's a mystery.".to_owned());
-        assert_eq!(pieces.coord_to_offset((1, 5).into()), 4);
-        assert_eq!(pieces.coord_to_offset((1, 15).into()), 14); // 🦊 offset
-        assert_eq!(pieces.coord_to_offset((1, 16).into()), 18); // after 🦊
-        assert_eq!(pieces.coord_to_offset((2, 3).into()), 29);
-        assert_eq!(pieces.coord_to_offset((3, 14).into()), pieces.len());
+        assert_eq!(pieces.coord_to_offset((1, 5).into()), Some(4));
+        assert_eq!(pieces.coord_to_offset((1, 15).into()), Some(14)); // 🦊 offset
+        assert_eq!(pieces.coord_to_offset((1, 16).into()), Some(18)); // after 🦊
+        assert_eq!(pieces.coord_to_offset((2, 3).into()), Some(29));
+        assert_eq!(pieces.coord_to_offset((3, 14).into()), None);
     }
 
     #[test]
@@ -897,9 +921,8 @@ Dolor."#;
         assert_eq!(pieces.char_at((3, 20)), Some("s".into()));
         assert_eq!(pieces.char_at((4, 2)), Some("o".into()));
 
-        assert_eq!(pieces.char_at((1, 9999)), Some("\n".into()));
+        assert_eq!(pieces.char_at((1, 9999)), None);
         assert_eq!(pieces.char_at((4, 9999)), None);
         assert_eq!(pieces.char_at((5, 1)), None);
-        assert_eq!(pieces.char_at_offset(pieces.len()), None);
     }
 }

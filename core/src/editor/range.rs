@@ -2,7 +2,10 @@
 pub trait Range {
     fn start(&self) -> usize;
     fn end(&self) -> usize;
-    fn len(&self) -> usize;
+
+    fn len(&self) -> usize {
+        self.end() - self.start()
+    }
 
     fn overlap(&self, other: &dyn Range) -> bool {
         (self.start() <= other.start() && other.start() < self.end())
@@ -11,6 +14,16 @@ pub trait Range {
 
     fn contains(&self, other: &dyn Range) -> bool {
         self.start() <= other.start() && other.end() <= self.end()
+    }
+}
+
+impl Range for std::ops::Range<usize> {
+    fn start(&self) -> usize {
+        self.start
+    }
+
+    fn end(&self) -> usize {
+        self.end
     }
 }
 

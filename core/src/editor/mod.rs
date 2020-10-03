@@ -17,6 +17,7 @@ use self::command::default_commands;
 use self::core::Core;
 pub use self::core::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use self::menu::Menu;
+pub use self::piece_table::Coords;
 use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
@@ -155,7 +156,7 @@ impl Editor {
         };
 
         let mut view = View::default();
-        editor.core.open_scratch(BUFFER_DEBUG);
+        editor.core.open_scratch(BUFFER_DEBUG, String::new());
         editor.core.debug(&format!(
             "command: {}",
             env::args().collect::<Vec<_>>().join(" ")
@@ -167,7 +168,7 @@ impl Editor {
             buffer: BUFFER_DEBUG.to_owned(),
             focus: Focus::Whole,
         });
-        editor.core.open_scratch(BUFFER_SCRATCH);
+        editor.core.open_scratch(BUFFER_SCRATCH, String::new());
         view.add_lens(Lens {
             buffer: BUFFER_SCRATCH.to_owned(),
             focus: Focus::Whole,

@@ -64,10 +64,15 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new_scratch(name: String) -> Buffer {
+    pub fn new_scratch(name: String, content: String) -> Buffer {
+        let content = if content.is_empty() {
+            '\n'.to_string()
+        } else {
+            content
+        };
         Buffer {
             source: BufferSource::Scratch(name),
-            content: PieceTable::new(),
+            content: PieceTable::with_text(content),
             last_sync: None,
             modified: false,
         }
@@ -86,6 +91,10 @@ impl Buffer {
         let mut file_content = String::new();
         file.read_to_string(&mut file_content).expect("read file");
         let last_sync = Some(SystemTime::now());
+
+        if !file_content.ends_with('\n') {
+            file_content += "\n";
+        }
 
         Buffer {
             source: BufferSource::File(absolute_path),

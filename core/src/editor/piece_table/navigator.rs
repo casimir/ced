@@ -9,19 +9,27 @@ pub struct Navigator<'a> {
 
 impl Navigator<'_> {
     pub fn new(table: &PieceTable) -> Navigator<'_> {
-        Self::from_position(table, BEGIN)
+        Self::from_position(table, BEGIN).unwrap()
     }
 
-    pub fn from_position(table: &PieceTable, coords: Coords) -> Navigator<'_> {
-        Navigator {
-            table,
-            cursor: coords,
+    pub fn from_position(table: &PieceTable, coords: Coords) -> Option<Navigator<'_>> {
+        if table.coord_to_offset(coords).is_some() {
+            Some(Navigator {
+                table,
+                cursor: coords,
+            })
+        } else {
+            None
         }
+    }
+
+    pub fn is_at_end(&self) -> bool {
+        self.cursor == self.table.max_coord()
     }
 
     pub fn pos(&self) -> Position {
         Position {
-            offset: self.table.coord_to_offset(self.cursor),
+            offset: self.table.coord_to_offset(self.cursor).unwrap(),
             coords: self.cursor,
             grapheme: self.table.char_at(self.cursor),
         }
@@ -34,7 +42,10 @@ impl Navigator<'_> {
                 c: 1,
             }
         } else {
-            self.cursor.c += 1;
+            let offset = self.table.coord_to_offset(self.cursor).unwrap();
+            if let Some(coord) = self.table.offset_to_coord(offset + 1) {
+                self.cursor = coord;
+            }
         }
         self
     }
@@ -82,7 +93,7 @@ impl Navigator<'_> {
     }
 
     pub fn end(&mut self) -> &mut Self {
-        self.cursor = self.table.offset_to_coord(self.table.len());
+        self.cursor = self.table.max_coord();
         self
     }
 }
@@ -110,7 +121,7 @@ mod tests {
     fn char() {
         let table = make_table();
 
-        let mut nv = table.navigate(None);
+        let mut nv = table.navigate(None).unwrap();
         nv.next();
         assert_eq!(nv.pos().coords, (1, 2).into());
         nv.previous().previous();
@@ -118,11 +129,11 @@ mod tests {
         nv.previous();
         assert_eq!(nv.pos().coords, (1, 1).into());
 
-        let mut nv = table.navigate(Coords { l: 3, c: 26 });
+        let mut nv = table.navigate(Coords { l: 3, c: 26 }).unwrap();
         nv.next();
-        assert_eq!(nv.pos().coords, (3, 27).into());
+        assert_eq!(nv.pos().coords, (3, 26).into());
 
-        let mut nv = table.navigate(Coords { l: 2, c: 1 });
+        let mut nv = table.navigate(Coords { l: 2, c: 1 }).unwrap();
         nv.previous();
         assert_eq!(nv.pos().coords, (1, 16).into());
         nv.next();
@@ -132,7 +143,7 @@ mod tests {
     #[test]
     fn line() {
         let table = make_table();
-        let mut nv = table.navigate(None);
+        let mut nv = table.navigate(None).unwrap();
 
         nv.next_line();
         assert_eq!(nv.pos().coords, (2, 1).into());
@@ -150,9 +161,10 @@ mod tests {
     #[test]
     fn whole() {
         let table = make_table();
-        let mut nv = table.navigate(None);
+        let mut nv = table.navigate(None).unwrap();
         nv.end();
-        assert_eq!(nv.pos().coords, (3, 27).into());
+        assert_eq!(nv.pos().coords, (3, 26).into());
+        assert!(nv.is_at_end());
         nv.begin();
         assert_eq!(nv.pos().coords, (1, 1).into());
     }

@@ -665,9 +665,9 @@ checksum = "260e51e7efe62b592207e9e13a68e43692a7a279171d6ba57abd208bf23645ad"
 
 [[package]]
 name = "ornament"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d94e3cba9691a3758651bd4b18570369c84b90a6aac4250ec15930ac7deb5fd"
+checksum = "9959d8ecd85988cd0172fdcbbbfa7503508db4ea029a0848dec9e73de5475595"
 dependencies = [
  "serde",
 ]

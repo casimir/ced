@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::ops::Range;
 
-use crate::editor::range::Range as _;
 use crate::editor::selection::Selection;
 use crate::editor::Buffer;
 use ornament::Decorator;
@@ -192,10 +191,26 @@ impl View {
                     let mut selected = HashMap::new();
                     if let Some(ss) = sels {
                         for s in ss {
-                            let start = buffer.content.offset_to_coord(s.start());
-                            let end = buffer.content.offset_to_coord(s.end());
+                            let start = buffer.content.offset_to_coord(s.begin()).unwrap();
+                            let end = {
+                                if s.end() == buffer.content.max_offset() {
+                                    let mut end = buffer.content.offset_to_coord(s.end()).unwrap();
+                                    end.c += 1;
+                                    end
+                                } else {
+                                    buffer
+                                        .content
+                                        .navigate(buffer.content.offset_to_coord(s.end()))
+                                        .unwrap()
+                                        .next()
+                                        .pos()
+                                        .coords
+                                }
+                            };
                             if start.l == end.l {
                                 selected.insert(start.l - 1, (Some(start.c - 1), Some(end.c - 1)));
+                            } else if start.l == end.l - 1 && end.c == 1 {
+                                selected.insert(start.l - 1, (Some(start.c - 1), None));
                             } else {
                                 for i in start.l..=end.l {
                                     let range = if i == start.l {
@@ -214,7 +229,8 @@ impl View {
                         .lines(lens.focus.clone())
                         .iter()
                         .enumerate()
-                        .map(|(i, l)| {
+                        .map(|(i, line)| {
+                            let l = line.to_owned() + " ";
                             if let Some(s) = selected.get(&i) {
                                 match *s {
                                     (Some(start), Some(end)) => Decorator::with_text(&l)

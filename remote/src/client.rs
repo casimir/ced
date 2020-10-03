@@ -34,7 +34,8 @@ impl Client {
             }
         };
         fn parse_line(x: io::Result<String>) -> Result<ClientEvent, JsonCodingError> {
-            x.unwrap().parse()
+            // TODO handle io::Error (eg: closed connection)
+            x.expect("parse line").parse()
         }
         Ok((
             io::BufReader::new(stream).lines().map(parse_line),

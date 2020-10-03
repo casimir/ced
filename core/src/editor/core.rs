@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, env::current_dir};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, ops::Range};
 
 use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
-use crate::editor::{Buffer, EditorInfo, Notifier};
+use crate::editor::{Buffer, Coords, EditorInfo, Notifier};
 use crate::stackmap::StackMap;
 
 pub const BUFFER_DEBUG: &str = "*debug*";
@@ -31,32 +31,28 @@ struct ClientContext {
     selections: HashMap<String, HashMap<String, Vec<Selection>>>,
 }
 
-impl ClientContext {
-    fn to_lua_table<'a>(&self, lua: rlua::Context<'a>) -> rlua::Result<rlua::Table<'a>> {
-        let view_key = self.view.borrow().key();
-        let sels = &self.selections[&view_key];
-
-        let view_t = lua.create_table()?;
-        view_t.set("key", view_key)?;
-
-        let selections_t = lua.create_table()?;
-        for (k, v) in sels {
-            let ss: Vec<Selection> = v.into_iter().cloned().collect();
-            selections_t.set(k.as_str(), ss)?;
-        }
-
-        let t = lua.create_table()?;
-        t.set("view", view_t)?;
-        t.set("selections", selections_t)?;
-        Ok(t)
-    }
-}
-
 struct CoreState {
     cwd: PathBuf,
     clients: StackMap<usize, ClientContext>,
     buffers: HashMap<String, Buffer>,
     views: StackMap<String, Rc<RefCell<View>>>,
+}
+
+impl CoreState {
+    fn selection_range(&self, buffer: &Buffer, sel: &Selection) -> Range<usize> {
+        let end_offset = if sel.end() == buffer.content.max_offset() {
+            sel.end() + 1
+        } else {
+            buffer
+                .content
+                .navigate(buffer.content.offset_to_coord(sel.end()))
+                .unwrap()
+                .next()
+                .pos()
+                .offset
+        };
+        sel.begin()..end_offset
+    }
 }
 
 macro_rules! lock {
@@ -162,14 +158,31 @@ impl Core {
             .collect()
     }
 
+    fn get_selected_text(&self, buffer: &str, sel: &Selection) -> Option<String> {
+        let state = lock!(self);
+        state
+            .buffers
+            .get(buffer)
+            .map(|b| b.content.text_range(&state.selection_range(&b, sel)))
+            .flatten()
+    }
+
+    fn get_coord(&self, buffer: &str, offset: usize) -> Option<Coords> {
+        lock!(self)
+            .buffers
+            .get(buffer)
+            .map(|b| b.content.offset_to_coord(offset))
+            .flatten()
+    }
+
     fn notify_view_update(&self, clients: Vec<usize>) {
         let state = lock!(self);
         let params = clients
             .iter()
             .map(|id| {
                 let view = state.clients[&id].view.borrow();
-                let selections = state.clients[&id].selections.get(&view.key());
-                (*id, view.to_notification_params(&state.buffers, selections))
+                let sels = state.clients[&id].selections.get(&view.key());
+                (*id, view.to_notification_params(&state.buffers, sels))
             })
             .collect();
         self.notifier.view_update(params);
@@ -177,10 +190,11 @@ impl Core {
 
     fn append_to(&mut self, buffer: &str, text: String) {
         if !self.buffer_exists(buffer) {
-            self.open_scratch(buffer);
-        }
-        if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
-            buf.append(text);
+            self.open_scratch(buffer, text);
+        } else {
+            if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
+                buf.append(text);
+            }
         }
         self.notify_view_update(self.clients_with_buffer(buffer));
     }
@@ -257,8 +271,8 @@ impl Core {
         self.debug(&format!("client left: {}", id));
     }
 
-    pub fn open_scratch(&mut self, name: &str) {
-        let buffer = Buffer::new_scratch(name.to_owned());
+    pub fn open_scratch(&mut self, name: &str, content: String) {
+        let buffer = Buffer::new_scratch(name.to_owned(), content);
         lock!(self).buffers.insert(name.to_owned(), buffer);
     }
 
@@ -311,7 +325,7 @@ impl Core {
         }
         if lock!(self).views.is_empty() {
             if lock!(self).buffers.is_empty() {
-                self.open_scratch(BUFFER_SCRATCH);
+                self.open_scratch(BUFFER_SCRATCH, String::new());
             }
             self.add_view(View::for_buffer(BUFFER_SCRATCH));
         }
@@ -353,7 +367,7 @@ impl Core {
         let exists = self.buffer_exists(name);
         let notify_change = if scratch {
             if !exists {
-                self.open_scratch(name);
+                self.open_scratch(name, String::new());
             }
             false
         } else if exists {
@@ -458,36 +472,74 @@ impl Core {
     }
 
     pub fn move_cursor(&mut self, client_id: usize, direction: CursorTarget, extend: bool) {
-        self.debug(&format!("MOVE {:?}", direction));
-        let mut selections = lock!(self).clients[&client_id].selections.clone();
-        for (_, ss) in selections.iter_mut() {
-            for (b, bss) in ss {
-                let buffer = &lock!(self).buffers[b];
-                for s in bss.iter_mut() {
-                    let coord = buffer.content.offset_to_coord(s.cursor);
-                    let mut nv = buffer.content.navigate(coord);
-                    match direction {
-                        CursorTarget::Left => nv.previous(),
-                        CursorTarget::Right => nv.next(),
-                        CursorTarget::Up => nv.previous_line(),
-                        CursorTarget::Down => nv.next_line(),
-                        CursorTarget::LineBegin => nv.line_begin(),
-                        CursorTarget::LineEnd => nv.line_end(),
-                        _ => todo!(),
-                    };
-                    if extend {
-                        s.cursor = nv.pos().offset;
-                    } else {
-                        s.anchor = nv.pos().offset;
-                    }
+        let ctx = lock!(self).clients[&client_id].clone();
+        let curview = ctx.view.borrow().key();
+        let mut selections = ctx.selections[&curview].clone();
+        for (b, bss) in selections.iter_mut() {
+            let buffer = &lock!(self).buffers[b];
+            for s in bss.iter_mut() {
+                let coord = buffer.content.offset_to_coord(s.cursor);
+                let mut nv = buffer.content.navigate(coord).unwrap();
+                match direction {
+                    CursorTarget::Left => nv.previous(),
+                    CursorTarget::Right => nv.next(),
+                    CursorTarget::Up => nv.previous_line(),
+                    CursorTarget::Down => nv.next_line(),
+                    CursorTarget::LineBegin => nv.line_begin(),
+                    CursorTarget::LineEnd => nv.line_end(),
+                    CursorTarget::Begin => nv.begin(),
+                    CursorTarget::End => nv.end(),
+                };
+                if !extend {
+                    s.anchor = nv.pos().offset;
                 }
+                s.cursor = nv.pos().offset;
             }
         }
-        lock!(self).clients.get_mut(&client_id).unwrap().selections = selections;
+        lock!(self)
+            .clients
+            .get_mut(&client_id)
+            .unwrap()
+            .selections
+            .insert(curview, selections);
     }
 }
 
 unsafe impl Send for Core {}
+
+struct PositionData {
+    offset: usize,
+    pos: Coords,
+}
+
+impl<'lua> rlua::ToLua<'lua> for PositionData {
+    fn to_lua(self, lua: rlua::Context<'lua>) -> rlua::Result<rlua::Value<'lua>> {
+        let t_pos = lua.create_table()?;
+        t_pos.set("c", self.pos.c)?;
+        t_pos.set("l", self.pos.l)?;
+
+        let t = lua.create_table()?;
+        t.set("offset", self.offset)?;
+        t.set("pos", t_pos)?;
+        Ok(rlua::Value::Table(t))
+    }
+}
+
+struct SelectionData {
+    anchor: PositionData,
+    cursor: PositionData,
+    text: String,
+}
+
+impl<'lua> rlua::ToLua<'lua> for SelectionData {
+    fn to_lua(self, lua: rlua::Context<'lua>) -> rlua::Result<rlua::Value<'lua>> {
+        let t = lua.create_table()?;
+        t.set("anchor", self.anchor)?;
+        t.set("cursor", self.cursor)?;
+        t.set("text", self.text)?;
+        Ok(rlua::Value::Table(t))
+    }
+}
 
 impl rlua::UserData for Core {
     fn add_methods<'lua, M: rlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -505,9 +557,46 @@ impl rlua::UserData for Core {
         });
 
         methods.add_method("get_context", |lua, this, client: usize| {
-            Ok(lock!(this).clients[&client].to_lua_table(lua))
+            let context = lock!(this).clients[&client].clone();
+            let view_key = context.view.borrow().key();
+            let sels = &context.selections[&view_key];
+
+            let view_t = lua.create_table()?;
+            view_t.set("key", view_key)?;
+
+            let selections_t = lua.create_table()?;
+            for (k, v) in sels {
+                let data: Vec<SelectionData> = v
+                    .iter()
+                    .map(|s| SelectionData {
+                        anchor: PositionData {
+                            offset: s.anchor,
+                            pos: this.get_coord(k, s.anchor).unwrap(),
+                        },
+                        cursor: PositionData {
+                            offset: s.cursor,
+                            pos: this.get_coord(k, s.cursor).unwrap(),
+                        },
+                        text: this.get_selected_text(k, s).unwrap_or_default(), // FIXME Option?
+                    })
+                    .collect();
+                selections_t.set(k.as_str(), data)?;
+            }
+
+            let t = lua.create_table()?;
+            t.set("view", view_t)?;
+            t.set("selections", selections_t)?;
+            Ok(t)
         });
 
+        methods.add_method_mut(
+            "scratch",
+            |_, this, (client, name, content): (usize, String, String)| {
+                this.open_scratch(&name, content);
+                this.edit(client, &name, true);
+                Ok(())
+            },
+        );
         methods.add_method_mut(
             "edit",
             |_, this, (client, name, scratch): (usize, String, bool)| {
@@ -515,29 +604,33 @@ impl rlua::UserData for Core {
                 Ok(())
             },
         );
+        methods.add_method_mut("append_to", |_, this, (buffer, text): (String, String)| {
+            this.append_to(&buffer, text);
+            Ok(())
+        });
 
-        methods.add_method_mut("move_left", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::Left, false))
+        methods.add_method_mut("move_left", |_, this, (client, extend): (usize, bool)| {
+            Ok(this.move_cursor(client, CursorTarget::Left, extend))
         });
         methods.add_method_mut("move_right", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::Right, false))
         });
-        methods.add_method_mut("move_up", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::Up, false))
+        methods.add_method_mut("move_up", |_, this, (client, extend): (usize, bool)| {
+            Ok(this.move_cursor(client, CursorTarget::Up, extend))
         });
-        methods.add_method_mut("move_down", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::Down, false))
+        methods.add_method_mut("move_down", |_, this, (client, extend): (usize, bool)| {
+            Ok(this.move_cursor(client, CursorTarget::Down, extend))
         });
-        methods.add_method_mut("line_begin", |_, this, client: usize| {
+        methods.add_method_mut("move_to_line_begin", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::LineBegin, false))
         });
-        methods.add_method_mut("line_end", |_, this, client: usize| {
+        methods.add_method_mut("move_to_line_end", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::LineEnd, false))
         });
-        methods.add_method_mut("begin", |_, this, client: usize| {
+        methods.add_method_mut("move_to_begin", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::Begin, false))
         });
-        methods.add_method_mut("end", |_, this, client: usize| {
+        methods.add_method_mut("move_to_end", |_, this, client: usize| {
             Ok(this.move_cursor(client, CursorTarget::End, false))
         });
     }
