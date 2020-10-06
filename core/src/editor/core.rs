@@ -490,10 +490,10 @@ impl Core {
                     CursorTarget::Begin => nv.begin(),
                     CursorTarget::End => nv.end(),
                 };
-                if !extend {
-                    s.anchor = nv.pos().offset;
-                }
                 s.cursor = nv.pos().offset;
+                if !extend {
+                    s.anchor = s.cursor
+                }
             }
         }
         lock!(self)
@@ -609,29 +609,29 @@ impl rlua::UserData for Core {
             Ok(())
         });
 
-        methods.add_method_mut("move_left", |_, this, (client, extend): (usize, bool)| {
+        methods.add_method_mut("move_left", |_, this, (client, extend)| {
             Ok(this.move_cursor(client, CursorTarget::Left, extend))
         });
-        methods.add_method_mut("move_right", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::Right, false))
+        methods.add_method_mut("move_right", |_, this, (client, extend)| {
+            Ok(this.move_cursor(client, CursorTarget::Right, extend))
         });
-        methods.add_method_mut("move_up", |_, this, (client, extend): (usize, bool)| {
+        methods.add_method_mut("move_up", |_, this, (client, extend)| {
             Ok(this.move_cursor(client, CursorTarget::Up, extend))
         });
-        methods.add_method_mut("move_down", |_, this, (client, extend): (usize, bool)| {
+        methods.add_method_mut("move_down", |_, this, (client, extend)| {
             Ok(this.move_cursor(client, CursorTarget::Down, extend))
         });
-        methods.add_method_mut("move_to_line_begin", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::LineBegin, false))
+        methods.add_method_mut("move_to_line_begin", |_, this, (client, extend)| {
+            Ok(this.move_cursor(client, CursorTarget::LineBegin, extend))
         });
-        methods.add_method_mut("move_to_line_end", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::LineEnd, false))
+        methods.add_method_mut("move_to_line_end", |_, this, (client, extend)| {
+            Ok(this.move_cursor(client, CursorTarget::LineEnd, extend))
         });
-        methods.add_method_mut("move_to_begin", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::Begin, false))
+        methods.add_method_mut("move_to_begin", |_, this, (client, extend)| {
+            Ok(this.move_cursor(client, CursorTarget::Begin, extend))
         });
-        methods.add_method_mut("move_to_end", |_, this, client: usize| {
-            Ok(this.move_cursor(client, CursorTarget::End, false))
+        methods.add_method_mut("move_to_end", |_, this, (client, extend)| {
+            Ok(this.move_cursor(client, CursorTarget::End, extend))
         });
     }
 }
