@@ -8,7 +8,7 @@ use crate::editor::Buffer;
 use ornament::Decorator;
 use remote::protocol::{
     notifications::{ViewParams, ViewParamsItem, ViewParamsLens},
-    Face, Text,
+    Face,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,7 +188,7 @@ impl View {
                 ViewItem::Lens(lens) => {
                     let buffer = &buffers[&lens.buffer];
                     let sels = selections.and_then(|ss| ss.get(&lens.buffer));
-                    let mut selected = HashMap::new();
+                    let mut selected: HashMap<usize, Vec<_>> = HashMap::new();
                     if let Some(ss) = sels {
                         for s in ss {
                             let start = buffer.content.offset_to_coord(s.begin()).unwrap();
@@ -208,9 +208,17 @@ impl View {
                                 }
                             };
                             if start.l == end.l {
-                                selected.insert(start.l - 1, (Some(start.c - 1), Some(end.c - 1)));
+                                let range = (Some(start.c - 1), Some(end.c - 1));
+                                selected
+                                    .entry(start.l - 1)
+                                    .and_modify(|e| e.push(range))
+                                    .or_insert(vec![range]);
                             } else if start.l == end.l - 1 && end.c == 1 {
-                                selected.insert(start.l - 1, (Some(start.c - 1), None));
+                                let range = (Some(start.c - 1), None);
+                                selected
+                                    .entry(start.l - 1)
+                                    .and_modify(|e| e.push(range))
+                                    .or_insert(vec![range]);
                             } else {
                                 for i in start.l..=end.l {
                                     let range = if i == start.l {
@@ -220,7 +228,10 @@ impl View {
                                     } else {
                                         (None, None)
                                     };
-                                    selected.insert(i - 1, range);
+                                    selected
+                                        .entry(i - 1)
+                                        .and_modify(|e| e.push(range))
+                                        .or_insert(vec![range]);
                                 }
                             }
                         }
@@ -231,22 +242,24 @@ impl View {
                         .enumerate()
                         .map(|(i, line)| {
                             let l = line.to_owned() + " ";
-                            if let Some(s) = selected.get(&i) {
-                                match *s {
-                                    (Some(start), Some(end)) => Decorator::with_text(&l)
-                                        .set(Face::Selection, start..end + 1)
-                                        .build(),
-                                    (Some(start), None) => Decorator::with_text(&l)
-                                        .set(Face::Selection, start..l.len())
-                                        .build(),
-                                    (None, Some(end)) => Decorator::with_text(&l)
-                                        .set(Face::Selection, 0..end + 1)
-                                        .build(),
-                                    (None, None) => Text::from(l.as_str()),
+                            let mut deco = Decorator::with_text(&l);
+                            if let Some(ranges) = selected.get(&i) {
+                                for range in ranges {
+                                    match *range {
+                                        (Some(start), Some(end)) => {
+                                            deco.set(Face::Selection, start..end + 1);
+                                        }
+                                        (Some(start), None) => {
+                                            deco.set(Face::Selection, start..l.len());
+                                        }
+                                        (None, Some(end)) => {
+                                            deco.set(Face::Selection, 0..end + 1);
+                                        }
+                                        _ => unreachable!(),
+                                    }
                                 }
-                            } else {
-                                Text::from(l.as_str())
                             }
+                            deco.build()
                         })
                         .collect();
                     current.lenses.push(ViewParamsLens {
