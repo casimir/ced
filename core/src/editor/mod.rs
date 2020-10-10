@@ -156,7 +156,6 @@ impl Editor {
         };
 
         let mut view = View::default();
-        editor.core.open_scratch(BUFFER_DEBUG, String::new());
         editor.core.debug(&format!(
             "command: {}",
             env::args().collect::<Vec<_>>().join(" ")
