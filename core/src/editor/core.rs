@@ -477,6 +477,10 @@ impl Core {
         let mut selections = ctx.selections[&curview].clone();
         for (b, bss) in selections.iter_mut() {
             let buffer = &lock!(self).buffers[b];
+            if buffer.content.len() == 1 {
+                // there is absolutly nowhere to move out to, let's bail out
+                continue;
+            }
             for s in bss.iter_mut() {
                 let coord = buffer.content.offset_to_coord(s.cursor);
                 let mut nv = buffer.content.navigate(coord).unwrap();
