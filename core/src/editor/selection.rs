@@ -1,7 +1,18 @@
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Selection {
     pub anchor: usize,
     pub cursor: usize,
+    pub(crate) target_col: usize,
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        Self {
+            anchor: Default::default(),
+            cursor: Default::default(),
+            target_col: 1,
+        }
+    }
 }
 
 impl Selection {

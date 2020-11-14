@@ -484,6 +484,7 @@ impl Core {
             for s in bss.iter_mut() {
                 let coord = buffer.content.offset_to_coord(s.cursor);
                 let mut nv = buffer.content.navigate(coord).unwrap();
+                nv.target_col = s.target_col;
                 match direction {
                     CursorTarget::Left => nv.previous(),
                     CursorTarget::Right => nv.next(),
@@ -495,6 +496,7 @@ impl Core {
                     CursorTarget::End => nv.end(),
                 };
                 s.cursor = nv.pos().offset;
+                s.target_col = nv.target_col;
                 if !extend {
                     s.anchor = s.cursor
                 }

@@ -1,3 +1,7 @@
+use std::cmp::min;
+
+use bstr::ByteSlice;
+
 use crate::editor::piece_table::{Coords, PieceTable, Position};
 
 const BEGIN: Coords = Coords { l: 1, c: 1 };
@@ -5,6 +9,7 @@ const BEGIN: Coords = Coords { l: 1, c: 1 };
 pub struct Navigator<'a> {
     pub table: &'a PieceTable,
     cursor: Coords,
+    pub(crate) target_col: usize,
 }
 
 impl Navigator<'_> {
@@ -17,6 +22,7 @@ impl Navigator<'_> {
             Some(Navigator {
                 table,
                 cursor: coords,
+                target_col: coords.c,
             })
         } else {
             None
@@ -28,10 +34,24 @@ impl Navigator<'_> {
     }
 
     pub fn pos(&self) -> Position {
+        let col_count = self
+            .table
+            .line_bytes(self.cursor.l)
+            .unwrap()
+            .graphemes()
+            .count()
+            + 1;
+        let cursor = Coords {
+            c: min(col_count, self.target_col),
+            ..self.cursor
+        };
         Position {
-            offset: self.table.coord_to_offset(self.cursor).unwrap(),
-            coords: self.cursor,
-            grapheme: self.table.char_at(self.cursor),
+            offset: self
+                .table
+                .coord_to_offset(cursor)
+                .expect(&format!("convert coordinates: {:?}", cursor)),
+            coords: cursor,
+            grapheme: self.table.char_at(cursor),
         }
     }
 
@@ -40,11 +60,13 @@ impl Navigator<'_> {
             self.cursor = Coords {
                 l: self.cursor.l + 1,
                 c: 1,
-            }
+            };
+            self.target_col = 1;
         } else {
             let offset = self.table.coord_to_offset(self.cursor).unwrap();
             if let Some(coord) = self.table.offset_to_coord(offset + 1) {
                 self.cursor = coord;
+                self.target_col = coord.c;
             }
         }
         self
@@ -59,6 +81,7 @@ impl Navigator<'_> {
             } else {
                 self.cursor.c -= 1;
             }
+            self.target_col = self.cursor.c;
         }
         self
     }
@@ -79,21 +102,25 @@ impl Navigator<'_> {
 
     pub fn line_begin(&mut self) -> &mut Self {
         self.cursor.c = 1;
+        self.target_col = self.cursor.c;
         self
     }
 
     pub fn line_end(&mut self) -> &mut Self {
         self.cursor.c = self.table.line_length(self.cursor.l);
+        self.target_col = self.cursor.c;
         self
     }
 
     pub fn begin(&mut self) -> &mut Self {
         self.cursor = BEGIN;
+        self.target_col = BEGIN.c;
         self
     }
 
     pub fn end(&mut self) -> &mut Self {
         self.cursor = self.table.max_coord();
+        self.target_col = self.cursor.c;
         self
     }
 }
