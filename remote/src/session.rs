@@ -13,7 +13,7 @@ lazy_static! {
 }
 
 #[cfg(unix)]
-const USER_ENV_VAR: &'static str = "LOGNAME";
+const USER_ENV_VAR: &'static str = "USER";
 #[cfg(windows)]
 const USER_ENV_VAR: &'static str = "USERNAME";
 
