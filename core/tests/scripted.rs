@@ -1,6 +1,7 @@
 mod helpers;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use ced::script::exec_script_oneshot;
 use ignore::Walk;
@@ -17,11 +18,23 @@ fn run_all_scripts() {
 
     let mut fails = 0;
     for script in scripts {
+        let now = Instant::now();
         let res = exec_script_oneshot(&script);
-        if let Err(e) = res {
-            println!("file: {}\n{}\n", script.display(), e);
-            fails += 1;
+        let timed_ms = now.elapsed().as_millis();
+        match res {
+            Ok(()) => {
+                println!("lua test {} ... ok ({} ms)", script.display(), timed_ms);
+            }
+            Err(e) => {
+                println!(
+                    "lua test {} ... ko ({} ms) {}",
+                    script.display(),
+                    timed_ms,
+                    e
+                );
+                fails += 1;
+            }
         }
     }
-    assert!(fails == 0, "some tests are failing");
+    assert!(fails == 0, format!("{} tests are failing", fails));
 }
