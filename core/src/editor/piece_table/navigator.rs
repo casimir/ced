@@ -37,7 +37,7 @@ impl Navigator<'_> {
         let col_count = self
             .table
             .line_bytes(self.cursor.l)
-            .unwrap()
+            .expect(&format!("get bytes for line {}", self.cursor.l))
             .graphemes()
             .count()
             + 1;
@@ -56,7 +56,9 @@ impl Navigator<'_> {
     }
 
     pub fn next(&mut self) -> &mut Self {
-        if self.table.char_at(self.cursor).map_or(false, |c| c == "\n") {
+        if self.cursor == self.table.max_coord() {
+            return self;
+        } else if self.table.char_at(self.cursor).map_or(false, |c| c == "\n") {
             self.cursor = Coords {
                 l: self.cursor.l + 1,
                 c: 1,

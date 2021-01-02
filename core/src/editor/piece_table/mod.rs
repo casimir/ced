@@ -316,7 +316,11 @@ impl PieceTable {
     }
 
     pub fn line_count(&self) -> usize {
-        self.newlines.len() + 1
+        if self.newlines.get(&self.max_offset()).is_some() {
+            self.newlines.len()
+        } else {
+            self.newlines.len() + 1
+        }
     }
 
     pub fn line_bytes(&self, n: usize) -> Option<Vec<u8>> {
@@ -395,7 +399,9 @@ impl PieceTable {
             } else {
                 0
             };
-            let lbs = self.line_bytes(coords.l).unwrap();
+            let lbs = self
+                .line_bytes(coords.l)
+                .expect(&format!("get bytes for line {}", coords.l));
             if coords.c == lbs.graphemes().count() + 1 {
                 // this is the newline character for this line
                 Some(line_offset + lbs.len())
