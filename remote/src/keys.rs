@@ -25,7 +25,7 @@ impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Key::*;
         match self {
-            Char(c) => write!(f, "{}", c),
+            Char(c) => write!(f, "{}", c.to_ascii_lowercase()),
 
             Backspace => f.write_str("bkspc"),
             Enter => f.write_str("ret"),
