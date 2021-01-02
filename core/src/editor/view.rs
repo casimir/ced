@@ -255,7 +255,9 @@ impl View {
                                         (None, Some(end)) => {
                                             deco.set(Face::Selection, 0..end);
                                         }
-                                        _ => unreachable!(),
+                                        (None, None) => {
+                                            deco.set(Face::Selection, 0..l.len());
+                                        }
                                     }
                                 }
                             }
