@@ -85,8 +85,6 @@ async fn start_client_and_server(session: Session) -> SyncClient {
     SyncClient::start(session).await.expect("start the client")
 }
 
-// reactivate when a windows CI with 1803+ is available
-#[cfg(unix)]
 #[test]
 fn connect_socket() {
     let session = Session::from_name("_test");
