@@ -475,6 +475,7 @@ impl Core {
         let ctx = lock!(self).clients[&client_id].clone();
         let curview = ctx.view.borrow().key();
         let mut selections = ctx.selections[&curview].clone();
+        let mut moved = false;
         for (b, bss) in selections.iter_mut() {
             let buffer = &lock!(self).buffers[b];
             if buffer.content.len() == 1 {
@@ -482,6 +483,7 @@ impl Core {
                 continue;
             }
             for s in bss.iter_mut() {
+                let ref original = s.clone();
                 let coord = buffer.content.offset_to_coord(s.cursor);
                 let mut nv = buffer.content.navigate(coord).unwrap();
                 nv.target_col = s.target_col;
@@ -500,6 +502,7 @@ impl Core {
                 if !extend {
                     s.anchor = s.cursor
                 }
+                moved |= s != original;
             }
         }
         lock!(self)
@@ -508,6 +511,9 @@ impl Core {
             .unwrap()
             .selections
             .insert(curview, selections);
+        if moved {
+            self.notify_view_update(vec![client_id]);
+        }
     }
 }
 
