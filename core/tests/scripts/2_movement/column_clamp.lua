@@ -10,7 +10,6 @@ end
 
 for _ = 1, 12, 1 do editor:move_right(env.client) end
 assert_sel("m")
-print(utils.stringify(editor:get_context(env.client).selections.testing[1]))
 editor:move_down(env.client)
 assert_sel("\n")
 editor:move_down(env.client)
