@@ -247,13 +247,13 @@ impl View {
                                 for range in ranges {
                                     match *range {
                                         (Some(start), Some(end)) => {
-                                            deco.set(Face::Selection, start..end + 1);
+                                            deco.set(Face::Selection, start..end);
                                         }
                                         (Some(start), None) => {
                                             deco.set(Face::Selection, start..l.len());
                                         }
                                         (None, Some(end)) => {
-                                            deco.set(Face::Selection, 0..end + 1);
+                                            deco.set(Face::Selection, 0..end);
                                         }
                                         _ => unreachable!(),
                                     }
