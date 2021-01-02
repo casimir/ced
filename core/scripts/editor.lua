@@ -55,7 +55,7 @@ end
 
 ---@param client_id integer
 ---@param name string
----@param content boolean
+---@param content string
 function Editor:scratch(client_id, name, content)
     if content == nil then content = "" end
     self.core:scratch(client_id, name, content)
