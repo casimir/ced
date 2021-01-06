@@ -8,7 +8,7 @@ edition = "2018"
 async-channel = "1.4"
 async-io = "1.0"
 async-net = "1.2"
-futures-lite = "1.4"
+futures-lite = "1.11"
 lazy_static = "1.4"
 log = "0.4"
 ornament = { version = "0.2", features = ["serde_support"] }
