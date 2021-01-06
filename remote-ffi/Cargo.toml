@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-futures-lite = "1.3"
+futures-lite = "1.11"
 remote = { path = "../remote", package = "ced-remote" }
 
 [build-dependencies]
