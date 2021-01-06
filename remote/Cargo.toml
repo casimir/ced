@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 async-channel = "1.4"
-async-io = "1.0"
+async-io = "1.1"
 async-net = "1.2"
 futures-lite = "1.4"
 lazy_static = "1.4"
