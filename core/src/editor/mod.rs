@@ -14,100 +14,25 @@ use std::path::PathBuf;
 
 pub use self::buffer::{Buffer, BufferSource};
 use self::command::default_commands;
-use self::core::Core;
+use self::core::{Core, Notifier};
 pub use self::core::{BUFFER_DEBUG, BUFFER_SCRATCH};
 use self::menu::Menu;
 pub use self::piece_table::Coords;
 use self::piece_table::PieceTable;
 use self::view::{Focus, Lens};
 pub use self::view::{View, ViewItem};
-use crate::server::BroadcastMessage;
-use futures_lite::*;
-use remote::jsonrpc::{Error, Id, JsonCodingError, Notification, Request, Response};
+use remote::jsonrpc::{Error, Id, JsonCodingError, Request, Response};
 use remote::protocol::{
     notifications::{self, Notification as _},
-    requests, Face, KeyEvent, Text, TextFragment,
+    requests, KeyEvent,
 };
 use remote::response;
-use smol::channel::Sender;
 
 pub struct EditorInfo<'a> {
     pub session: &'a str,
     pub cwd: &'a PathBuf,
     pub buffers: &'a [String],
     pub views: &'a [String],
-}
-
-#[derive(Clone)]
-pub struct Notifier {
-    sender: Sender<BroadcastMessage>,
-}
-
-impl Notifier {
-    pub fn broadcast<C>(&self, message: Notification, only_clients: C)
-    where
-        C: Into<Option<Vec<usize>>>,
-    {
-        let bm = match only_clients.into() {
-            Some(cs) => BroadcastMessage::for_clients(cs, message),
-            None => BroadcastMessage::new(message),
-        };
-        future::block_on(self.sender.send(bm)).expect("broadcast message");
-    }
-
-    pub fn notify(&self, client_id: usize, message: Notification) {
-        self.broadcast(message, vec![client_id]);
-    }
-
-    fn echo<C>(&self, client_id: C, text: &str, face: Face)
-    where
-        C: Into<Option<usize>>,
-    {
-        let params = Text::from(TextFragment {
-            text: text.to_owned(),
-            face,
-        });
-        let notif = notifications::Echo::new(params);
-        match client_id.into() {
-            Some(id) => self.notify(id, notif),
-            None => self.broadcast(notif, None),
-        }
-    }
-
-    pub fn message<C>(&self, client_id: C, text: &str)
-    where
-        C: Into<Option<usize>>,
-    {
-        self.echo(client_id, text, Face::Default);
-    }
-
-    pub fn error<C>(&self, client_id: C, text: &str)
-    where
-        C: Into<Option<usize>>,
-    {
-        self.echo(client_id, text, Face::Error);
-    }
-
-    pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
-        let params = notifications::InfoParams {
-            client: client_id.to_string(),
-            session: info.session.to_owned(),
-            cwd: info.cwd.display().to_string(),
-        };
-        self.notify(client_id, notifications::Info::new(params));
-    }
-
-    pub fn view_update(&self, params: Vec<(usize, notifications::ViewParams)>) {
-        for (client_id, np) in params {
-            self.notify(client_id, notifications::View::new(np));
-        }
-    }
-}
-
-impl From<Sender<BroadcastMessage>> for Notifier {
-    fn from(sender: Sender<BroadcastMessage>) -> Self {
-        Notifier { sender }
-    }
 }
 
 struct LuaResultEvents {

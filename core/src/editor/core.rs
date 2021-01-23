@@ -7,11 +7,79 @@ use std::{collections::HashMap, ops::Range};
 
 use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
-use crate::editor::{Buffer, Coords, EditorInfo, Notifier};
+use crate::editor::{Buffer, Coords, EditorInfo};
+use crate::server::BroadcastMessage;
 use crate::stackmap::StackMap;
+use futures_lite::*;
+use remote::jsonrpc::Notification;
+use remote::protocol::{
+    notifications::{self, Notification as _},
+    Face, Text, TextFragment,
+};
+use smol::channel::Sender;
 
 pub const BUFFER_DEBUG: &str = "*debug*";
 pub const BUFFER_SCRATCH: &str = "*scratch*";
+
+#[derive(Clone)]
+pub struct Notifier {
+    sender: Sender<BroadcastMessage>,
+}
+
+impl Notifier {
+    pub fn broadcast(&self, message: Notification, only_clients: impl Into<Option<Vec<usize>>>) {
+        let bm = match only_clients.into() {
+            Some(cs) => BroadcastMessage::for_clients(cs, message),
+            None => BroadcastMessage::new(message),
+        };
+        future::block_on(self.sender.send(bm)).expect("broadcast message");
+    }
+
+    pub fn notify(&self, client_id: usize, message: Notification) {
+        self.broadcast(message, vec![client_id]);
+    }
+
+    fn echo(&self, client_id: impl Into<Option<usize>>, text: &str, face: Face) {
+        let params = Text::from(TextFragment {
+            text: text.to_owned(),
+            face,
+        });
+        let notif = notifications::Echo::new(params);
+        match client_id.into() {
+            Some(id) => self.notify(id, notif),
+            None => self.broadcast(notif, None),
+        }
+    }
+
+    pub fn message(&self, client_id: impl Into<Option<usize>>, text: &str) {
+        self.echo(client_id, text, Face::Default);
+    }
+
+    pub fn error(&self, client_id: impl Into<Option<usize>>, text: &str) {
+        self.echo(client_id, text, Face::Error);
+    }
+
+    pub fn info_update(&self, client_id: usize, info: &EditorInfo) {
+        let params = notifications::InfoParams {
+            client: client_id.to_string(),
+            session: info.session.to_owned(),
+            cwd: info.cwd.display().to_string(),
+        };
+        self.notify(client_id, notifications::Info::new(params));
+    }
+
+    pub fn view_update(&self, params: Vec<(usize, notifications::ViewParams)>) {
+        for (client_id, np) in params {
+            self.notify(client_id, notifications::View::new(np));
+        }
+    }
+}
+
+impl From<Sender<BroadcastMessage>> for Notifier {
+    fn from(sender: Sender<BroadcastMessage>) -> Self {
+        Notifier { sender }
+    }
+}
 
 #[derive(Debug)]
 pub enum CursorTarget {
