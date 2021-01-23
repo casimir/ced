@@ -814,9 +814,9 @@ dependencies = [
 
 [[package]]
 name = "rbtset"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "334109959580a7a962e4e3a5e1d87b08127db2d09f0c4e5a486091c084824ad5"
+checksum = "bcca8d6f8c1222340c6d43c0aa419c8452564175749229da07ac67813d4a80da"
 
 [[package]]
 name = "rdrand"
