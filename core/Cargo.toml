@@ -22,7 +22,7 @@ futures-lite = "1.11"
 ignore = "0.4"
 log = "0.4"
 ornament = "0.2"
-smol = "1.0"
+smol = "1.2"
 rbtset = "1.0"
 regex = "1.4"
 remote = { path = "../remote", package = "ced-remote" }
