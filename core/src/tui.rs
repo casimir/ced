@@ -80,8 +80,6 @@ pub struct Term {
     connection: Connection,
     exit_pending: bool,
     last_size: (u16, u16),
-    show_diags: bool,
-    frame_num: usize,
 }
 
 impl Term {
@@ -91,8 +89,6 @@ impl Term {
             connection: Connection::new(session)?,
             exit_pending: false,
             last_size: terminal::size().expect("get terminal"),
-            show_diags: true,
-            frame_num: 0,
         };
         logline("new connection");
         for fname in filenames {
@@ -181,8 +177,6 @@ impl Term {
     }
 
     fn draw_view(&mut self) -> CTResult<()> {
-        self.frame_num += 1;
-        logline(&format!("REDRAW {}", self.frame_num));
         let mut stdout = io::stdout();
         let (width, height) = self.last_size;
         let state = self.connection.state();
@@ -244,14 +238,6 @@ impl Term {
             PrintStyledContent(style(text).reverse())
         )?;
 
-        if self.show_diags {
-            let diags = format!("frame: {}", self.frame_num);
-            queue!(
-                stdout,
-                cursor::MoveTo(width - diags.len() as u16, 0),
-                PrintStyledContent(style(diags).red())
-            )?;
-        }
         stdout.flush()?;
         Ok(())
     }
@@ -370,14 +356,6 @@ impl Term {
                     alt: true,
                     ..
                 } => self.exit_pending = true,
-                KeyEvent {
-                    key: Key::Char('d'),
-                    alt: true,
-                    ..
-                } => {
-                    self.show_diags = !self.show_diags;
-                    self.draw_view()?;
-                }
                 KeyEvent {
                     key: Key::Char('d'),
                     ctrl: true,
