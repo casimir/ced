@@ -35,23 +35,6 @@ pub struct EditorInfo<'a> {
     pub views: &'a [String],
 }
 
-struct LuaResultEvents {
-    redraw_status: bool,
-}
-
-impl<'lua> From<rlua::Table<'lua>> for LuaResultEvents {
-    fn from(table: rlua::Table<'lua>) -> LuaResultEvents {
-        macro_rules! bool {
-            ($t:ident, $k:expr) => {
-                $t.get::<_, bool>($k).ok().unwrap_or_default()
-            };
-        }
-        LuaResultEvents {
-            redraw_status: bool!(table, "redraw_status"),
-        }
-    }
-}
-
 fn key_to_lua<'a>(lua: rlua::Context<'a>, event: &KeyEvent) -> rlua::Result<rlua::Table<'a>> {
     let table = lua.create_table()?;
     table.set("ctrl", event.ctrl)?;
@@ -60,6 +43,38 @@ fn key_to_lua<'a>(lua: rlua::Context<'a>, event: &KeyEvent) -> rlua::Result<rlua
     table.set("value", event.key.to_string())?;
     table.set("display", event.to_string())?;
     Ok(table)
+}
+
+struct LuaEditor {
+    core: Core,
+}
+
+impl LuaEditor {
+    fn new(core: Core) -> LuaEditor {
+        LuaEditor { core }
+    }
+}
+
+impl rlua::UserData for LuaEditor {
+    fn add_methods<'lua, M: rlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut(
+            "set_status_line",
+            |_, this, (client, config): (usize, HashMap<String, rlua::Table>)| {
+                let mut items = Vec::new();
+                for v in config.values() {
+                    items.push(notifications::StatusParamsItem {
+                        index: v.get("index")?,
+                        text: v.get::<_, String>("text")?.into(),
+                    })
+                }
+                items.sort_by(|a, b| a.index.cmp(&b.index));
+                this.core
+                    .get_notifier()
+                    .notify(client, notifications::Status::new(items));
+                Ok(())
+            },
+        );
+    }
 }
 
 pub struct Editor {
@@ -99,7 +114,8 @@ impl Editor {
         });
         editor.core.add_view(view);
 
-        let lua_pipe = editor.core.clone();
+        let lg_core = editor.core.clone();
+        let lg_editor = LuaEditor::new(editor.core.clone());
         editor
             .lua
             .context(|lua: rlua::Context| {
@@ -110,7 +126,8 @@ impl Editor {
                     rtp.join("?.lua").display().to_string().replace(r"\", "/")
                 ))
                 .exec()?;
-                lua.globals().set("_CORE", lua_pipe)?;
+                lua.globals().set("_CORE", lg_core)?;
+                lua.globals().set("_EDITOR", lg_editor)?;
                 lua.load("require 'prelude'").exec()
             })
             .expect("load prelude script");
@@ -152,31 +169,6 @@ impl Editor {
             })
     }
 
-    fn send_status_update(&mut self, client_id: usize) {
-        let items: rlua::Result<_> = self.exec_lua("status_line", client_id, |lua| {
-            let config = lua
-                .load(&format!("editor:get_status_line({})", client_id))
-                .eval::<HashMap<String, rlua::Table>>()?;
-            let mut items = Vec::new();
-            for v in config.values() {
-                items.push(notifications::StatusParamsItem {
-                    index: v.get("index")?,
-                    text: v.get::<_, String>("text")?.into(),
-                })
-            }
-            Ok(items)
-        });
-        match items {
-            Ok(mut params) => {
-                params.sort_by(|a, b| a.index.cmp(&b.index));
-                self.core
-                    .get_notifier()
-                    .notify(client_id, notifications::Status::new(params))
-            }
-            Err(e) => self.core.error(client_id, "status line", &e.to_string()),
-        }
-    }
-
     pub fn add_client(&mut self, id: usize) {
         let info = EditorInfo {
             session: &self.session_name,
@@ -188,7 +180,6 @@ impl Editor {
         let _ = self.exec_lua("add_client", id, |lua| {
             lua.load(&format!("editor:add_client({})", id)).exec()
         });
-        self.send_status_update(id);
     }
 
     pub fn remove_client(&mut self, id: usize) {
@@ -202,12 +193,6 @@ impl Editor {
         let ids: Vec<usize> = self.stopped_clients.iter().cloned().collect();
         self.stopped_clients.clear();
         ids
-    }
-
-    fn dispatch_lua_result(&mut self, client_id: usize, result: LuaResultEvents) {
-        if result.redraw_status {
-            self.send_status_update(client_id);
-        }
     }
 
     pub fn handle(&mut self, client_id: usize, line: &str) -> Result<Response, JsonCodingError> {
@@ -359,16 +344,11 @@ impl Editor {
                     .load(&format!("editor.clients[{}].key_handler", client_id))
                     .eval::<rlua::Table>()?;
                 let handle_func = handler.get::<_, rlua::Function>("handle")?;
-                handle_func
-                    .call::<_, rlua::Table>((handler, key_to_lua(lua, &key)))
-                    .map(LuaResultEvents::from)
+                handle_func.call::<_, ()>((handler, key_to_lua(lua, &key)))
             });
-            match result {
-                Ok(res) => self.dispatch_lua_result(client_id, res),
-                Err(e) => {
-                    self.core.error(client_id, "key handler", &e.to_string());
-                    return Err(Error::internal_error(&e.to_string()));
-                }
+            if let Err(e) = result {
+                self.core.error(client_id, "key handler", &e.to_string());
+                return Err(Error::internal_error(&e.to_string()));
             }
         }
         Ok(())

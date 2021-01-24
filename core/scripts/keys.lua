@@ -94,19 +94,12 @@ function ModalHandler.new(client_id)
     local self = setmetatable({}, ModalHandler)
     self.client_id = client_id
     self.mode_stack = {"normal"}
-    self.redraw_status = false
     return self
 end
 
-function ModalHandler:enter_mode(mode)
-    table.insert(self.mode_stack, mode)
-    self.redraw_status = true
-end
+function ModalHandler:enter_mode(mode) table.insert(self.mode_stack, mode) end
 
-function ModalHandler:exit_mode()
-    table.remove(self.mode_stack)
-    self.redraw_status = true
-end
+function ModalHandler:exit_mode() table.remove(self.mode_stack) end
 
 function ModalHandler:curmode() return self.mode_stack[#self.mode_stack] end
 
@@ -116,7 +109,6 @@ function ModalHandler:set_status(key)
     if not status_line.mode then status_line.mode = {index = 90} end
     status_line.keys.text = key and key.display or ""
     status_line.mode.text = self.modes[self:curmode()].name
-    self.redraw_status = true
 end
 
 function ModalHandler:handle(key)
@@ -131,11 +123,10 @@ function ModalHandler:handle(key)
         handled = true
     end
 
-    if handled then self:set_status(key) end
-
-    local ret = {redraw_status = self.redraw_status}
-    self.redraw_status = false
-    return ret
+    if handled then
+        self:set_status(key)
+        editor:push_status_line(self.client_id)
+    end
 end
 
 M.ModalHandler = ModalHandler

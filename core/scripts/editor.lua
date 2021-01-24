@@ -23,6 +23,7 @@ M.ClientContext = ClientContext
 function Editor.new()
     local self = setmetatable({}, Editor)
     self.core = _CORE
+    self.inner = _EDITOR
     self.clients = {}
     return self
 end
@@ -44,6 +45,11 @@ function Editor:get_status_line(client_id)
         status_line[k] = {index = v.index, text = utils.asstring(v.text)}
     end
     return status_line
+end
+
+function Editor:push_status_line(client_id)
+    local config = self:get_status_line(client_id)
+    self.inner:set_status_line(client_id, config)
 end
 
 ---@param client_id integer
@@ -84,6 +90,7 @@ function Editor:add_client(client_id)
         },
         key_handler = keys.ModalHandler(client_id)
     }
+    self:push_status_line(client_id)
 end
 
 ---@param client_id integer

@@ -69,11 +69,12 @@ fn format_text(tf: &TextFragment) -> String {
 
 #[derive(Debug)]
 enum Event {
-    Input(CEvent),
-    Resize((u16, u16)),
     DrawMenu(Menu),
+    DrawStatus,
     DrawView,
     Error(String),
+    Input(CEvent),
+    Resize((u16, u16)),
 }
 
 pub struct Term {
@@ -137,11 +138,10 @@ impl Term {
                     logline(format!("new message: {:?}", msg));
                     use ConnectionEvent::*;
                     match msg {
-                        Menu(menu) => tx.send(Event::DrawMenu(menu)).await.expect("send event"),
-                        Echo(_) | Status(_) | View(_) => {
-                            tx.send(Event::DrawView).await.expect("send event")
-                        }
+                        Echo(_) | View(_) => tx.send(Event::DrawView).await.expect("send event"),
                         Info(_, _) => {}
+                        Menu(menu) => tx.send(Event::DrawMenu(menu)).await.expect("send event"),
+                        Status(_) => tx.send(Event::DrawStatus).await.expect("send event"),
                         ConnErr(msg) => tx.send(Event::Error(msg)).await.expect("send event"),
                         Noop => {}
                     }
@@ -155,11 +155,12 @@ impl Term {
                 logline(format!("new event: {:?}", event));
                 use Event::*;
                 match event {
-                    Input(ev) => self.handle_input(ev).expect("handle input"),
-                    Resize((w, h)) => self.resize(w, h).expect("resize"),
                     DrawMenu(menu) => self.draw_menu(&menu).expect("draw menu"),
                     DrawView => self.draw_view().expect("draw view"),
+                    DrawStatus => self.draw_status(true).expect("draw view"),
                     Error(msg) => self.error(&msg),
+                    Input(ev) => self.handle_input(ev).expect("handle input"),
+                    Resize((w, h)) => self.resize(w, h).expect("resize"),
                 }
                 if self.exit_pending {
                     break;
@@ -182,62 +183,34 @@ impl Term {
         let state = self.connection.state();
 
         queue!(stdout, Clear(ClearType::All))?;
-        {
-            let mut i = 0;
-            let mut content = Vec::new();
-            'outer: for item in &state.view {
-                let buffer = &item.buffer;
-                let coords = format!("{}:{}", item.start, item.end);
-                let padding = "-".repeat(width as usize - 5 - buffer.len() - coords.len());
-                content.push(format!("-[{}][{}]{}", buffer, coords, padding));
-                i += 1;
+        let mut i = 0;
+        let mut content = Vec::new();
+        'outer: for item in &state.view {
+            let buffer = &item.buffer;
+            let coords = format!("{}:{}", item.start, item.end);
+            let padding = "-".repeat(width as usize - 5 - buffer.len() - coords.len());
+            content.push(format!("-[{}][{}]{}", buffer, coords, padding));
+            i += 1;
 
-                for lens in &item.lenses {
-                    for line in &lens.lines {
-                        if i == (height - 1) {
-                            break 'outer;
-                        }
-                        let rendered = line.render(format_text);
-                        let line_view = if line.text_len() > width as usize {
-                            &rendered[..width as usize]
-                        } else {
-                            &rendered
-                        };
-                        content.push(line_view.to_string());
-                        i += 1;
+            for lens in &item.lenses {
+                for line in &lens.lines {
+                    if i == (height - 1) {
+                        break 'outer;
                     }
+                    let rendered = line.render(format_text);
+                    let line_view = if line.text_len() > width as usize {
+                        &rendered[..width as usize]
+                    } else {
+                        &rendered
+                    };
+                    content.push(line_view.to_string());
+                    i += 1;
                 }
             }
-            queue!(stdout, cursor::MoveTo(0, 0), Print(content.join("\r\n")))?;
         }
+        queue!(stdout, cursor::MoveTo(0, 0), Print(content.join("\r\n")))?;
 
-        let echo = state.echo.unwrap_or_default();
-        let status = state
-            .status
-            .iter()
-            .map(|item| item.text.plain())
-            .collect::<Vec<String>>()
-            .join("·");
-        let text = if echo.text_len() >= width as usize {
-            echo.render(format_text)
-        } else if echo.text_len() + status.len() >= width as usize {
-            let skip = echo.text_len() - width as usize + 1;
-            format!("{} {}", echo.render(format_text), &status[skip..])
-        } else {
-            let padding = width as usize - echo.text_len() - status.len();
-            format!(
-                "{}{}{}",
-                echo.render(format_text),
-                " ".repeat(padding),
-                status
-            )
-        };
-        queue!(
-            stdout,
-            cursor::MoveTo(0, height),
-            PrintStyledContent(style(text).reverse())
-        )?;
-
+        self.draw_status(false)?; // TODO don't ClearAll and don't redraw each time
         stdout.flush()?;
         Ok(())
     }
@@ -284,6 +257,44 @@ impl Term {
             }
         }
         stdout.flush()?;
+        Ok(())
+    }
+
+    fn draw_status(&mut self, flush: bool) -> CTResult<()> {
+        let mut stdout = io::stdout();
+        let (width, height) = self.last_size;
+        let state = self.connection.state();
+
+        let echo = state.echo.unwrap_or_default();
+        let status = state
+            .status
+            .iter()
+            .map(|item| item.text.plain())
+            .collect::<Vec<String>>()
+            .join("·");
+        let text = if echo.text_len() >= width as usize {
+            echo.render(format_text)
+        } else if echo.text_len() + status.len() >= width as usize {
+            let skip = echo.text_len() - width as usize + 1;
+            format!("{} {}", echo.render(format_text), &status[skip..])
+        } else {
+            let padding = width as usize - echo.text_len() - status.len();
+            format!(
+                "{}{}{}",
+                echo.render(format_text),
+                " ".repeat(padding),
+                status
+            )
+        };
+        queue!(
+            stdout,
+            cursor::MoveTo(0, height),
+            PrintStyledContent(style(text).reverse())
+        )?;
+
+        if flush {
+            stdout.flush()?;
+        }
         Ok(())
     }
 
