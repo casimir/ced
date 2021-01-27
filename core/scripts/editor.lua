@@ -47,9 +47,34 @@ function Editor:get_status_line(client_id)
     return status_line
 end
 
+---@param client_id integer
 function Editor:push_status_line(client_id)
     local config = self:get_status_line(client_id)
     self.inner:set_status_line(client_id, config)
+end
+
+---@param client_id integer
+---@param lines string[]
+function Editor:show_hint(client_id, lines, framed)
+    local width = utils.max_length(lines)
+    if framed then
+        for i, line in ipairs(lines) do
+            if i == 1 then
+                lines[i] = string.format("╭─ %s %s─╮", line,
+                                         string.rep("─", width - #line - 2))
+            else
+                local padded = line .. string.rep(" ", width - #line)
+                lines[i] = string.format("│ %s │", padded)
+            end
+        end
+        table.insert(lines, "╰─" .. string.rep("─", width) .. "─╯")
+    else
+        for i, line in ipairs(lines) do
+            lines[i] = line .. string.rep(" ", width - #line)
+        end
+    end
+
+    self.inner:show_hint(client_id, lines)
 end
 
 ---@param client_id integer

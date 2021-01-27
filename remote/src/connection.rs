@@ -44,6 +44,7 @@ pub enum ConnectionEvent {
     ConnErr(String),
     Noop,
     Echo(Text),
+    Hint(notifications::HintParams),
     Info(String, String),
     Menu(Menu),
     Status(notifications::StatusParams),
@@ -64,12 +65,17 @@ pub struct ConnectionState {
 
 impl ConnectionState {
     fn event_update(&mut self, event: &ClientEvent) -> Option<ConnectionEvent> {
+        // TODO check if ConnectionEvent is really useful
         if let ClientEvent::Notification(notif) = event {
             match notif.method.as_str() {
                 "echo" => notif.params::<Text>().ok().unwrap_or(None).map(|text| {
                     self.echo = Some(text.clone());
                     ConnectionEvent::Echo(text)
                 }),
+                "hint" => notif
+                    .params::<notifications::HintParams>()
+                    .ok()?
+                    .map(|params| ConnectionEvent::Hint(params)),
                 "info" => notif
                     .params::<notifications::InfoParams>()
                     .ok()

@@ -57,7 +57,7 @@ impl LuaEditor {
 
 impl rlua::UserData for LuaEditor {
     fn add_methods<'lua, M: rlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut(
+        methods.add_method(
             "set_status_line",
             |_, this, (client, config): (usize, HashMap<String, rlua::Table>)| {
                 let mut items = Vec::new();
@@ -71,6 +71,18 @@ impl rlua::UserData for LuaEditor {
                 this.core
                     .get_notifier()
                     .notify(client, notifications::Status::new(items));
+                Ok(())
+            },
+        );
+        methods.add_method(
+            "show_hint",
+            |_, this, (client, lines): (usize, Vec<String>)| {
+                let params = notifications::HintParams {
+                    text: lines.iter().map(|l| l.as_str().into()).collect(),
+                };
+                this.core
+                    .get_notifier()
+                    .notify(client, notifications::Hint::new(params));
                 Ok(())
             },
         );

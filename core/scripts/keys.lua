@@ -8,12 +8,14 @@ setmetatable(ModalHandler, {__call = function(cls, ...) return cls.new(...) end}
 local function make_goto_mappings(extend)
     return {
         ["h"] = {
+            desc = "line begin",
             fn = function(mh)
                 mh:exit_mode()
                 return editor:move_to_line_begin(mh.client_id, extend)
             end
         },
         ["l"] = {
+            desc = "line end",
             fn = function(mh)
                 mh:exit_mode()
                 return editor:move_to_line_end(mh.client_id, extend)
@@ -86,8 +88,18 @@ ModalHandler.modes = {
         title = "",
         mappings = {["esc"] = {fn = function(mh) mh:exit_mode() end}}
     },
-    moveto = {name = "g", title = "", mappings = make_goto_mappings(false)},
-    extendto = {name = "G", title = "", mappings = make_goto_mappings(true)}
+    moveto = {
+        name = "g",
+        title = "move to",
+        hint = true,
+        mappings = make_goto_mappings(false)
+    },
+    extendto = {
+        name = "G",
+        title = "extend to",
+        hint = true,
+        mappings = make_goto_mappings(true)
+    }
 }
 
 function ModalHandler.new(client_id)
@@ -97,11 +109,29 @@ function ModalHandler.new(client_id)
     return self
 end
 
-function ModalHandler:enter_mode(mode) table.insert(self.mode_stack, mode) end
+function ModalHandler:enter_mode(mode)
+    table.insert(self.mode_stack, mode)
+    self:show_mode_hint(mode)
+end
 
 function ModalHandler:exit_mode() table.remove(self.mode_stack) end
 
 function ModalHandler:curmode() return self.mode_stack[#self.mode_stack] end
+
+function ModalHandler:show_mode_hint(mode)
+    local modecfg = self.modes[mode]
+    if not modecfg.hint then return end
+
+    local lines = {modecfg.title}
+    for k, v in pairs(modecfg.mappings) do
+        if k ~= "default" then
+            local line = string.format("%s: %s", k, v.desc or "")
+            table.insert(lines, line)
+        end
+    end
+
+    editor:show_hint(self.client_id, lines, true)
+end
 
 function ModalHandler:set_status(key)
     local status_line = editor.clients[self.client_id].status_line

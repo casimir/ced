@@ -61,10 +61,16 @@ pub mod notifications {
     }
 
     notification!(Echo, "echo", Text);
+    notification!(Hint, "hint", HintParams);
     notification!(Info, "info", InfoParams);
     notification!(Menu, "menu", MenuParams);
     notification!(Status, "status", StatusParams);
     notification!(View, "view", ViewParams);
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct HintParams {
+        pub text: Vec<Text>,
+    }
 
     #[derive(Serialize, Deserialize)]
     pub struct InfoParams {

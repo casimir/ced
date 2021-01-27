@@ -30,4 +30,11 @@ local function stringify(val)
 end
 M.stringify = stringify
 
+local function max_length(values)
+    local max = 0
+    for _, it in ipairs(values) do if #it > max then max = #it end end
+    return max
+end
+M.max_length = max_length
+
 return M

@@ -9,7 +9,7 @@ use crossterm::{
     Result as CTResult,
 };
 use futures_lite::*;
-use remote::protocol::{Face, Key, KeyEvent, TextFragment};
+use remote::protocol::{notifications::HintParams, Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
 use smol::channel::bounded;
 
@@ -69,6 +69,7 @@ fn format_text(tf: &TextFragment) -> String {
 
 #[derive(Debug)]
 enum Event {
+    DrawHint(HintParams),
     DrawMenu(Menu),
     DrawStatus,
     DrawView,
@@ -139,6 +140,7 @@ impl Term {
                     use ConnectionEvent::*;
                     match msg {
                         Echo(_) | View(_) => tx.send(Event::DrawView).await.expect("send event"),
+                        Hint(hint) => tx.send(Event::DrawHint(hint)).await.expect("send event"),
                         Info(_, _) => {}
                         Menu(menu) => tx.send(Event::DrawMenu(menu)).await.expect("send event"),
                         Status(_) => tx.send(Event::DrawStatus).await.expect("send event"),
@@ -157,6 +159,7 @@ impl Term {
                 match event {
                     DrawMenu(menu) => self.draw_menu(&menu).expect("draw menu"),
                     DrawView => self.draw_view().expect("draw view"),
+                    DrawHint(h) => self.draw_hint(&h).expect("draw hint"),
                     DrawStatus => self.draw_status(true).expect("draw view"),
                     Error(msg) => self.error(&msg),
                     Input(ev) => self.handle_input(ev).expect("handle input"),
@@ -211,6 +214,31 @@ impl Term {
         queue!(stdout, cursor::MoveTo(0, 0), Print(content.join("\r\n")))?;
 
         self.draw_status(false)?; // TODO don't ClearAll and don't redraw each time
+        stdout.flush()?;
+        Ok(())
+    }
+
+    fn draw_hint(&mut self, hint: &HintParams) -> CTResult<()> {
+        let mut stdout = io::stdout();
+        let (width_w, height_w) = self.last_size;
+
+        let width_h = hint.text[0].plain().chars().count();
+        let x = width_w - width_h as u16;
+        let mut y = height_w - hint.text.len() as u16;
+        for line in &hint.text {
+            // TODO clamp to screen size (or less?)
+            let text = line.render(format_text);
+            queue!(
+                stdout,
+                cursor::MoveTo(x, y),
+                PrintStyledContent(style(text).reverse())
+            )?;
+            y += 1;
+            if y == height_w {
+                break;
+            }
+        }
+
         stdout.flush()?;
         Ok(())
     }

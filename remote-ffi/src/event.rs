@@ -40,6 +40,7 @@ impl From<ConnectionEvent> for CedEvent {
             ConnectionEvent::Echo(text) => CedEvent::Echo {
                 message: raw!(CedTextIterator::from(&text)),
             },
+            ConnectionEvent::Hint(_hint) => todo!(),
             ConnectionEvent::Info(client, session) => CedEvent::Info {
                 client: cstring!(client),
                 session: cstring!(session),
@@ -57,7 +58,7 @@ impl From<ConnectionEvent> for CedEvent {
             ConnectionEvent::View(view) => CedEvent::View {
                 items: raw!(ViewIterator::from(&view)),
             },
-            ConnectionEvent::ConnErr(msg) => todo!(),
+            ConnectionEvent::ConnErr(_msg) => todo!(),
             ConnectionEvent::Noop => todo!(),
         }
     }
