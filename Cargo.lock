@@ -37,16 +37,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
-name = "async-barrier"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06293698675eb72e1155867e5982f199d6b6c230dca35bc5ffd9852f470c22a"
-dependencies = [
- "async-mutex",
- "event-listener",
-]
-
-[[package]]
 name = "async-channel"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -59,34 +49,35 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.1.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f00fda8e8e666dd84f7d76a3389122363fec82977b1f8498699795cfae30e77"
+checksum = "eb877970c7b440ead138f6321a3b5395d6061183af779340b65e20c0fede9146"
 dependencies = [
  "async-task",
  "concurrent-queue",
  "fastrand",
  "futures-lite",
  "once_cell",
+ "vec-arena",
 ]
 
 [[package]]
 name = "async-fs"
-version = "1.2.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3361d088d288026af2cb21b9d9b8444bf0ba73bce56a4fc4b5742ba88f82ee74"
+checksum = "8b3ca4f8ff117c37c278a2f7415ce9be55560b846b5bc4412aaa5d29c1c3dae2"
 dependencies = [
+ "async-lock",
  "blocking",
  "futures-lite",
 ]
 
 [[package]]
 name = "async-io"
-version = "1.0.2"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c59a2cdfa8ad60643ec249f7cdbd6a9b0163c07cbd3f2b79e07d2c267ac81a70"
+checksum = "ba0529565cae1f732d469f06fedff0f75d0e27eb22129ddf5707cef8bd7a2cfe"
 dependencies = [
- "cfg-if 0.1.10",
  "concurrent-queue",
  "fastrand",
  "futures-lite",
@@ -95,7 +86,6 @@ dependencies = [
  "once_cell",
  "parking",
  "polling",
- "socket2",
  "vec-arena",
  "waker-fn",
  "wepoll-sys-stjepang",
@@ -104,21 +94,9 @@ dependencies = [
 
 [[package]]
 name = "async-lock"
-version = "2.1.2"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b123db9bf64e4c4840d5b1985fdb4f69fbe50a4fc95e895d11ff49931ce9802"
-dependencies = [
- "async-barrier",
- "async-mutex",
- "async-rwlock",
- "async-semaphore",
-]
-
-[[package]]
-name = "async-mutex"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66941c2577c4fa351e4ce5fdde8f86c69b88d623f3b955be1bc7362a23434632"
+checksum = "1996609732bde4a9988bc42125f55f2af5f3c36370e27c778d5191a4a1b63bfb"
 dependencies = [
  "event-listener",
 ]
@@ -152,29 +130,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-rwlock"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8978b5ae008b5177da07a1bf1bfbe428f9bdb970c3fca0e92ed1c1930d7f34"
-dependencies = [
- "async-mutex",
- "event-listener",
-]
-
-[[package]]
-name = "async-semaphore"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d2be5973230861689460806b8db059bbd8bcb507cabaa71646ae89f5b2f2ee"
-dependencies = [
- "event-listener",
-]
-
-[[package]]
 name = "async-task"
-version = "3.0.0"
+version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
+checksum = "e91831deabf0d6d7ec49552e489aed63b7456a7a3c46cff62adad428110b0af0"
 
 [[package]]
 name = "atomic-waker"
@@ -445,9 +404,9 @@ dependencies = [
 
 [[package]]
 name = "event-listener"
-version = "2.4.0"
+version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cd41440ae7e4734bbd42302f63eaba892afc93a3912dad84006247f0dedb0e"
+checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 
 [[package]]
 name = "fastrand"
@@ -1004,9 +963,9 @@ checksum = "fbee7696b84bbf3d89a1c2eccff0850e3047ed46bfcd2e92c29a2d074d57e252"
 
 [[package]]
 name = "smol"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ee895b9f862d88d6bad9d82f6ce727710d177338e697057a691ea684800d4a6"
+checksum = "a57a5a01356bb64b9011293aaa7bdfe332aa1f3699098d71a3c5a51a5b688215"
 dependencies = [
  "async-channel",
  "async-executor",
@@ -1170,9 +1129,9 @@ checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
 
 [[package]]
 name = "wepoll-sys-stjepang"
-version = "1.0.6"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fd319e971980166b53e17b1026812ad66c6b54063be879eb182342b55284694"
+checksum = "1fdfbb03f290ca0b27922e8d48a0997b4ceea12df33269b9f75e713311eb178d"
 dependencies = [
  "cc",
 ]
