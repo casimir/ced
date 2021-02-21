@@ -11,7 +11,7 @@ use crossterm::{
 use futures_lite::*;
 use remote::protocol::{notifications::HintParams, Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
-use smol::channel::bounded;
+use smol::{channel::bounded, LocalExecutor};
 
 fn logline(msg: impl std::fmt::Display) {
     use std::fs::OpenOptions;
@@ -104,11 +104,12 @@ impl Term {
         execute!(io::stdout(), terminal::EnterAlternateScreen, cursor::Hide)
             .expect("prepare terminal state");
 
-        smol::block_on(async {
+        let ex = LocalExecutor::new();
+        future::block_on(ex.run(async {
             let (tx, rx) = bounded(100);
 
             let events_tx = tx.clone();
-            smol::spawn(async move {
+            ex.spawn(async move {
                 let tx = events_tx;
                 let mut reader = EventStream::new();
                 while let Some(event) = reader.next().await {
@@ -131,9 +132,9 @@ impl Term {
             .detach();
 
             let (mut messages, request_loop) = self.connection.connect().await;
-            smol::spawn(request_loop).detach();
+            ex.spawn(request_loop).detach();
             let messages_tx = tx.clone();
-            smol::spawn(async move {
+            ex.spawn(async move {
                 let tx = messages_tx;
                 while let Some(msg) = messages.next().await {
                     logline(format!("new message: {:?}", msg));
@@ -169,7 +170,7 @@ impl Term {
                     break;
                 }
             }
-        });
+        }));
     }
 
     fn debug(&mut self, message: &str) {

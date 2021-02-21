@@ -7,7 +7,10 @@ use crate::editor::Editor;
 use futures_lite::*;
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, ServerListener, ServerStream, Session};
-use smol::channel::{bounded, Receiver, Sender};
+use smol::{
+    channel::{bounded, Receiver, Sender},
+    LocalExecutor,
+};
 
 #[derive(Debug)]
 pub struct BroadcastMessage {
@@ -64,13 +67,13 @@ impl Server {
         future::block_on(stream.write_all(format!("{}\n", message).as_bytes()))
     }
 
-    async fn handle_events(session: String, receiver: Receiver<Event>) {
+    async fn handle_events(ex: Arc<LocalExecutor>, session: String, receiver: Receiver<Event>) {
         let (bsender, breceiver) = bounded(100);
         let mut editor = Editor::new(&session, bsender);
         let clients = Arc::new(RwLock::new(HashMap::<usize, ServerStream>::new()));
 
         let bclients = Arc::clone(&clients);
-        smol::spawn(async move {
+        ex.spawn(async move {
             while let Ok(bm) = breceiver.recv().await {
                 let mut index = bclients.write().expect("lock client index");
                 for (client_id, stream) in index.iter_mut() {
@@ -151,7 +154,11 @@ impl Server {
         Ok(())
     }
 
-    async fn serve(session: Session, sender: Sender<Event>) -> io::Result<()> {
+    async fn serve(
+        ex: Arc<LocalExecutor>,
+        session: Session,
+        sender: Sender<Event>,
+    ) -> io::Result<()> {
         let mut next_client_id = FIRST_CLIENT_ID;
         let listener = ServerListener::bind(&session).await?;
         let mut incoming = listener.incoming();
@@ -163,17 +170,20 @@ impl Server {
             sender
                 .send(Event::Join((next_client_id, stream.clone())))
                 .await;
-            smol::spawn(Self::read_client(next_client_id, stream, sender)).detach();
+            ex.spawn(Self::read_client(next_client_id, stream, sender))
+                .detach();
             next_client_id += 1;
         }
         Ok(())
     }
 
     pub fn run(&self) -> io::Result<()> {
-        smol::block_on(async {
+        let ex = Arc::new(LocalExecutor::new());
+        future::block_on(ex.run(async {
             let (sender, receiver) = bounded(100);
-            smol::spawn(Self::serve(self.session.clone(), sender)).detach();
-            Self::handle_events(self.session.to_string(), receiver).await;
+            ex.spawn(Self::serve(ex.clone(), self.session.clone(), sender))
+                .detach();
+            Self::handle_events(ex.clone(), self.session.to_string(), receiver).await;
 
             log::info!("no more client, exiting...");
             if let ConnectionMode::Socket(path) = &self.session.mode {
@@ -185,6 +195,6 @@ impl Server {
                 }
             }
             Ok(())
-        })
+        }))
     }
 }

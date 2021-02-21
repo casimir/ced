@@ -88,7 +88,7 @@ async fn start_client_and_server(session: Session) -> SyncClient {
 #[test]
 fn connect_socket() {
     let session = Session::from_name("_test");
-    smol::block_on(async {
+    future::block_on(async {
         let mut client = start_client_and_server(session).await;
         client.drain_notifications().await;
         assert_view_state(&client.state.view);
@@ -98,7 +98,7 @@ fn connect_socket() {
 #[test]
 fn connect_tcp() {
     let session = Session::from_name("@:7357");
-    smol::block_on(async {
+    future::block_on(async {
         let mut client = start_client_and_server(session).await;
         client.drain_notifications().await;
         assert_view_state(&client.state.view);

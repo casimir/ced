@@ -6,7 +6,7 @@ use futures_lite::*;
 use remote::{protocol::requests::EditParams, Client, Request, Session};
 use smol::{
     channel::{bounded, Sender},
-    Unblock,
+    LocalExecutor, Unblock,
 };
 
 const CLIENT_ID: usize = 1;
@@ -60,11 +60,12 @@ impl StdioClient {
     }
 
     pub fn run(&self) -> io::Result<()> {
-        smol::block_on(async {
+        let ex = LocalExecutor::new();
+        future::block_on(ex.run(async {
             let stdin = Unblock::new(std::io::stdin());
             let mut stdout = Unblock::new(std::io::stdout());
             let requests_tx = self.requests.clone();
-            smol::spawn(async move {
+            ex.spawn(async move {
                 let mut lines = io::BufReader::new(stdin).lines();
                 while let Some(maybe_line) = lines.next().await {
                     match maybe_line {
@@ -78,7 +79,7 @@ impl StdioClient {
             })
             .detach();
             let (mut events, request_loop) = self.client.run().await?;
-            smol::spawn(request_loop).detach();
+            ex.spawn(request_loop).detach();
             while let Some(event) = events.next().await {
                 match event {
                     Ok(msg) => stdout.write_all(msg.to_string().as_bytes()).await?,
@@ -86,6 +87,6 @@ impl StdioClient {
                 }
             }
             Ok(())
-        })
+        }))
     }
 }
