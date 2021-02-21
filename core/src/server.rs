@@ -67,7 +67,7 @@ impl Server {
         future::block_on(stream.write_all(format!("{}\n", message).as_bytes()))
     }
 
-    async fn handle_events(ex: Arc<LocalExecutor>, session: String, receiver: Receiver<Event>) {
+    async fn handle_events(ex: Arc<LocalExecutor<'_>>, session: String, receiver: Receiver<Event>) {
         let (bsender, breceiver) = bounded(100);
         let mut editor = Editor::new(&session, bsender);
         let clients = Arc::new(RwLock::new(HashMap::<usize, ServerStream>::new()));
@@ -155,7 +155,7 @@ impl Server {
     }
 
     async fn serve(
-        ex: Arc<LocalExecutor>,
+        ex: Arc<LocalExecutor<'_>>,
         session: Session,
         sender: Sender<Event>,
     ) -> io::Result<()> {
