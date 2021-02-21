@@ -5,7 +5,7 @@ authors = ["Martin Chaine <martin@casimir.me>"]
 edition = "2018"
 
 [dependencies]
-async-channel = "1.5"
+async-channel = "1.6"
 async-io = "1.0"
 async-net = "1.5"
 futures-lite = "1.11"
