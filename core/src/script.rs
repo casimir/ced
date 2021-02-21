@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use crate::editor::Editor;
-use smol::channel::unbounded;
+use async_channel::unbounded;
 
 const CLIENT_ID: usize = 1;
 

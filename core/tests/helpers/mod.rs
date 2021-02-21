@@ -1,12 +1,12 @@
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
+use async_channel::{bounded, Receiver};
 use ced::editor::Editor;
 use ced::remote::jsonrpc::Notification;
 use ced::remote::protocol::notifications::ViewParams;
 use ced::server::BroadcastMessage;
 use futures_lite::*;
-use smol::channel::{bounded, Receiver};
 
 pub fn root() -> PathBuf {
     let mut root = std::env::current_exe().unwrap();

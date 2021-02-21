@@ -1,5 +1,7 @@
 use std::io::{self, Write};
 
+use async_channel::bounded;
+use async_executor::LocalExecutor;
 use crossterm::{
     cursor,
     event::{Event as CEvent, EventStream, KeyCode as CKeyCode, KeyModifiers as CKeyModifiers},
@@ -11,7 +13,6 @@ use crossterm::{
 use futures_lite::*;
 use remote::protocol::{notifications::HintParams, Face, Key, KeyEvent, TextFragment};
 use remote::{Connection, ConnectionEvent, Menu, Session};
-use smol::{channel::bounded, LocalExecutor};
 
 fn logline(msg: impl std::fmt::Display) {
     use std::fs::OpenOptions;

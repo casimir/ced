@@ -2,12 +2,11 @@ use std::io::BufRead;
 use std::thread;
 
 use crate::editor::Editor;
+use async_channel::{bounded, Sender};
+use async_executor::LocalExecutor;
+use blocking::Unblock;
 use futures_lite::*;
 use remote::{protocol::requests::EditParams, Client, Request, Session};
-use smol::{
-    channel::{bounded, Sender},
-    LocalExecutor, Unblock,
-};
 
 const CLIENT_ID: usize = 1;
 

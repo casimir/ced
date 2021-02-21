@@ -10,13 +10,13 @@ use crate::editor::view::{Focus, Lens, View};
 use crate::editor::{Buffer, Coords, EditorInfo};
 use crate::server::BroadcastMessage;
 use crate::stackmap::StackMap;
+use async_channel::Sender;
 use futures_lite::*;
 use remote::jsonrpc::Notification;
 use remote::protocol::{
     notifications::{self, Notification as _},
     Face, Text, TextFragment,
 };
-use smol::channel::Sender;
 
 pub const BUFFER_DEBUG: &str = "*debug*";
 pub const BUFFER_SCRATCH: &str = "*scratch*";

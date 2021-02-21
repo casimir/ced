@@ -5,16 +5,16 @@ authors = ["Martin Chaine <martin@casimir.me>"]
 edition = "2018"
 
 [dependencies]
-async-channel = "1.5"
-async-io = "1.0"
-async-net = "1.5"
-futures-lite = "1.11"
-lazy_static = "1.4"
+async-channel = "~1.6"
+async-io = "~1.1"
+async-net = "~1.5"
+futures-lite = "~1.11"
+lazy_static = "~1.4"
 log = "0.4"
 ornament = { version = "0.2", features = ["serde_support"] }
-regex = "1.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+regex = "~1.4"
+serde = { version = "~1.0", features = ["derive"] }
+serde_json = "~1.0"
 
 [target.'cfg(windows)'.dependencies]
 uds_windows  = "0.1"

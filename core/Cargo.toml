@@ -14,17 +14,19 @@ default = ["term"]
 term = ["crossterm"]
 
 [dependencies]
+async-channel = "~1.6"
+async-executor = "~1.4"
+blocking = "~1.0"
 bstr = "0.2"
-clap = "2.33"
-dirs = "3.0"
+clap = "~2.33"
+dirs = "~3.0"
 env_logger = "0.8"
-futures-lite = "1.11"
+futures-lite = "~1.11"
 ignore = "0.4"
 log = "0.4"
 ornament = "0.2"
-smol = "1.1"
-rbtset = "1.0"
-regex = "1.4"
+rbtset = "~1.0"
+regex = "~1.4"
 remote = { path = "../remote", package = "ced-remote" }
 rlua = "0.17"
 

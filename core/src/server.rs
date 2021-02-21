@@ -4,13 +4,11 @@ use std::fs;
 use std::sync::{Arc, RwLock};
 
 use crate::editor::Editor;
+use async_channel::{bounded, Receiver, Sender};
+use async_executor::LocalExecutor;
 use futures_lite::*;
 use remote::jsonrpc::Notification;
 use remote::{ConnectionMode, ServerListener, ServerStream, Session};
-use smol::{
-    channel::{bounded, Receiver, Sender},
-    LocalExecutor,
-};
 
 #[derive(Debug)]
 pub struct BroadcastMessage {
