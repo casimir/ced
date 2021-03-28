@@ -86,10 +86,10 @@ pub struct Term {
 }
 
 impl Term {
-    pub fn new(session: Session, filenames: &[&str]) -> io::Result<Term> {
+    pub fn new(session: Session, filenames: &[&str]) -> Term {
         logline("----------");
         let mut term = Term {
-            connection: Connection::new(session)?,
+            connection: Connection::new(session),
             exit_pending: false,
             last_size: terminal::size().expect("get terminal"),
         };
@@ -97,7 +97,7 @@ impl Term {
         for fname in filenames {
             term.connection.edit(fname.to_string(), false);
         }
-        Ok(term)
+        term
     }
 
     pub fn start(&mut self) {

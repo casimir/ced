@@ -25,13 +25,7 @@ pub unsafe extern "C" fn ced_connection_create(session: *const c_char) -> *mut C
         return ptr::null_mut();
     }
 
-    let connection = match Connection::new(session) {
-        Ok(c) => c,
-        Err(e) => {
-            set_last_error(e);
-            return ptr::null_mut();
-        }
-    };
+    let connection = Connection::new(session);
     let (events, request_loop) = future::block_on(connection.connect());
     std::thread::spawn(|| future::block_on(request_loop));
     let (tx, rx) = mpsc::channel();

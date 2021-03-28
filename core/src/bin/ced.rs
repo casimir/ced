@@ -98,7 +98,7 @@ fn main() -> io::Result<()> {
             }
             Mode::json => {
                 ensure_session(&session)?;
-                StdioClient::new(session)?.run()
+                StdioClient::new(session).run()
             }
             Mode::script => exec_scripts(&filenames),
             Mode::server => {
@@ -113,7 +113,7 @@ fn main() -> io::Result<()> {
             Mode::term => {
                 use ced::tui::Term;
                 ensure_session(&session)?;
-                Term::new(session, &filenames)?.start();
+                Term::new(session, &filenames).start();
                 Ok(())
             }
         }

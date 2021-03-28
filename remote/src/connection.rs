@@ -1,4 +1,3 @@
-use std::io;
 use std::sync::{Arc, RwLock};
 
 use crate::client::{Client, ClientEventResult, ClientEventStream};
@@ -132,14 +131,14 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(session: Session) -> io::Result<Connection> {
-        let (client, requests) = Client::new(session)?;
-        Ok(Connection {
+    pub fn new(session: Session) -> Connection {
+        let (client, requests) = Client::new(session);
+        Connection {
             client,
             state_lock: Default::default(),
             requests,
             next_request_id: 0,
-        })
+        }
     }
 
     pub fn state(&self) -> ConnectionState {

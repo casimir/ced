@@ -17,10 +17,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(session: Session) -> io::Result<(Client, Sender<Request>)> {
+    pub fn new(session: Session) -> (Client, Sender<Request>) {
         let (requests_tx, requests) = unbounded();
         let client = Client { session, requests };
-        Ok((client, requests_tx))
+        (client, requests_tx)
     }
 
     pub async fn run(&self) -> io::Result<(ClientEventStream, impl Future<Output = ()>)> {

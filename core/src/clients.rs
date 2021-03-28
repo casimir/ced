@@ -53,9 +53,9 @@ pub struct StdioClient {
 }
 
 impl StdioClient {
-    pub fn new(session: Session) -> io::Result<StdioClient> {
-        let (client, requests) = Client::new(session)?;
-        Ok(StdioClient { client, requests })
+    pub fn new(session: Session) -> StdioClient {
+        let (client, requests) = Client::new(session);
+        StdioClient { client, requests }
     }
 
     pub fn run(&self) -> io::Result<()> {

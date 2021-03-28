@@ -42,7 +42,7 @@ struct SyncClient {
 
 impl SyncClient {
     pub async fn start(session: Session) -> io::Result<SyncClient> {
-        let (client, _) = Client::new(session)?;
+        let (client, _) = Client::new(session);
         let (events, _) = client.run().await?;
         Ok(SyncClient {
             events,
