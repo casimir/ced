@@ -309,7 +309,7 @@ impl fmt::Display for Response {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ClientEvent {
     Notification(Notification),

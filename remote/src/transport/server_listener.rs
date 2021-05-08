@@ -31,10 +31,12 @@ impl ServerListener {
         use self::ServerListener::*;
         match self {
             Socket(inner) => {
+                log::trace!("polling for a new socket stream");
                 let (stream, _) = inner.accept().await?;
                 Ok(ServerStream::Socket(stream))
             }
             Tcp(inner) => {
+                log::trace!("polling for a new TCP stream");
                 let (stream, _) = inner.accept().await?;
                 Ok(ServerStream::Tcp(stream))
             }
@@ -49,10 +51,12 @@ impl<'a> Stream for Incoming<'a> {
     type Item = io::Result<ServerStream>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        log::trace!("poll incoming");
         let future = self.0.accept();
         pin!(future);
 
         let socket = ready!(future.poll(cx))?;
+        log::trace!("accepted a new stream");
         Poll::Ready(Some(Ok(socket)))
     }
 }

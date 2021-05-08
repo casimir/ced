@@ -30,6 +30,7 @@ impl AsyncRead for ServerStream {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
+        log::trace!("polling for read");
         use ServerStream::*;
         unsafe {
             match Pin::get_unchecked_mut(self) {
@@ -46,6 +47,7 @@ impl AsyncWrite for ServerStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        log::trace!("polling for write");
         use ServerStream::*;
         unsafe {
             match Pin::get_unchecked_mut(self) {
@@ -56,6 +58,7 @@ impl AsyncWrite for ServerStream {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        log::trace!("polling for flush");
         use ServerStream::*;
         unsafe {
             match Pin::get_unchecked_mut(self) {
@@ -66,6 +69,7 @@ impl AsyncWrite for ServerStream {
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        log::trace!("polling for close");
         use ServerStream::*;
         unsafe {
             match Pin::get_unchecked_mut(self) {

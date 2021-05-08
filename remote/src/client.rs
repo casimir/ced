@@ -25,15 +25,18 @@ impl Client {
 
     pub async fn run(&self) -> io::Result<(ClientEventStream, impl Future<Output = ()>)> {
         let mut requests_rx = self.requests.clone();
+        log::trace!("opening stream for {}", &self.session.mode);
         let stream = ServerStream::new(&self.session.mode).await?;
         let mut writer = stream.clone();
         let request_loop = async move {
             while let Some(message) = requests_rx.next().await {
+                log::trace!("writing client request");
                 // TODO error
                 let _ = writer.write_all(format!("{}\n", message).as_bytes()).await;
             }
         };
         fn parse_line(x: io::Result<String>) -> Result<ClientEvent, JsonCodingError> {
+            log::trace!("polled a new client event");
             // TODO handle io::Error (eg: closed connection)
             x.expect("parse line").parse()
         }

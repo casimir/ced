@@ -55,7 +55,10 @@ impl SyncClient {
             Ok(ev) => ev.is_notification(),
             _ => false,
         };
+        // FIXME deadlock with async-io > 1.1.3
+        log::trace!("starting to drain queued notifications");
         while let Some(ev) = self.events.next().await {
+            log::trace!("checking event: {:?}", ev);
             if !is_notification(&ev) {
                 break;
             }
@@ -97,6 +100,7 @@ fn connect_socket() {
 
 #[test]
 fn connect_tcp() {
+    let _ = env_logger::builder().is_test(true).try_init();
     let session = Session::from_name("@:7357");
     future::block_on(async {
         let mut client = start_client_and_server(session).await;

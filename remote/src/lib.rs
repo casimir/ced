@@ -45,11 +45,17 @@ pub fn start_daemon(session: &Session) -> io::Result<u32> {
     let bin = find_bin();
     let session_arg = format!("--session={}", session.mode);
     let args = vec!["--mode=server", &session_arg];
+    let stderr = if std::env::var("CED_FWSTDERR") == Ok(String::from("1")) {
+        log::debug!("forwarding stderr from daemon to client");
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    };
     let prg = Command::new(&bin)
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(stderr)
         .spawn()?;
     let pid = prg.id();
 

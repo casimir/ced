@@ -4,7 +4,7 @@ use std::fs;
 use std::sync::{Arc, RwLock};
 
 use crate::editor::Editor;
-use async_channel::{bounded, Receiver, Sender};
+use async_channel::{unbounded, Receiver, Sender};
 use async_executor::LocalExecutor;
 use futures_lite::*;
 use remote::jsonrpc::Notification;
@@ -42,6 +42,7 @@ impl BroadcastMessage {
 
 const FIRST_CLIENT_ID: usize = 1;
 
+#[derive(Clone, Debug)]
 enum Event {
     Join((usize, ServerStream)),
     Leave(usize),
@@ -66,13 +67,16 @@ impl Server {
     }
 
     async fn handle_events(ex: Arc<LocalExecutor<'_>>, session: String, receiver: Receiver<Event>) {
-        let (bsender, breceiver) = bounded(100);
+        let (bsender, breceiver) = unbounded();
         let mut editor = Editor::new(&session, bsender);
         let clients = Arc::new(RwLock::new(HashMap::<usize, ServerStream>::new()));
 
         let bclients = Arc::clone(&clients);
+        log::trace!("spawning broadcast handler task");
         ex.spawn(async move {
+            log::trace!("spawned broadcast handler task");
             while let Ok(bm) = breceiver.recv().await {
+                log::trace!("broadcast event: {:?}", bm);
                 let mut index = bclients.write().expect("lock client index");
                 for (client_id, stream) in index.iter_mut() {
                     if bm.should_notify(*client_id) {
@@ -86,7 +90,9 @@ impl Server {
         })
         .detach();
 
+        log::trace!("starting client event loop");
         while let Ok(event) = receiver.recv().await {
+            log::trace!("client event: {:?}", event);
             let mut is_leave_event = false;
             match event {
                 Event::Join((client_id, stream)) => {
@@ -146,9 +152,14 @@ impl Server {
             log::trace!("read event for {}: {:?}", client_id, line);
             sender
                 .send(Event::Message((client_id, line.unwrap())))
-                .await;
+                .await
+                .unwrap_or_else(|e| log::error!("{}", e));
         }
-        sender.send(Event::Leave(client_id)).await;
+        log::trace!("ending connection handler: {}", client_id);
+        sender
+            .send(Event::Leave(client_id))
+            .await
+            .unwrap_or_else(|e| log::error!("{}", e));
         Ok(())
     }
 
@@ -162,23 +173,30 @@ impl Server {
         let mut incoming = listener.incoming();
         // notify readiness to a potential awaiting client
         println!();
+        log::trace!("ready to accept incoming connections");
         while let Some(stream) = incoming.next().await {
+            log::trace!("incoming connection");
             let stream = stream.expect("error while accepting a new client");
             let sender = sender.clone();
+            log::trace!("connection ready");
             sender
                 .send(Event::Join((next_client_id, stream.clone())))
-                .await;
+                .await
+                .unwrap_or_else(|e| log::error!("{}", e));
+            log::trace!("spawning connection handler: {}", next_client_id);
             ex.spawn(Self::read_client(next_client_id, stream, sender))
                 .detach();
             next_client_id += 1;
         }
+        log::trace!("stopped to accept incoming connections");
         Ok(())
     }
 
     pub fn run(&self) -> io::Result<()> {
         let ex = Arc::new(LocalExecutor::new());
+        log::trace!("spawning server task");
         future::block_on(ex.run(async {
-            let (sender, receiver) = bounded(100);
+            let (sender, receiver) = unbounded();
             ex.spawn(Self::serve(ex.clone(), self.session.clone(), sender))
                 .detach();
             Self::handle_events(ex.clone(), self.session.to_string(), receiver).await;
