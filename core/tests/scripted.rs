@@ -36,5 +36,5 @@ fn run_all_scripts() {
             }
         }
     }
-    assert!(fails == 0, format!("{} tests are failing", fails));
+    assert!(fails == 0, "{} tests are failing", fails);
 }

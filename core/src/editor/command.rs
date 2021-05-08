@@ -108,8 +108,8 @@ pub fn default_commands() -> HashMap<String, Menu> {
                         .map(String::from)
                 })
                 .map(|fpath| MenuEntry {
-                    key: fpath.to_string(),
-                    label: fpath.to_string(),
+                    key: fpath.clone(),
+                    label: fpath,
                     description: None,
                     action: |key, editor, client_id| {
                         let params = requests::EditParams {

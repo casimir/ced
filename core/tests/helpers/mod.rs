@@ -31,9 +31,8 @@ impl State {
     }
 
     fn update(&mut self, message: &Notification) {
-        match message.method.as_str() {
-            "view" => self.view = message.params().unwrap().unwrap(),
-            _ => {}
+        if message.method.as_str() == "view" {
+            self.view = message.params().unwrap().unwrap()
         }
     }
 

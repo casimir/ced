@@ -2,13 +2,13 @@ use std::env::current_dir;
 use std::fs::{self, File};
 use std::io::Read;
 use std::ops::Index;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::editor::view::Focus;
 use crate::editor::PieceTable;
 
-fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
+fn find_uniq_name(path: &Path, acc: &str, path_set: &[PathBuf]) -> String {
     let head = path.parent().unwrap();
     let tail = path.file_name().unwrap();
     let matches = path_set
@@ -28,7 +28,7 @@ fn find_uniq_name(path: &PathBuf, acc: &str, path_set: &[PathBuf]) -> String {
                 new_path_set.push(new_pb);
             }
         }
-        find_uniq_name(&head.to_owned(), &new_acc, &new_path_set)
+        find_uniq_name(&head, &new_acc, &new_path_set)
     } else {
         new_acc
     }
@@ -78,13 +78,13 @@ impl Buffer {
         }
     }
 
-    pub fn new_file(filename: &PathBuf) -> Buffer {
+    pub fn new_file(filename: &Path) -> Buffer {
         let absolute_path = if filename.is_absolute() {
-            filename.clone()
+            filename.to_owned()
         } else {
             let mut full_path = current_dir().unwrap();
-            full_path.push(filename.clone());
-            full_path.as_path().canonicalize().unwrap()
+            full_path.push(filename);
+            full_path.canonicalize().unwrap()
         };
 
         let mut file = File::open(&absolute_path).unwrap();

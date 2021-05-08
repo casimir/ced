@@ -13,9 +13,9 @@ lazy_static! {
 }
 
 #[cfg(unix)]
-const USER_ENV_VAR: &'static str = "USER";
+const USER_ENV_VAR: &str = "USER";
 #[cfg(windows)]
-const USER_ENV_VAR: &'static str = "USERNAME";
+const USER_ENV_VAR: &str = "USERNAME";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionMode {
@@ -47,7 +47,7 @@ impl FromStr for ConnectionMode {
         if let Some(caps) = RE_ADDR.captures(s) {
             let address = caps
                 .name("address")
-                .and_then(|m| Some(m.as_str()))
+                .map(|m| m.as_str())
                 .unwrap_or("127.0.0.1");
             let port = caps.name("port").unwrap().as_str();
             let sock_addr = format!("{}:{}", address, port)

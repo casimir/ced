@@ -212,13 +212,13 @@ impl View {
                                 selected
                                     .entry(start.l - 1)
                                     .and_modify(|e| e.push(range))
-                                    .or_insert(vec![range]);
+                                    .or_insert_with(|| vec![range]);
                             } else if start.l == end.l - 1 && end.c == 1 {
                                 let range = (Some(start.c - 1), None);
                                 selected
                                     .entry(start.l - 1)
                                     .and_modify(|e| e.push(range))
-                                    .or_insert(vec![range]);
+                                    .or_insert_with(|| vec![range]);
                             } else {
                                 for i in start.l..=end.l {
                                     let range = if i == start.l {
@@ -231,7 +231,7 @@ impl View {
                                     selected
                                         .entry(i - 1)
                                         .and_modify(|e| e.push(range))
-                                        .or_insert(vec![range]);
+                                        .or_insert_with(|| vec![range]);
                                 }
                             }
                         }

@@ -319,18 +319,12 @@ pub enum ClientEvent {
 impl ClientEvent {
     pub fn is_notification(&self) -> bool {
         use self::ClientEvent::*;
-        match self {
-            Notification(_) => true,
-            _ => false,
-        }
+        matches!(self, Notification(_))
     }
 
     pub fn is_response(&self) -> bool {
         use self::ClientEvent::*;
-        match self {
-            Response(_) => true,
-            _ => false,
-        }
+        matches!(self, Response(_))
     }
 }
 

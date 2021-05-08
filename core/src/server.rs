@@ -145,7 +145,7 @@ impl Server {
     ) -> io::Result<()> {
         let mut lines = io::BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
-            if let Err(_) = line {
+            if line.is_err() {
                 // connection reset
                 break;
             }

@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, env::current_dir};
@@ -259,10 +259,8 @@ impl Core {
     fn append_to(&mut self, buffer: &str, text: String) {
         if !self.buffer_exists(buffer) {
             self.open_scratch(buffer, text);
-        } else {
-            if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
-                buf.append(text);
-            }
+        } else if let Some(buf) = lock!(self).buffers.get_mut(buffer) {
+            buf.append(text);
         }
         self.notify_view_update(self.clients_with_buffer(buffer));
     }
@@ -328,7 +326,7 @@ impl Core {
                     selections,
                 }
             };
-            state.clients.insert(id, context.clone());
+            state.clients.insert(id, context);
         }
         self.debug(&format!("new client: {}", id));
         self.notifier.info_update(id, info);
@@ -344,7 +342,7 @@ impl Core {
         lock!(self).buffers.insert(name.to_owned(), buffer);
     }
 
-    pub fn open_file(&mut self, buffer_name: &str, filename: &PathBuf) {
+    pub fn open_file(&mut self, buffer_name: &str, filename: &Path) {
         let buffer = Buffer::new_file(filename);
         lock!(self).buffers.insert(buffer_name.to_owned(), buffer);
     }
@@ -551,7 +549,7 @@ impl Core {
                 continue;
             }
             for s in bss.iter_mut() {
-                let ref original = s.clone();
+                let original = &s.clone();
                 let coord = buffer.content.offset_to_coord(s.cursor);
                 let mut nv = buffer.content.navigate(coord).unwrap();
                 nv.target_col = s.target_col;
@@ -690,28 +688,36 @@ impl rlua::UserData for Core {
         });
 
         methods.add_method_mut("move_left", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::Left, extend))
+            this.move_cursor(client, CursorTarget::Left, extend);
+            Ok(())
         });
         methods.add_method_mut("move_right", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::Right, extend))
+            this.move_cursor(client, CursorTarget::Right, extend);
+            Ok(())
         });
         methods.add_method_mut("move_up", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::Up, extend))
+            this.move_cursor(client, CursorTarget::Up, extend);
+            Ok(())
         });
         methods.add_method_mut("move_down", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::Down, extend))
+            this.move_cursor(client, CursorTarget::Down, extend);
+            Ok(())
         });
         methods.add_method_mut("move_to_line_begin", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::LineBegin, extend))
+            this.move_cursor(client, CursorTarget::LineBegin, extend);
+            Ok(())
         });
         methods.add_method_mut("move_to_line_end", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::LineEnd, extend))
+            this.move_cursor(client, CursorTarget::LineEnd, extend);
+            Ok(())
         });
         methods.add_method_mut("move_to_begin", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::Begin, extend))
+            this.move_cursor(client, CursorTarget::Begin, extend);
+            Ok(())
         });
         methods.add_method_mut("move_to_end", |_, this, (client, extend)| {
-            Ok(this.move_cursor(client, CursorTarget::End, extend))
+            this.move_cursor(client, CursorTarget::End, extend);
+            Ok(())
         });
     }
 }

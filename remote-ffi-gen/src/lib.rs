@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Deserialize;
-use toml;
 
 fn to_snake_case(sym: &str) -> String {
     let mut snake = String::new();

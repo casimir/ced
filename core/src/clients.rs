@@ -24,7 +24,6 @@ pub fn start_standalone(filenames: &[&str]) {
             .command_edit(CLIENT_ID, &params)
             .map_err(|err| log::error!("could not open file '{}': {}", fname, err));
     }
-    let rx = rx.clone();
     thread::spawn(move || loop {
         if let Ok(bm) = future::block_on(rx.recv()) {
             if bm.should_notify(CLIENT_ID) {

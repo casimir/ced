@@ -35,18 +35,15 @@ pub mod notifications {
         const METHOD: &'static str;
         type Params: serde::Serialize;
 
-        fn new<P>(p: P) -> JNotification
-        where
-            P: Into<Self::Params>,
-        {
+        fn new(p: impl Into<Self::Params>) -> JNotification {
             let params: Self::Params = p.into();
             JNotification::new(Self::METHOD, params)
-                .expect(&format!("new {} notification", Self::METHOD))
+                .unwrap_or_else(|_| panic!("new {} notification", Self::METHOD))
         }
 
         fn new_noarg() -> JNotification {
             JNotification::new(Self::METHOD, ())
-                .expect(&format!("new {} notification", Self::METHOD))
+                .unwrap_or_else(|_| panic!("new {} notification", Self::METHOD))
         }
     }
 
@@ -128,16 +125,15 @@ pub mod requests {
         type Params: serde::Serialize;
         type Result;
 
-        fn new<P>(id: Id, p: P) -> JRequest
-        where
-            P: Into<Self::Params>,
-        {
+        fn new(id: Id, p: impl Into<Self::Params>) -> JRequest {
             let params: Self::Params = p.into();
-            JRequest::new(id, Self::METHOD, params).expect(&format!("new {} request", Self::METHOD))
+            JRequest::new(id, Self::METHOD, params)
+                .unwrap_or_else(|_| panic!("new {} request", Self::METHOD))
         }
 
         fn new_noarg(id: Id) -> JRequest {
-            JRequest::new(id, Self::METHOD, ()).expect(&format!("new {} request", Self::METHOD))
+            JRequest::new(id, Self::METHOD, ())
+                .unwrap_or_else(|_| panic!("new {} request", Self::METHOD))
         }
     }
 

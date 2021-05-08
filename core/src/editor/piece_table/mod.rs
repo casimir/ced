@@ -3,7 +3,6 @@ mod position;
 
 use std::cmp::{max, Ordering};
 use std::collections::BTreeSet;
-use std::iter::FromIterator;
 
 use crate::editor::diff::{diff, Diff};
 use crate::editor::range::{OffsetRange, Range};
@@ -330,7 +329,7 @@ impl PieceTable {
             let max_len = self.len();
             self.range(&OffsetRange::new(
                 0,
-                *self.newlines.iter().nth(0).unwrap_or(&max_len),
+                *self.newlines.iter().next().unwrap_or(&max_len),
             ))
         } else {
             let start = self.newlines.iter().nth(n - 2).unwrap();
@@ -373,7 +372,7 @@ impl PieceTable {
         Some(match preceding_lines.last() {
             Some(&nli) => {
                 let line = self.line_bytes(lineno).unwrap();
-                let indices = BTreeSet::from_iter(line.grapheme_indices().map(|(i, _, _)| i));
+                let indices: BTreeSet<_> = line.grapheme_indices().map(|(i, _, _)| i).collect();
                 let col = indices.range(..offset - nli).count();
                 Coords { l: lineno, c: col }
             }
@@ -401,7 +400,7 @@ impl PieceTable {
             };
             let lbs = self
                 .line_bytes(coords.l)
-                .expect(&format!("get bytes for line {}", coords.l));
+                .unwrap_or_else(|| panic!("get bytes for line {}", coords.l));
             if coords.c == lbs.graphemes().count() + 1 {
                 // this is the newline character for this line
                 Some(line_offset + lbs.len())
@@ -415,10 +414,10 @@ impl PieceTable {
     }
 
     pub fn max_offset(&self) -> usize {
-        if self.len() > 0 {
-            self.len() - 1
-        } else {
+        if self.is_empty() {
             0
+        } else {
+            self.len() - 1
         }
     }
 
@@ -431,10 +430,10 @@ impl PieceTable {
         let end = self
             .newlines
             .range(offset..)
-            .nth(0)
+            .next()
             .map_or_else(|| self.len(), |&nl| nl);
         self.range(&OffsetRange::new(offset, max(end - offset, 1)))
-            .and_then(|l| l.graphemes().nth(0).map(ToOwned::to_owned))
+            .and_then(|l| l.graphemes().next().map(ToOwned::to_owned))
     }
 
     pub fn char_at(&self, coords: impl Into<Coords>) -> Option<String> {

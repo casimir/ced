@@ -22,7 +22,7 @@ pub use self::session::{ConnectionMode, Session};
 pub use self::transport::{ServerListener, ServerStream};
 
 pub fn find_bin() -> String {
-    env::var("CED_BIN").unwrap_or(
+    env::var("CED_BIN").unwrap_or_else(|_| {
         env::current_exe()
             .map(|mut exe| {
                 exe.pop();
@@ -37,8 +37,8 @@ pub fn find_bin() -> String {
                     String::from("ced")
                 }
             })
-            .unwrap_or(String::from("ced")),
-    )
+            .unwrap_or_else(|_| String::from("ced"))
+    })
 }
 
 pub fn start_daemon(session: &Session) -> io::Result<u32> {

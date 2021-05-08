@@ -62,15 +62,11 @@ impl SyncClient {
             if !is_notification(&ev) {
                 break;
             }
-            match ev.unwrap() {
-                ClientEvent::Notification(noti) => match noti.method.as_str() {
-                    "view" => {
-                        self.state.view = noti.params().unwrap().unwrap();
-                        break; // FIXME don't stop on special case
-                    }
-                    _ => {}
-                },
-                _ => {}
+            if let ClientEvent::Notification(noti) = ev.unwrap() {
+                if let "view" = noti.method.as_str() {
+                    self.state.view = noti.params().unwrap().unwrap();
+                    break; // FIXME don't stop on special case
+                }
             }
         }
     }

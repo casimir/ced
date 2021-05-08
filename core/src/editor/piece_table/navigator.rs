@@ -37,7 +37,7 @@ impl Navigator<'_> {
         let col_count = self
             .table
             .line_bytes(self.cursor.l)
-            .expect(&format!("get bytes for line {}", self.cursor.l))
+            .unwrap_or_else(|| panic!("get bytes for line {}", self.cursor.l))
             .graphemes()
             .count()
             + 1;
@@ -49,7 +49,7 @@ impl Navigator<'_> {
             offset: self
                 .table
                 .coord_to_offset(cursor)
-                .expect(&format!("convert coordinates: {:?}", cursor)),
+                .unwrap_or_else(|| panic!("convert coordinates: {:?}", cursor)),
             coords: cursor,
             grapheme: self.table.char_at(cursor),
         }

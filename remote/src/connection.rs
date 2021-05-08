@@ -74,7 +74,7 @@ impl ConnectionState {
                 "hint" => notif
                     .params::<notifications::HintParams>()
                     .ok()?
-                    .map(|params| ConnectionEvent::Hint(params)),
+                    .map(ConnectionEvent::Hint),
                 "info" => notif
                     .params::<notifications::InfoParams>()
                     .ok()
