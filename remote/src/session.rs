@@ -68,8 +68,7 @@ pub struct Session {
 impl Session {
     fn build_root() -> PathBuf {
         let mut app_dir = env::temp_dir();
-        app_dir.push("ced");
-        app_dir.push(env::var(USER_ENV_VAR).unwrap());
+        app_dir.push(format!("ced-{}", env::var(USER_ENV_VAR).unwrap()));
         app_dir
     }
 
