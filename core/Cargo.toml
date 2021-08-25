@@ -20,8 +20,8 @@ blocking = "~1.0"
 bstr = "0.2"
 clap = "~2.33"
 dirs = "~3.0"
-env_logger = "0.8"
-futures-lite = "~1.11"
+env_logger = "0.9"
+futures-lite = "~1.12"
 ignore = "0.4"
 log = "0.4"
 ornament = "0.2"
@@ -30,4 +30,4 @@ regex = "~1.5"
 remote = { path = "../remote", package = "ced-remote" }
 rlua = "0.17"
 
-crossterm = { version = "0.19", features = ["event-stream"], optional = true }
+crossterm = { version = "0.21", features = ["event-stream"], optional = true }
