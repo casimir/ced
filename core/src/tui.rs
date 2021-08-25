@@ -6,7 +6,7 @@ use crossterm::{
     cursor,
     event::{Event as CEvent, EventStream, KeyCode as CKeyCode, KeyModifiers as CKeyModifiers},
     execute, queue,
-    style::{style,  Print, PrintStyledContent, Stylize},
+    style::{style, Print, PrintStyledContent, Stylize},
     terminal::{self, Clear, ClearType},
     Result as CTResult,
 };

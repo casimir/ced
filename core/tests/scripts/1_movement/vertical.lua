@@ -1,7 +1,11 @@
-editor:scratch(env.client, "testing", [[abcdefghijklmnopqrstuvwxyz
+editor:scratch(
+    env.client,
+    "testing",
+    [[abcdefghijklmnopqrstuvwxyz
 1234567890
 
-ABCDEFGHIJKLMNOPQRSTUVWXYZ]])
+ABCDEFGHIJKLMNOPQRSTUVWXYZ]]
+)
 
 local function assert_sel(c)
     local got = editor:get_context(env.client).selections.testing[1].text

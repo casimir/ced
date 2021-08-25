@@ -1,6 +1,6 @@
-utils = require "utils"
+utils = require("utils")
 
-editor = (require "editor").Editor.new()
+editor = (require("editor")).Editor.new()
 
 editor:debug("lua state ready")
 editor:debug("lua path: " .. package.path)
