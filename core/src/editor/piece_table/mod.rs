@@ -353,7 +353,7 @@ impl PieceTable {
             return Some(Coords { c: 1, l: 1 });
         }
 
-        // bigger that total length
+        // bigger than total length
         if offset > self.max_offset() {
             return None;
         }
@@ -549,6 +549,14 @@ impl PieceTable {
 
     pub fn delete(&mut self, range: &dyn Range) {
         self.action(Action::Delete);
+
+        // special case: deleting exactly the whole content
+        if range.start() == 0 && range.len() == self.len() {
+            self.pieces.clear();
+            self.newlines.clear();
+            return;
+        }
+
         if let Some(start_node) = self.pieces.get_node(&Piece::offset(range.start())) {
             let pieces = self
                 .pieces
@@ -679,6 +687,23 @@ mod tests {
 
         print!("{}", pieces.pieces.dump_tree_as_dot());
         assert_eq!(pieces.text(), "🦊 the fox jumps over the dog 🐶, so quick");
+    }
+
+    #[test]
+    fn delete_empty() {
+        let mut pieces = PieceTable::new();
+        pieces.delete(&OffsetRange::new(9, 12));
+        print!("{}", pieces.pieces.dump_tree_as_dot());
+        assert_eq!(pieces.text(), "");
+    }
+
+    #[test]
+    fn delete_all() {
+        let mut pieces = PieceTable::new();
+        pieces.append("the fox jumps over the dog".to_owned());
+        pieces.delete(&OffsetRange::new(0, 26));
+        print!("{}", pieces.pieces.dump_tree_as_dot());
+        assert_eq!(pieces.text(), "");
     }
 
     #[test]

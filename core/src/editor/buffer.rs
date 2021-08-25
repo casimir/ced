@@ -1,10 +1,11 @@
 use std::env::current_dir;
 use std::fs::{self, File};
 use std::io::Read;
-use std::ops::Index;
+use std::ops::{Index, Range};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::editor::selection::Selection;
 use crate::editor::view::Focus;
 use crate::editor::PieceTable;
 
@@ -162,6 +163,20 @@ impl Buffer {
     pub fn append(&mut self, text: String) {
         self.content.append(text);
         self.modified = true;
+    }
+
+    pub fn selection_range(&self, sel: &Selection) -> Range<usize> {
+        let end_offset = if sel.end() == self.content.max_offset() {
+            sel.end() + 1
+        } else {
+            self.content
+                .navigate(self.content.offset_to_coord(sel.end()))
+                .unwrap()
+                .next()
+                .pos()
+                .offset
+        };
+        sel.begin()..end_offset
     }
 }
 

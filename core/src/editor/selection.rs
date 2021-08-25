@@ -35,4 +35,20 @@ impl Selection {
             self.anchor
         }
     }
+
+    pub fn clamp_to(&mut self, n: usize) -> usize {
+        if n <= self.end() {
+            let delta;
+            if self.anchor < self.cursor {
+                delta = self.cursor - n;
+                self.cursor = n;
+            } else {
+                delta = self.anchor - n;
+                self.anchor = n;
+            }
+            delta
+        } else {
+            0
+        }
+    }
 }

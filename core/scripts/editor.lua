@@ -169,6 +169,11 @@ function Editor:move_to_end(client_id, extend)
     return self.core:move_to_end(client_id, extend)
 end
 
+---@param client_id integer
+function Editor:delete_selection(client_id)
+    return self.core:delete_selection(client_id)
+end
+
 ---@class Editor
 M.Editor = Editor
 

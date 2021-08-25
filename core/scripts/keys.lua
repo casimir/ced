@@ -5,6 +5,7 @@ ModalHandler.__index = ModalHandler
 
 setmetatable(ModalHandler, {__call = function(cls, ...) return cls.new(...) end})
 
+---@param extend boolean
 local function make_goto_mappings(extend)
     return {
         ["h"] = {
@@ -80,7 +81,12 @@ ModalHandler.modes = {
             },
             ["e"] = {fn = function(mh)
                 editor:error(mh.client_id, "oops!")
-            end}
+            end},
+            ["d"] = {
+                fn = function(mh)
+                    editor:delete_selection(mh.client_id)
+                end
+            }
         }
     },
     insertion = {

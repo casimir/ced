@@ -1,9 +1,11 @@
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, env::current_dir};
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::MutexGuard,
+};
 
 use crate::editor::selection::Selection;
 use crate::editor::view::{Focus, Lens, View};
@@ -106,23 +108,6 @@ struct CoreState {
     views: StackMap<String, Rc<RefCell<View>>>,
 }
 
-impl CoreState {
-    fn selection_range(&self, buffer: &Buffer, sel: &Selection) -> Range<usize> {
-        let end_offset = if sel.end() == buffer.content.max_offset() {
-            sel.end() + 1
-        } else {
-            buffer
-                .content
-                .navigate(buffer.content.offset_to_coord(sel.end()))
-                .unwrap()
-                .next()
-                .pos()
-                .offset
-        };
-        sel.begin()..end_offset
-    }
-}
-
 macro_rules! lock {
     ($s:ident) => {
         $s.state.lock().expect("lock state mutex")
@@ -135,8 +120,8 @@ pub enum Error {
     ViewNotFound { view_id: String },
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use Error::*;
         match self {
             BufferNotFound { name } => write!(f, "buffer not found: {}", name),
@@ -231,7 +216,7 @@ impl Core {
         state
             .buffers
             .get(buffer)
-            .map(|b| b.content.text_range(&state.selection_range(&b, sel)))
+            .map(|b| b.content.text_range(&b.selection_range(sel)))
             .flatten()
     }
 
@@ -581,6 +566,58 @@ impl Core {
             self.notify_view_update(vec![client_id]);
         }
     }
+
+    fn clamp_selections(state: &mut MutexGuard<CoreState>, client_id: usize, bufname: &str) {
+        let max_offset = state.buffers[bufname].content.max_offset();
+        let ctx = state.clients.get_mut(&client_id).unwrap();
+        let view_key = ctx.view.borrow().key();
+        ctx.selections
+            .get_mut(&view_key)
+            .unwrap()
+            .get_mut(bufname)
+            .unwrap()
+            .iter_mut()
+            .for_each(|s| {
+                s.clamp_to(max_offset);
+            });
+    }
+
+    pub fn delete_selection(&mut self, client_id: usize) -> Vec<String> {
+        let mut deleted = Vec::new();
+        {
+            let mut modified_buffers = HashSet::new();
+            let mut state = lock!(self);
+            let ctx = &state.clients[&client_id];
+            let view_key = ctx.view.borrow().key();
+            for (bufname, sels) in &ctx.selections[&view_key].clone() {
+                let buffer = state
+                    .buffers
+                    .get_mut(bufname)
+                    .unwrap_or_else(|| panic!("invalid buffer: {}", bufname));
+                for sel in sels {
+                    let srange = buffer.selection_range(sel);
+                    if let Some(text) = buffer.content.text_range(&srange) {
+                        buffer.content.delete(&srange);
+                        deleted.push(text);
+                        modified_buffers.insert(bufname.to_owned());
+                    }
+                }
+                let buffer = &mut state.buffers.get_mut(bufname).unwrap();
+                if buffer.content.is_empty() {
+                    buffer.content.append("\n".to_owned());
+                }
+            }
+            // XXX selections reprocessing is made afterwards because of the borrow rules on struct attributes
+            // XXX in 2021 edition it should be possible to handle both operations in one pass
+            for bufname in modified_buffers {
+                Self::clamp_selections(&mut state, client_id, &bufname);
+            }
+        }
+        if !deleted.is_empty() {
+            self.notify_view_update(vec![client_id]);
+        }
+        deleted
+    }
 }
 
 unsafe impl Send for Core {}
@@ -718,6 +755,10 @@ impl rlua::UserData for Core {
         methods.add_method_mut("move_to_end", |_, this, (client, extend)| {
             this.move_cursor(client, CursorTarget::End, extend);
             Ok(())
+        });
+        methods.add_method_mut("delete_selection", |_, this, client| {
+            let deleted = this.delete_selection(client);
+            Ok(deleted)
         });
     }
 }
