@@ -28,6 +28,6 @@ ornament = "0.2"
 rbtset = "~1.0"
 regex = "~1.5"
 remote = { path = "../remote", package = "ced-remote" }
-rlua = "0.17"
+rlua = "0.18"
 
 crossterm = { version = "0.21", features = ["event-stream"], optional = true }
