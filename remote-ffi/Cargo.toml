@@ -14,5 +14,5 @@ futures-lite = "~1.12"
 remote = { path = "../remote", package = "ced-remote" }
 
 [build-dependencies]
-cbindgen = "0.9"
+cbindgen = "0.23"
 ffigen = { path = "../remote-ffi-gen", package = "remote-ffi-gen" }
