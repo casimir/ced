@@ -26,7 +26,7 @@ ignore = "0.4"
 log = "0.4"
 ornament = "0.2"
 rbtset = "~1.0"
-regex = "~1.5"
+regex = "~1.6"
 remote = { path = "../remote", package = "ced-remote" }
 rlua = "0.17"
 
